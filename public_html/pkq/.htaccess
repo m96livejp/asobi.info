@@ -1,0 +1,15 @@
+# ポケモンクエスト サイト設定
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /pkq/
+</IfModule>
+
+# データベースファイルへのアクセスを禁止
+<FilesMatch "\.(sqlite|db)$">
+  Deny from all
+</FilesMatch>
+
+# PHP設定ファイルへのアクセスを禁止
+<FilesMatch "^config\.php$">
+  Deny from all
+</FilesMatch>

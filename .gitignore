@@ -1,0 +1,20 @@
+# Secrets
+public_html/assets/php/oauth_config.php
+public_html/assets/php/tbt_config.php
+
+# Database files
+*.sqlite
+
+# Images (large binary files)
+public_html/dbd/images/
+public_html/assets/images/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Python cache
+__pycache__/
+
+# OS files
+Thumbs.db
+.DS_Store

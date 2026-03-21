@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>キラーオファリング一覧 - DbD情報サイト</title>
+  <meta name="description" content="Dead by Daylightの全キラーオファリング(供物)一覧。カテゴリ別に検索・閲覧できます。">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="site-logo">DbD<span>.asobi.info</span></a>
+      <button class="menu-toggle">&#9776;</button>
+            <nav class="site-nav">
+        <div class="nav-group">
+          <span class="nav-group-label">サバイバー</span>
+          <a href="/survivor-characters.html">全キャラクター</a>
+          <a href="/survivor-perks.html">パーク</a>
+          <a href="/survivor-offerings.html">オファリング</a>
+          <a href="/survivor-items.html">アイテム</a>
+          <a href="/survivor-addons.html">アドオン</a>
+        </div>
+        <div class="nav-group">
+          <span class="nav-group-label">キラー</span>
+          <a href="/killer-abilities.html">全キャラクター</a>
+          <a href="/killer-perks.html">パーク</a>
+          <a href="/killer-offerings.html" class="active">オファリング</a>
+          <a href="/killer-speed.html">足の速さ</a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="/">DbD</a><span>キラーオファリング一覧</span></div>
+      <h1>キラーオファリング一覧</h1>
+      <p>キラーが使用できるオファリング(供物)をカテゴリ別に閲覧できます</p>
+    </div>
+
+    <div class="search-box">
+      <input type="text" id="search-input" placeholder="オファリング名、効果で検索...">
+    </div>
+
+    <div id="category-filters" class="filter-tags" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+
+    <div class="result-count" id="result-count"></div>
+
+    <div id="offering-list"></div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 あそび - Dead by Daylight 情報サイト</p>
+    </div>
+  </footer>
+
+  <script src="https://asobi.info/assets/js/common.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      DbDApp.loadOfferings('killer', 'offering-list', 'category-filters');
+
+      const searchInput = document.getElementById('search-input');
+      searchInput.addEventListener('input', debounce((e) => {
+        DbDApp.searchOfferings(e.target.value, document.getElementById('offering-list'));
+      }));
+    });
+  </script>
+</body>
+</html>

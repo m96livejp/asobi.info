@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>キラーアドオン一覧 - DbD情報サイト</title>
+  <meta name="description" content="Dead by Daylightの全キラーアドオン一覧。キラー別に検索できます。">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="site-logo">DbD<span>.asobi.info</span></a>
+      <button class="menu-toggle">&#9776;</button>
+            <nav class="site-nav">
+        <div class="nav-group">
+          <span class="nav-group-label">サバイバー</span>
+          <a href="/survivor-characters.html">全キャラクター</a>
+          <a href="/survivor-perks.html">パーク</a>
+          <a href="/survivor-offerings.html">オファリング</a>
+          <a href="/survivor-items.html">アイテム</a>
+          <a href="/survivor-addons.html">アドオン</a>
+        </div>
+        <div class="nav-group">
+          <span class="nav-group-label">キラー</span>
+          <a href="/killer-abilities.html">全キャラクター</a>
+          <a href="/killer-perks.html">パーク</a>
+          <a href="/killer-offerings.html">オファリング</a>
+          <a href="/killer-speed.html">足の速さ</a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="/">DbD</a><span>アドオン一覧</span></div>
+      <h1>キラーアドオン一覧</h1>
+      <p>キラー別にアドオンを検索・閲覧できます</p>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
+      <select id="killer-select" style="padding:10px 16px;border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);border:2px solid var(--border);font-family:inherit;font-size:1rem;">
+        <option value="">全キラー</option>
+      </select>
+    </div>
+
+    <div class="search-box">
+      <input type="text" id="search-input" placeholder="アドオン名、効果で検索...">
+    </div>
+
+    <div class="result-count" id="result-count"></div>
+
+    <div id="addon-list"></div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 あそび - Dead by Daylight 情報サイト</p>
+    </div>
+  </footer>
+
+  <script src="https://asobi.info/assets/js/common.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      DbDApp.loadAddons('addon-list', 'killer-select');
+
+      document.getElementById('killer-select').addEventListener('change', (e) => {
+        DbDApp.filterAddonsByKiller(e.target.value, document.getElementById('addon-list'));
+      });
+
+      document.getElementById('search-input').addEventListener('input', debounce((e) => {
+        DbDApp.searchAddons(e.target.value, document.getElementById('addon-list'));
+      }));
+    });
+  </script>
+</body>
+</html>

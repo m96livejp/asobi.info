@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>キラー足の速さ比較 - DbD情報サイト</title>
+  <meta name="description" content="Dead by Daylightの全キラーの移動速度を比較。速い順にランキング表示。">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="site-logo">DbD<span>.asobi.info</span></a>
+      <button class="menu-toggle">&#9776;</button>
+            <nav class="site-nav">
+        <div class="nav-group">
+          <span class="nav-group-label">サバイバー</span>
+          <a href="/survivor-characters.html">全キャラクター</a>
+          <a href="/survivor-perks.html">パーク</a>
+          <a href="/survivor-offerings.html">オファリング</a>
+          <a href="/survivor-items.html">アイテム</a>
+          <a href="/survivor-addons.html">アドオン</a>
+        </div>
+        <div class="nav-group">
+          <span class="nav-group-label">キラー</span>
+          <a href="/killer-abilities.html">全キャラクター</a>
+          <a href="/killer-perks.html">パーク</a>
+          <a href="/killer-offerings.html">オファリング</a>
+          <a href="/killer-speed.html">足の速さ</a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="/">DbD</a><span>足の速さ比較</span></div>
+      <h1>キラー足の速さ比較</h1>
+      <p>全キラーの基本移動速度を速い順に比較。サバイバーの移動速度は 4.0 m/s です。</p>
+    </div>
+
+    <!-- 速度区分フィルター -->
+    <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;" id="speed-filters">
+      <button class="speed-filter-btn active" data-group="survivor"
+        style="flex:1;min-width:140px;padding:12px;border-radius:8px;border:2px solid #2ecc71;background:rgba(46,204,113,0.15);cursor:pointer;text-align:center;">
+        <div style="font-size:0.8rem;color:var(--text-secondary);">サバイバー</div>
+        <div style="font-size:1.4rem;font-weight:700;color:#2ecc71;">4.0 m/s</div>
+        <div style="font-size:0.75rem;color:var(--text-secondary);">サバイバー</div>
+      </button>
+      <button class="speed-filter-btn active" data-group="ultra_slow"
+        style="flex:1;min-width:140px;padding:12px;border-radius:8px;border:2px solid #3498db;background:rgba(52,152,219,0.15);cursor:pointer;text-align:center;">
+        <div style="font-size:0.8rem;color:var(--text-secondary);">超低速キラー</div>
+        <div style="font-size:1.4rem;font-weight:700;color:#3498db;">3.85 m/s</div>
+        <div style="font-size:0.75rem;color:var(--text-secondary);">ナース</div>
+      </button>
+      <button class="speed-filter-btn active" data-group="slow"
+        style="flex:1;min-width:140px;padding:12px;border-radius:8px;border:2px solid #f1c40f;background:rgba(241,196,15,0.15);cursor:pointer;text-align:center;">
+        <div style="font-size:0.8rem;color:var(--text-secondary);">低速キラー</div>
+        <div style="font-size:1.4rem;font-weight:700;color:#f1c40f;">4.4 m/s</div>
+        <div style="font-size:0.75rem;color:var(--text-secondary);">アーティスト・スピリット・デススリンガー・ハグ・ハントレス</div>
+      </button>
+      <button class="speed-filter-btn active" data-group="normal"
+        style="flex:1;min-width:140px;padding:12px;border-radius:8px;border:2px solid #f39c12;background:rgba(243,156,18,0.15);cursor:pointer;text-align:center;">
+        <div style="font-size:0.8rem;color:var(--text-secondary);">標準キラー</div>
+        <div style="font-size:1.4rem;font-weight:700;color:#f39c12;">4.6 m/s</div>
+        <div style="font-size:0.75rem;color:var(--text-secondary);">その他</div>
+        <div style="font-size:0.65rem;color:var(--text-secondary);font-style:italic;margin-top:2px;">※アニマトロニック(斧無し状態)</div>
+      </button>
+    </div>
+
+    <div id="speed-table"></div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 あそび - Dead by Daylight 情報サイト</p>
+    </div>
+  </footer>
+
+  <script src="https://asobi.info/assets/js/common.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      const container = document.getElementById('speed-table');
+      const killers = await DbDApp.loadKillers('speed-table');
+      DbDApp.renderKillerSpeed(killers, container, new Set(['survivor', 'ultra_slow', 'slow', 'normal']));
+
+      // 速度区分フィルターのON/OFF
+      const activeGroups = new Set(['survivor', 'ultra_slow', 'slow', 'normal']);
+      document.querySelectorAll('.speed-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const group = btn.dataset.group;
+          if (activeGroups.has(group)) {
+            activeGroups.delete(group);
+            btn.classList.remove('active');
+            btn.style.opacity = '0.4';
+          } else {
+            activeGroups.add(group);
+            btn.classList.add('active');
+            btn.style.opacity = '1';
+          }
+          DbDApp.renderKillerSpeed(killers, container, activeGroups);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

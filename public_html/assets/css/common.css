@@ -1,0 +1,395 @@
+/* === common.css - あそび 共通スタイル === */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Noto Sans JP', sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* ヘッダー共通 */
+.site-header {
+  padding: 16px 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(10px);
+}
+
+.site-header .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.site-logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.site-nav ul {
+  display: flex;
+  list-style: none;
+  gap: 24px;
+}
+
+.site-nav a {
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: opacity 0.2s;
+}
+
+.site-nav a:hover {
+  opacity: 0.7;
+}
+
+/* フッター共通 */
+.site-footer {
+  padding: 32px 0;
+  text-align: center;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+/* 検索バー共通 */
+.search-box {
+  position: relative;
+  margin-bottom: 24px;
+}
+
+.search-box input {
+  width: 100%;
+  padding: 12px 16px 12px 44px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  font-size: 1rem;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  outline: none;
+}
+
+.search-box::before {
+  content: '\1F50D';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.1rem;
+}
+
+/* カードグリッド共通 */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.card {
+  border-radius: 12px;
+  padding: 20px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+}
+
+/* テーブル共通 */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.data-table th,
+.data-table td {
+  padding: 12px 16px;
+  text-align: left;
+}
+
+.data-table th {
+  font-weight: 600;
+  position: sticky;
+  top: 60px;
+  z-index: 10;
+}
+
+/* フィルタータグ */
+.filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.filter-tag {
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.filter-tag.active {
+  font-weight: 600;
+}
+
+/* レスポンシブ */
+@media (max-width: 768px) {
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .site-nav ul {
+    gap: 12px;
+    font-size: 0.9rem;
+  }
+
+  .site-header .container {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .data-table {
+    font-size: 0.85rem;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 8px 10px;
+  }
+}
+
+/* ハンバーガーメニュー (モバイル) */
+.menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .menu-toggle {
+    display: block;
+  }
+
+  .site-nav {
+    display: none;
+    width: 100%;
+  }
+
+  .site-nav.open {
+    display: block;
+  }
+
+  .site-nav ul {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+/* スクロールトップボタン */
+.scroll-top-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 24px;
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--accent, #e74c3c);
+  border-radius: 4px;
+  background: var(--bg-secondary, #fff);
+  color: var(--accent, #e74c3c);
+  font-size: 1rem;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transition: opacity 0.2s, background 0.15s;
+  opacity: 0;
+  font-family: inherit;
+}
+.scroll-top-btn.visible {
+  display: flex;
+  opacity: 1;
+}
+.scroll-top-btn:hover {
+  background: var(--accent, #e74c3c);
+  color: #fff;
+}
+
+/* パンくずリスト */
+.breadcrumb {
+  padding: 12px 0;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.breadcrumb a:hover {
+  opacity: 1;
+}
+
+.breadcrumb span::before {
+  content: ' > ';
+}
+
+/* ローディング */
+.loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 1.1rem;
+}
+
+.loading::after {
+  content: '';
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ===== ヘッダー ユーザーエリア（共通） ===== */
+.header-user-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+.header-user-area::before {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 18px;
+  background: currentColor;
+  opacity: 0.2;
+}
+.header-btn-login {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 16px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff !important;
+  border-radius: 20px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+.header-btn-login:hover { opacity: 0.85; }
+.header-user-menu {
+  position: relative;
+}
+.header-user-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 8px;
+  transition: background 0.2s;
+  color: inherit;
+}
+.header-user-trigger:hover { background: rgba(128,128,128,0.15); }
+.header-user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.header-user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.header-user-name {
+  font-size: 0.82rem;
+  font-weight: 500;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+}
+.header-user-caret {
+  font-size: 0.55rem;
+  opacity: 0.5;
+}
+.header-user-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.14);
+  min-width: 150px;
+  overflow: hidden;
+  z-index: 300;
+  color: #1d1d1f;
+}
+.header-user-menu.open .header-user-dropdown { display: block; }
+.header-user-dropdown a {
+  display: block;
+  padding: 10px 16px;
+  font-size: 0.85rem;
+  color: #1d1d1f;
+  text-decoration: none;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.header-user-dropdown a:hover { background: #f5f5f7; }
+.header-user-dropdown .hud-divider {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 4px 0;
+}
+.header-user-dropdown .hud-logout { color: #e74c3c; }
+@media (max-width: 768px) {
+  .header-user-name { display: none; }
+  .header-user-area::before { display: none; }
+}
