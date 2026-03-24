@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>わざ詳細 - ポケモンクエスト情報</title>
+  <meta name="description" content="わざの詳細情報・タイプ相性・覚えるポケモン一覧。">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
+  <style>
+    .back-link {
+      display: inline-flex; align-items: center; gap: 4px;
+      color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px; text-decoration: none;
+    }
+    .back-link:hover { color: var(--accent); }
+
+    .move-hero {
+      display: flex; gap: 16px; align-items: flex-start;
+      background: var(--bg-secondary); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px; margin-bottom: 20px;
+    }
+    .move-hero-info { flex: 1; }
+    .move-hero-name { font-size: 1.5rem; font-weight: 700; margin: 0 0 8px 0; }
+    .move-stats { display: flex; gap: 16px; font-size: 0.9rem; color: var(--text-secondary); margin-top: 8px; }
+    .move-stats strong { color: var(--text-primary); }
+    .move-desc { font-size: 0.9rem; color: var(--text-secondary); margin-top: 10px; line-height: 1.6; }
+
+    .section-card {
+      background: var(--bg-secondary); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px; margin-bottom: 20px;
+    }
+    .section-title { font-size: 1rem; font-weight: 700; margin: 0 0 12px 0; }
+
+    .type-badge-sm {
+      display: inline-block; padding: 2px 10px; border-radius: 10px;
+      font-size: 0.75rem; font-weight: 600; color: #fff;
+    }
+
+    .compat-row {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    }
+    .compat-label {
+      font-size: 0.82rem; font-weight: 700; min-width: 120px; white-space: nowrap;
+    }
+    .compat-badges { display: flex; gap: 4px; flex-wrap: wrap; }
+
+    .pokemon-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px;
+    }
+
+    .loading-msg { color: var(--text-secondary); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="site-logo">ポケクエ<span>.asobi.info</span></a>
+      <button class="menu-toggle">&#9776;</button>
+      <nav class="site-nav">
+        <ul>
+          <li><a href="/pokemon-list.html">全ポケモン一覧</a></li>
+          <li><a href="/moves.html" class="active">全わざ一覧</a></li>
+          <li><a href="/recipes.html">全料理一覧</a></li>
+          <li><a href="/simulator.html">料理シミュレーター</a></li>
+          <li><a href="/iv-checker.html">個体値チェッカー</a></li>
+          <li><a href="/iv-report.php">料理結果投稿</a></li>
+          <li><a href="/iv-report-list.php">料理結果一覧</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <a href="/moves.html" class="back-link">← 全わざ一覧に戻る</a>
+    <div id="detail-container">
+      <div class="loading-msg">読み込み中...</div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 あそび - ポケモンクエスト情報サイト</p>
+    </div>
+  </footer>
+
+  <script src="https://asobi.info/assets/js/common.js"></script>
+  <script src="/js/comments.js"></script>
+  <script>
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  const TYPE_COLORS = {
+    'ノーマル':'#a8a878','ほのお':'#f08030','みず':'#6890f0','でんき':'#f8d030',
+    'くさ':'#78c850','こおり':'#98d8d8','かくとう':'#c03028','どく':'#a040a0',
+    'じめん':'#e0c068','ひこう':'#a890f0','エスパー':'#f85888','むし':'#a8b820',
+    'いわ':'#b8a038','ゴースト':'#705898','ドラゴン':'#7038f8','あく':'#705848',
+    'はがね':'#b8b8d0','フェアリー':'#f0a0c0',
+  };
+
+  function typeBadge(type) {
+    const bg = TYPE_COLORS[type] || '#888';
+    const tc = ['でんき','くさ'].includes(type) ? '#333' : '#fff';
+    return `<span class="type-badge-sm" style="background:${bg};color:${tc};">${esc(type)}</span>`;
+  }
+
+  // ポケクエ独自タイプ相性表
+  // 攻撃タイプ → { 防御タイプ: 倍率 }  省略は等倍(1)
+  const TYPE_CHART = {
+    'ノーマル': { 'かくとう': 0.5 },
+    'ほのお':   { 'ほのお': 0.5, 'みず': 0.5, 'くさ': 2, 'こおり': 2, 'じめん': 0.5 },
+    'みず':     { 'ほのお': 2, 'みず': 0.5, 'くさ': 0.5, 'じめん': 2 },
+    'でんき':   { 'みず': 2, 'でんき': 0.5, 'くさ': 0.5, 'じめん': 0, 'ひこう': 2 },
+    'くさ':     { 'ほのお': 0.5, 'みず': 2, 'くさ': 0.5, 'こおり': 0.5, 'どく': 0.5, 'じめん': 2, 'ひこう': 0.5 },
+    'こおり':   { 'ほのお': 0.5, 'みず': 0.5, 'くさ': 2, 'こおり': 0.5, 'じめん': 2, 'ひこう': 2 },
+    'かくとう': { 'ノーマル': 2, 'こおり': 2, 'どく': 0.5, 'ひこう': 0.5 },
+    'どく':     { 'くさ': 2, 'どく': 0.5, 'じめん': 0.5 },
+    'じめん':   { 'ほのお': 2, 'でんき': 2, 'くさ': 0.5, 'どく': 2, 'ひこう': 0 },
+    'ひこう':   { 'でんき': 0.5, 'くさ': 2, 'かくとう': 2 },
+  };
+
+  const ALL_TYPES = ['ノーマル','ほのお','みず','でんき','くさ','こおり','かくとう','どく','じめん','ひこう',
+                     'エスパー','むし','いわ','ゴースト','ドラゴン','あく','はがね','フェアリー'];
+
+  (async () => {
+    const params = new URLSearchParams(location.search);
+    const moveId = parseInt(params.get('id'));
+    const container = document.getElementById('detail-container');
+
+    if (!moveId) {
+      container.innerHTML = '<p>わざIDが指定されていません。</p>';
+      return;
+    }
+
+    try {
+      const m = await API.get('/api/moves.php', { id: moveId });
+
+      document.title = `${m.name} - わざ詳細 - ポケモンクエスト`;
+
+      // ---- ヒーロー ----
+      const heroHtml = `
+        <div class="move-hero">
+          <div class="move-hero-info">
+            <h1 class="move-hero-name">${esc(m.name)}</h1>
+            <div>${typeBadge(m.type)}</div>
+            <div class="move-stats">
+              <div><strong>ATK</strong>&nbsp;${m.power || 0}</div>
+              <div><strong>待ち時間</strong>&nbsp;${m.wait || 0}秒</div>
+            </div>
+            <div class="move-desc">${esc(m.description || '')}</div>
+          </div>
+        </div>`;
+
+      // ---- タイプ相性 ----
+      const chart = TYPE_CHART[m.type] || {};
+      const superEffective = []; // 2倍
+      const notVeryEffective = []; // 0.5倍
+      const noEffect = []; // 0倍
+
+      for (const defType of ALL_TYPES) {
+        const mult = chart[defType];
+        if (mult === 2) superEffective.push(defType);
+        else if (mult === 0.5) notVeryEffective.push(defType);
+        else if (mult === 0) noEffect.push(defType);
+      }
+
+      let compatHtml = '';
+      if (superEffective.length > 0 || notVeryEffective.length > 0 || noEffect.length > 0) {
+        let rows = '';
+        if (superEffective.length > 0) {
+          rows += `<div class="compat-row">
+            <span class="compat-label" style="color:#e74c3c;">● 効果ばつぐん</span>
+            <div class="compat-badges">${superEffective.map(typeBadge).join('')}</div>
+          </div>`;
+        }
+        if (notVeryEffective.length > 0) {
+          rows += `<div class="compat-row">
+            <span class="compat-label" style="color:#3498db;">▲ いまひとつ</span>
+            <div class="compat-badges">${notVeryEffective.map(typeBadge).join('')}</div>
+          </div>`;
+        }
+        if (noEffect.length > 0) {
+          rows += `<div class="compat-row">
+            <span class="compat-label" style="color:#95a5a6;">× 効果なし</span>
+            <div class="compat-badges">${noEffect.map(typeBadge).join('')}</div>
+          </div>`;
+        }
+        compatHtml = `
+          <div class="section-card">
+            <p class="section-title">タイプ相性</p>
+            ${rows}
+          </div>`;
+      } else {
+        compatHtml = `
+          <div class="section-card">
+            <p class="section-title">タイプ相性</p>
+            <p style="color:var(--text-secondary);font-size:0.85rem;">このタイプは全タイプに等倍ダメージです。</p>
+          </div>`;
+      }
+
+      // ---- 覚えるポケモン ----
+      let pokemonHtml = '';
+      if (m.pokemon && m.pokemon.length > 0) {
+        const matched = m.pokemon.filter(p => p.type1 === m.type || p.type2 === m.type);
+        const unmatched = m.pokemon.filter(p => p.type1 !== m.type && p.type2 !== m.type);
+
+        function pokeCard(p) {
+          const no = String(p.pokedex_no).padStart(3, '0');
+          const types = [p.type1, p.type2].filter(Boolean).map(t => {
+            const bg = TYPE_COLORS[t] || '#888';
+            const tc = ['でんき','くさ'].includes(t) ? '#333' : '#fff';
+            return `<span class="type-badge" style="background:${bg};color:${tc};padding:1px 8px;font-size:0.65rem;white-space:nowrap;">${esc(t)}</span>`;
+          }).join('');
+          return `<a href="/pokemon-detail.html?no=${p.pokedex_no}" class="card pokemon-card-link" style="padding:8px 6px;text-align:center;text-decoration:none;">
+            <img src="/images/pokemon/${no}.png" alt="${esc(p.name)}" style="width:48px;height:48px;object-fit:contain;">
+            <div style="font-size:0.7rem;color:var(--text-secondary);">No.${no}</div>
+            <div style="font-size:0.85rem;font-weight:700;">${esc(p.name)}</div>
+            <div style="display:flex;flex-direction:column;gap:2px;align-items:center;margin-top:2px;">${types}</div>
+          </a>`;
+        }
+
+        let sections = '';
+        if (matched.length > 0) {
+          sections += `<div style="margin-bottom:16px;">
+            <div style="font-size:0.85rem;font-weight:700;color:#27ae60;margin-bottom:8px;">タイプ一致（${matched.length}匹）</div>
+            <div class="pokemon-grid">${matched.map(pokeCard).join('')}</div>
+          </div>`;
+        }
+        if (unmatched.length > 0) {
+          sections += `<div style="margin-bottom:16px;">
+            <div style="font-size:0.85rem;font-weight:700;color:#95a5a6;margin-bottom:8px;">タイプ不一致（${unmatched.length}匹）</div>
+            <div class="pokemon-grid">${unmatched.map(pokeCard).join('')}</div>
+          </div>`;
+        }
+
+        pokemonHtml = `
+          <div class="section-card">
+            <p class="section-title">覚えるポケモン</p>
+            ${sections}
+          </div>`;
+      } else {
+        pokemonHtml = `
+          <div class="section-card">
+            <p class="section-title">覚えるポケモン</p>
+            <p style="color:var(--text-secondary);font-size:0.85rem;">データなし</p>
+          </div>`;
+      }
+
+      const commentsHtml = `
+        <div class="section-card" style="margin-top:16px;">
+          <p class="section-title">💬 コメント</p>
+          <div id="comments-list" style="margin-bottom:12px;">読み込み中...</div>
+          <div id="comment-form" style="display:none;">
+            <textarea id="comment-input" class="comment-input" placeholder="コメントを入力..." maxlength="1000"></textarea>
+            <button id="comment-submit-btn" class="comment-submit" onclick="Comments.post()">投稿する</button>
+          </div>
+          <div id="comment-login-note" style="display:none;font-size:0.85rem;color:var(--text-secondary);">
+            <a href="https://asobi.info/login.php" style="color:var(--accent);">ログイン</a>するとコメントできます
+          </div>
+        </div>`;
+
+      container.innerHTML = heroHtml + compatHtml + pokemonHtml + commentsHtml;
+      Comments.init('move', moveId);
+
+    } catch (e) {
+      container.innerHTML = `<p style="color:red;">エラー: ${esc(e.message)}</p>`;
+    }
+  })();
+  </script>
+</body>
+</html>

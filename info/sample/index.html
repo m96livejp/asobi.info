@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>フォントサンプル - asobi.info</title>
+<style>
+@font-face { font-family: "Migu1C"; src: url("/assets/fonts/migu-1c-regular.woff2") format("woff2"); font-weight: normal; font-display: swap; }
+@font-face { font-family: "Migu1C"; src: url("/assets/fonts/migu-1c-bold.woff2") format("woff2"); font-weight: bold; font-display: swap; }
+@font-face { font-family: "Migu1M"; src: url("/assets/fonts/migu-1m-regular.woff2") format("woff2"); font-weight: normal; font-display: swap; }
+@font-face { font-family: "Migu1M"; src: url("/assets/fonts/migu-1m-bold.woff2") format("woff2"); font-weight: bold; font-display: swap; }
+@font-face { font-family: "Migu1P"; src: url("/assets/fonts/migu-1p-regular.woff2") format("woff2"); font-weight: normal; font-display: swap; }
+@font-face { font-family: "Migu1P"; src: url("/assets/fonts/migu-1p-bold.woff2") format("woff2"); font-weight: bold; font-display: swap; }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #f5f5f5; color: #333; font-family: sans-serif; padding: 20px; }
+h1 { font-size: 1.5rem; margin-bottom: 16px; }
+.input-area { position: sticky; top: 0; background: #fff; z-index: 10; padding: 12px 16px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+.input-area label { font-weight: 700; margin-right: 8px; }
+.input-area input[type="text"] { font-size: 1rem; padding: 8px 12px; border: 2px solid #ddd; border-radius: 6px; width: 100%; max-width: 500px; }
+.input-area .opts { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.input-area .opts label { font-weight: 400; font-size: 0.9rem; cursor: pointer; }
+.font-section { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.font-section h2 { font-size: 1.1rem; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 2px solid #e0e0e0; }
+.font-row { display: flex; align-items: baseline; gap: 12px; padding: 3px 0; border-bottom: 1px solid #f0f0f0; }
+.font-row:last-child { border-bottom: none; }
+.size-label { width: 70px; flex-shrink: 0; font-size: 0.75rem; color: #888; text-align: right; font-family: monospace; }
+.sample-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.weight-toggle { display: flex; gap: 4px; }
+.weight-toggle button { padding: 4px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 0.8rem; }
+.weight-toggle button.active { background: #333; color: #fff; border-color: #333; }
+</style>
+</head>
+<body>
+<h1>フォントサンプル</h1>
+<div class="input-area">
+  <label>表示テキスト:</label>
+  <input type="text" id="sample-input" value="あいうえお アイウエオ 漢字 ABCabc 0123456789 ポケモンクエスト" oninput="updateSamples()">
+  <div class="opts">
+    <div class="weight-toggle">
+      <button id="btn-normal" class="active" onclick="setWeight('normal')">Regular</button>
+      <button id="btn-bold" onclick="setWeight('bold')">Bold</button>
+      <button id="btn-both" onclick="setWeight('both')">両方</button>
+    </div>
+    <label><input type="checkbox" id="chk-system" onchange="updateSamples()"> システムフォントも表示</label>
+  </div>
+</div>
+<div id="font-samples"></div>
+
+<script>
+var fonts = [
+  { name: 'Migu 1C', family: 'Migu1C', desc: 'プロポーショナル（C=固定幅半角）' },
+  { name: 'Migu 1M', family: 'Migu1M', desc: '等幅（M=Monospace）' },
+  { name: 'Migu 1P', family: 'Migu1P', desc: 'プロポーショナル（P=Proportional）' }
+];
+var systemFont = { name: 'システムフォント', family: 'system-ui, -apple-system, sans-serif', desc: 'OS標準' };
+var currentWeight = 'normal';
+
+function setWeight(w) {
+  currentWeight = w;
+  document.getElementById('btn-normal').classList.toggle('active', w === 'normal');
+  document.getElementById('btn-bold').classList.toggle('active', w === 'bold');
+  document.getElementById('btn-both').classList.toggle('active', w === 'both');
+  updateSamples();
+}
+
+function escHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function updateSamples() {
+  var text = document.getElementById('sample-input').value || 'サンプルテキスト';
+  var showSystem = document.getElementById('chk-system').checked;
+  var list = fonts.slice();
+  if (showSystem) list.push(systemFont);
+  var container = document.getElementById('font-samples');
+  container.innerHTML = '';
+
+  var colors = ['#e74c3c', '#2980b9', '#27ae60', '#888'];
+  var weights = currentWeight === 'both' ? ['normal', 'bold'] : [currentWeight];
+  for (var wi = 0; wi < weights.length; wi++) {
+    var w = weights[wi];
+    if (currentWeight === 'both') {
+      var wHeader = document.createElement('div');
+      wHeader.style.cssText = 'font-size:0.85rem;font-weight:700;color:#555;margin:12px 0 4px;padding-left:4px;';
+      wHeader.textContent = w === 'normal' ? 'Regular' : 'Bold';
+      container.appendChild(wHeader);
+    }
+    for (var pt = 8; pt <= 15; pt += 0.5) {
+      var rem = (pt / 16).toFixed(3);
+      var group = document.createElement('div');
+      group.style.cssText = 'display:flex;gap:0;margin-bottom:6px;border-bottom:2px solid #e0e0e0;padding-bottom:4px;';
+      var gHtml = '<div style="width:70px;flex-shrink:0;font-size:0.75rem;color:#888;font-family:monospace;padding-top:2px;">' + pt + 'px<br>' + rem + 'rem</div>';
+      gHtml += '<div style="flex:1;">';
+      for (var fi = 0; fi < list.length; fi++) {
+        var f = list[fi];
+        gHtml += '<div style="display:flex;gap:8px;align-items:baseline;padding:1px 0;">';
+        gHtml += '<span style="width:60px;flex-shrink:0;font-size:0.7rem;font-weight:700;color:' + colors[fi % colors.length] + ';">' + f.name + '</span>';
+        gHtml += '<span style="font-family:\'' + f.family + '\';font-size:' + pt + 'px;font-weight:' + w + ';">' + escHtml(text) + '</span>';
+        gHtml += '</div>';
+      }
+      gHtml += '</div>';
+      group.innerHTML = gHtml;
+      container.appendChild(group);
+    }
+  }
+}
+
+updateSamples();
+</script>
+</body>
+</html>

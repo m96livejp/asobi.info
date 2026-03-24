@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>料理詳細 - ポケモンクエスト情報</title>
+  <meta name="description" content="料理の全素材組み合わせパターンを品質別に一覧表示。">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
+  <style>
+    /* 品質タブ */
+    .quality-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .qtab {
+      padding: 6px 16px;
+      border-radius: 20px;
+      border: 2px solid var(--border);
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .qtab-normal:hover  { border-color: var(--quality-normal);   color: var(--quality-normal); }
+    .qtab-good:hover    { border-color: var(--quality-good);     color: var(--quality-good); }
+    .qtab-very_good:hover { border-color: var(--quality-very-good); color: var(--quality-very-good); }
+    .qtab-special:hover { border-color: var(--quality-special);  color: var(--quality-special); }
+    .qtab-normal.active   { background: var(--quality-normal);    border-color: var(--quality-normal);    color: #fff; }
+    .qtab-good.active     { background: var(--quality-good);      border-color: var(--quality-good);      color: #fff; }
+    .qtab-very_good.active{ background: var(--quality-very-good); border-color: var(--quality-very-good); color: #fff; }
+    .qtab-special.active  { background: var(--quality-special);   border-color: var(--quality-special);   color: #fff; }
+
+    /* 組み合わせグリッド */
+    .combo-section { display: none; }
+    .combo-section.active { display: block; }
+
+    .combo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 6px;
+    }
+    .combo-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+    }
+    .combo-row img, .combo-row .ing-emoji {
+      width: 30px;
+      height: 30px;
+      object-fit: contain;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .combo-row .ing-emoji {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      background: var(--bg-primary);
+    }
+
+    /* 前後ナビ */
+    .recipe-nav {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-self: stretch;
+      gap: 4px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .recipe-nav-btn {
+      width: 36px;
+      height: 36px;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      text-decoration: none;
+    }
+    .recipe-nav-btn:hover:not(.disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(225,112,85,0.08);
+    }
+    .recipe-nav-btn.disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+
+    /* レシピヘッダー */
+    .recipe-hero {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+    .recipe-hero img {
+      width: 80px;
+      height: 80px;
+      object-fit: contain;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+    .recipe-hero-placeholder {
+      width: 80px;
+      height: 80px;
+      background: var(--bg-primary);
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+    .hero-info h1 {
+      font-size: 1.3rem;
+      color: var(--accent);
+      margin: 0 0 6px;
+    }
+    .hero-meta {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .section-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+      text-decoration: none;
+    }
+    .back-link:hover { color: var(--accent); }
+
+    .loading-msg {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+
+    /* 料理ピッカー */
+    .recipe-picker {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 12px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 16px;
+    }
+    .recipe-picker-item {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      border: 2px solid var(--border);
+      cursor: pointer;
+      overflow: hidden;
+      transition: border-color 0.15s, background 0.15s;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-primary);
+      text-decoration: none;
+      position: relative;
+    }
+    .recipe-picker-item:hover { border-color: var(--accent); }
+    .recipe-picker-item.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(225,112,85,0.3);
+    }
+    .recipe-picker-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .recipe-picker-item .picker-no {
+      position: absolute;
+      bottom: 1px;
+      right: 3px;
+      font-size: 0.55rem;
+      color: var(--text-secondary);
+      line-height: 1;
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="site-logo">ポケクエ<span>.asobi.info</span></a>
+      <button class="menu-toggle">&#9776;</button>
+            <nav class="site-nav">
+        <ul>
+          <li><a href="/pokemon-list.html">全ポケモン一覧</a></li>
+          <li><a href="/moves.html">全わざ一覧</a></li>
+          <li><a href="/recipes.html" class="active">全料理一覧</a></li>
+          <li><a href="/simulator.html">料理シミュレーター</a></li>
+          <li><a href="/iv-checker.html">個体値チェッカー</a></li>
+          <li><a href="/iv-report.php">料理結果投稿</a></li>
+          <li><a href="/iv-report-list.php">料理結果一覧</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <a href="/recipes.html" class="back-link">← 料理一覧に戻る</a>
+    <div id="recipe-picker-container"></div>
+    <div id="detail-container">
+      <div class="loading-msg">読み込み中...</div>
+    </div>
+  <!-- Amazon アフィリエイト スライダー -->
+  <div class="container">
+    <div class="amazon-slider" id="amz-slider">
+      <div class="amazon-slider-track" id="amz-track">
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=switch2+%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🎮</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">Nintendo Switch 2 × ポケモン</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3%E3%82%AB%E3%83%BC%E3%83%89%E3%82%B2%E3%83%BC%E3%83%A0&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🃏</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">ポケモンカードゲーム</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=Nintendo+Switch+2&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🕹️</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">Nintendo Switch 2 本体</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3+%E3%82%B0%E3%83%83%E3%82%BA&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🧸</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">ポケモングッズ</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+      </div>
+      <div class="amazon-slider-dots" id="amz-dots">
+        <span class="active" onclick="amzGoTo(0)"></span>
+        <span onclick="amzGoTo(1)"></span>
+        <span onclick="amzGoTo(2)"></span>
+        <span onclick="amzGoTo(3)"></span>
+      </div>
+    </div>
+  </div>
+  <script>
+  (function(){
+    var idx=0, total=4, timer;
+    function amzGoTo(n){
+      idx=n;
+      document.getElementById("amz-track").style.transform="translateX(-"+idx*100+"%)";
+      document.querySelectorAll("#amz-dots span").forEach(function(d,i){d.classList.toggle("active",i===idx);});
+    }
+    window.amzGoTo=amzGoTo;
+    function amzNext(){ amzGoTo((idx+1)%total); }
+    timer=setInterval(amzNext,10000);
+    document.getElementById("amz-slider").addEventListener("mouseenter",function(){clearInterval(timer);});
+    document.getElementById("amz-slider").addEventListener("mouseleave",function(){timer=setInterval(amzNext,10000);});
+  })();
+  </script>  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 あそび - ポケモンクエスト情報サイト</p>
+    </div>
+  </footer>
+
+  <script src="https://asobi.info/assets/js/common.js"></script>
+  <script src="/js/comments.js"></script>
+  <script>
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ---- 組み合わせ生成（重複あり組み合わせ）----
+  function generateCombos(arr, r) {
+    const result = [];
+    const n = arr.length;
+    const indices = Array(r).fill(0);
+    while (true) {
+      result.push(indices.map(i => arr[i]));
+      let i = r - 1;
+      while (i >= 0 && indices[i] === n - 1) i--;
+      if (i < 0) break;
+      indices[i]++;
+      for (let j = i + 1; j < r; j++) indices[j] = indices[i];
+    }
+    return result;
+  }
+
+  // ---- レシピ・品質判定（app.js の cook() と同一ロジック）----
+  function evaluateCombo(combo) {
+    const clr = {}, cat = {}, sft = {};
+    let qualityTotal = 0, hasKaigara = false;
+    for (const ing of combo) {
+      if (ing.color)    clr[ing.color]    = (clr[ing.color]    || 0) + 1;
+      if (ing.category) cat[ing.category] = (cat[ing.category] || 0) + 1;
+      if (ing.softness) sft[ing.softness] = (sft[ing.softness] || 0) + 1;
+      qualityTotal += ing.quality_point || 1;
+      if (ing.id == 8) hasKaigara = true;
+    }
+    const red  = clr.red    || 0, blue    = clr.blue    || 0;
+    const yel  = clr.yellow || 0, gray    = clr.gray    || 0;
+    const mush = cat.mushroom||0, plant   = cat.plant   || 0;
+    const swt  = cat.sweet  || 0, mineral = cat.mineral || 0;
+    const soft = sft.soft   || 0, hard    = sft.hard    || 0;
+
+    let recipeName;
+    if      (hasKaigara)                  recipeName = 'カクコロレジェンドスープ';
+    else if (red  >= 4)                   recipeName = 'レッドカクコロシチュー';
+    else if (blue >= 4)                   recipeName = 'ブルーカクコロジュース';
+    else if (yel  >= 4)                   recipeName = 'イエローカクコロカレー';
+    else if (gray >= 4)                   recipeName = 'ホワイトカクコログラタン';
+    else if (hard  >= 4 && mineral >= 2)  recipeName = 'カクコロガンセキ煮';
+    else if (soft  >= 4 && yel     >= 3)  recipeName = 'カクコロビリビリゾット';
+    else if (mush  >= 3 && red     >= 2)  recipeName = 'カクコロファイヤベース';
+    else if (plant >= 4 && soft    >= 2)  recipeName = 'カクコロ健康スムージー';
+    else if (swt   >= 4 && yel     >= 3)  recipeName = 'カクコロハニーフォンデュ';
+    else if (soft  >= 4 && blue    >= 3)  recipeName = 'カクコロウォータカウダ';
+    else if (mush  >= 4 && soft    >= 3)  recipeName = 'カクコロヘドロしるこ';
+    else if (soft  >= 3 && mineral >= 2)  recipeName = 'カクコロクレイチャウダー';
+    else if (mineral >= 3 && plant >= 2)  recipeName = 'カクコロウィンドリア';
+    else if (swt   >= 3 && mush    >= 2)  recipeName = 'カクコロマッスルオレ';
+    else if (swt   >= 3 && hard    >= 2)  recipeName = 'カクコロねんジャオロース';
+    else if (swt   >= 3 && gray    >= 2)  recipeName = 'カクコロシルクレープ';
+    else                                  recipeName = 'カクコロスープ';
+
+    let quality;
+    if      (qualityTotal >= 10) quality = 'special';
+    else if (qualityTotal >= 8)  quality = 'very_good';
+    else if (qualityTotal >= 6)  quality = 'good';
+    else                         quality = 'normal';
+
+    return { recipeName, quality, qualityTotal };
+  }
+
+  // ---- 素材アイコン HTML ----
+  function ingIconHtml(ing, size = 30) {
+    const colorEmoji = { red:'🔴', blue:'🔵', yellow:'🟡', gray:'⚪', rainbow:'🌈' };
+    if (ing.image_path) {
+      return `<img src="/images/ingredients/${escHtml(ing.image_path)}" alt="${escHtml(ing.name)}" title="${escHtml(ing.name)}" style="width:${size}px;height:${size}px;">`;
+    }
+    return `<span class="ing-emoji" style="width:${size}px;height:${size}px;" title="${escHtml(ing.name)}">${colorEmoji[ing.color] || '⚪'}</span>`;
+  }
+
+  // ---- タブ切替 ----
+  function switchTab(quality) {
+    document.querySelectorAll('.qtab').forEach(t => t.classList.toggle('active', t.dataset.q === quality));
+    document.querySelectorAll('.combo-section').forEach(s => s.classList.toggle('active', s.dataset.q === quality));
+  }
+
+  // ---- メイン ----
+  (async () => {
+    const params = new URLSearchParams(location.search);
+    const recipeNo = parseInt(params.get('no'));
+    const container = document.getElementById('detail-container');
+
+    if (!recipeNo) {
+      container.innerHTML = '<p>レシピNo.が指定されていません。</p>';
+      return;
+    }
+
+    try {
+      const [groups, ingredients] = await Promise.all([
+        API.get('/api/recipes.php', { grouped: '1' }),
+        API.get('/api/ingredients.php')
+      ]);
+
+      // にじのマテリアル(id=7)を含むレシピを末尾に（料理一覧と同じ順序）
+      groups.sort((a, b) => {
+        const aHasNiji = a.ingredients.some(i => i.id === 7) ? 1 : 0;
+        const bHasNiji = b.ingredients.some(i => i.id === 7) ? 1 : 0;
+        return aHasNiji - bHasNiji || a.recipe_no - b.recipe_no;
+      });
+
+      const recipe = groups.find(g => g.recipe_no === recipeNo);
+      if (!recipe) {
+        container.innerHTML = '<p>レシピが見つかりません。</p>';
+        return;
+      }
+
+      document.title = `${recipe.name} - 料理詳細 - ポケモンクエスト`;
+
+      // ---- 料理ピッカー ----
+      const pickerHtml = `
+        <div class="recipe-picker">
+          ${groups.map(g => {
+            const isActive = g.recipe_no === recipeNo;
+            const icon = g.image_path
+              ? `<img src="/images/recipes/${escHtml(g.image_path)}" alt="${escHtml(g.name)}">`
+              : `<span style="font-size:1.4rem;">🍲</span>`;
+            return `<a href="/recipe-detail.html?no=${g.recipe_no}" class="recipe-picker-item ${isActive ? 'active' : ''}" title="No.${g.recipe_no} ${escHtml(g.name)}">${icon}<span class="picker-no">${g.recipe_no}</span></a>`;
+          }).join('')}
+        </div>
+      `;
+      document.getElementById('recipe-picker-container').innerHTML = pickerHtml;
+
+      // 前後ナビ用にグループ一覧を保持
+      window._recipeGroups = groups;
+      window._currentRecipeNo = recipeNo;
+
+      // 全2002通りを生成・評価
+      const combos = generateCombos(ingredients, 5);
+      const qGroups = { normal: [], good: [], very_good: [], special: [] };
+      for (const combo of combos) {
+        const { recipeName, quality, qualityTotal } = evaluateCombo(combo);
+        if (recipeName === recipe.name) {
+          qGroups[quality].push({ combo, qualityTotal });
+        }
+      }
+
+      const totalCount = Object.values(qGroups).reduce((s, a) => s + a.length, 0);
+
+      // ---- 前後ナビ ----
+      const sortedNos = groups.map(g => g.recipe_no);
+      const curIdx    = sortedNos.indexOf(recipeNo);
+      const prevNo    = sortedNos[(curIdx - 1 + sortedNos.length) % sortedNos.length];
+      const nextNo    = sortedNos[(curIdx + 1) % sortedNos.length];
+
+      // ---- ヒーロー部分 ----
+      const heroImg = recipe.image_path
+        ? `<img src="/images/recipes/${escHtml(recipe.image_path)}" alt="${escHtml(recipe.name)}">`
+        : `<div class="recipe-hero-placeholder"></div>`;
+
+      // ---- 品質タブ ----
+      const qDefs = [
+        { key: 'normal',   label: 'ふつう',     cls: 'quality-normal' },
+        { key: 'good',     label: 'いい',       cls: 'quality-good' },
+        { key: 'very_good',label: 'すごくいい', cls: 'quality-very_good' },
+        { key: 'special',  label: 'スペシャル', cls: 'quality-special' },
+      ];
+
+      const defaultTab = qDefs.find(q => qGroups[q.key].length > 0)?.key || 'normal';
+
+      const tabsHtml = qDefs.map(q => `
+        <button class="qtab qtab-${q.key} ${q.key === defaultTab ? 'active' : ''}" data-q="${q.key}" onclick="switchTab('${q.key}')">
+          ${q.label}
+        </button>
+      `).join('');
+
+      // ---- 組み合わせセクション ----
+      const sectionsHtml = qDefs.map(q => {
+        const items = qGroups[q.key];
+        let inner = '';
+        if (items.length === 0) {
+          inner = '<p style="color:var(--text-secondary);font-size:0.9rem;padding:12px 0;">該当する組み合わせはありません。</p>';
+        } else {
+          const rows = items.map(({ combo }) => {
+            const icons = combo.map(ing => ingIconHtml(ing)).join('');
+            return `<div class="combo-row">${icons}</div>`;
+          }).join('');
+          inner = `<div class="combo-grid">${rows}</div>`;
+        }
+        return `<div class="combo-section ${q.key === defaultTab ? 'active' : ''}" data-q="${q.key}">${inner}</div>`;
+      }).join('');
+
+      // ---- 素材ヒント表示（アイコン付き） ----
+      const hintParts = (recipe.ingredient_hint || '').split('／');
+      const addCount = (h) => {
+        const t = h.trim();
+        if (t.includes('しんぴてき') && t.includes('たっぷり')) return t + '（1個以上）';
+        if (t.includes('たっぷり')) return t + '（4個以上）';
+        if (t.includes('多め')) return t + '（3個以上）';
+        if (t.includes('少々')) return t + '（1〜2個）';
+        return t;
+      };
+      const matchHint = (hint, ing) => {
+        if (!hint) return false;
+        const h = hint.trim();
+        if (h.includes('赤') && ing.color === 'red') return true;
+        if (h.includes('青') && ing.color === 'blue') return true;
+        if (h.includes('黄') && ing.color === 'yellow') return true;
+        if (h.includes('灰') && ing.color === 'gray') return true;
+        if (h.includes('やわらかい') && ing.softness === 'soft') return true;
+        if (h.includes('かたい') && ing.softness === 'hard') return true;
+        if (h.includes('ちいさい') && ing.size === 'small') return true;
+        if (h.includes('おおきい') && ing.size === 'big') return true;
+        if (h.includes('きのこ') && ing.category === 'mushroom') return true;
+        if (h.includes('ねっこ') && ing.category === 'plant') return true;
+        if (h.includes('あまい') && ing.category === 'sweet') return true;
+        if (h.includes('こうぶつ') && ing.category === 'mineral') return true;
+        if (h.includes('しんぴてき') && ing.category === 'special') return true;
+        return false;
+      };
+      const colorEmoji = { red:'🔴', blue:'🔵', yellow:'🟡', gray:'⚪', rainbow:'🌈' };
+      const hintIconHtml = (ing) => {
+        if (ing.image_path) {
+          return `<img src="/images/ingredients/${escHtml(ing.image_path)}" alt="${escHtml(ing.name)}" title="${escHtml(ing.name)}" style="width:36px;height:36px;object-fit:contain;border-radius:6px;background:var(--bg-primary);">`;
+        }
+        return `<span title="${escHtml(ing.name)}" style="width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;font-size:1.3rem;border-radius:6px;background:var(--bg-primary);">${colorEmoji[ing.color] || '⚪'}</span>`;
+      };
+      const uniqueIngs = ingredients.filter((v, i, a) => a.findIndex(x => x.id === v.id) === i);
+      let hintHtml;
+      if (hintParts.length >= 2) {
+        const g1 = uniqueIngs.filter(i => matchHint(hintParts[0], i));
+        const g2 = uniqueIngs.filter(i => matchHint(hintParts[1], i));
+        hintHtml = `<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span style="font-size:0.72rem;color:var(--text-secondary);white-space:nowrap;">${escHtml(addCount(hintParts[0]))}</span>
+            ${g1.map(hintIconHtml).join('')}
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span style="font-size:0.72rem;color:var(--text-secondary);white-space:nowrap;">${escHtml(addCount(hintParts[1]))}</span>
+            ${g2.map(hintIconHtml).join('')}
+          </div>
+        </div>`;
+      } else {
+        const gAll = uniqueIngs.filter(i => matchHint(recipe.ingredient_hint, i));
+        hintHtml = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="font-size:0.72rem;color:var(--text-secondary);white-space:nowrap;">${escHtml(addCount(recipe.ingredient_hint || ''))}</span>
+          ${gAll.map(hintIconHtml).join('')}
+        </div>`;
+      }
+
+      container.innerHTML = `
+        <div class="recipe-hero">
+          ${heroImg}
+          <div class="hero-info">
+            <h1>No.${recipe.recipe_no} ${escHtml(recipe.name)}</h1>
+            <div class="hero-meta">
+              ${hintHtml}
+              <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.88rem;">
+                <div>
+                  <span style="color:var(--accent);font-weight:600;">素材</span>
+                  <span style="color:var(--text-secondary);margin-left:6px;">${escHtml(recipe.ingredient_hint || '—')}</span>
+                </div>
+                <div>
+                  <span style="color:var(--accent);font-weight:600;">ポケモン</span>
+                  <span style="color:var(--text-secondary);margin-left:6px;">${escHtml(recipe.pokemon_hint || '—')}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="recipe-nav">
+            <button class="recipe-nav-btn" onclick="location.href='/recipe-detail.html?no=${prevNo}'" title="No.${prevNo}へ">▲</button>
+            <button class="recipe-nav-btn" onclick="location.href='/recipe-detail.html?no=${nextNo}'" title="No.${nextNo}へ">▼</button>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div style="margin-bottom:14px;">
+            <h2 style="margin:0;font-size:1rem;color:var(--text-primary);">素材の組み合わせ</h2>
+          </div>
+          <div class="quality-tabs">${tabsHtml}</div>
+          ${sectionsHtml}
+        </div>
+
+        <div class="section-card" id="recipe-pokemon-section">
+          <p class="section-title">出現ポケモン</p>
+          <div id="recipe-pokemon-container" style="color:var(--text-secondary);font-size:0.85rem;">読み込み中...</div>
+        </div>
+      `;
+
+      // ---- 出現ポケモン表示 ----
+      try {
+        const recipePokemon = await API.get('/api/recipes.php', { pokemon_by_recipe: '1', recipe_no: recipeNo });
+        const qualityMap = {
+          normal:  { key: 'quality_normal',  label: 'ふつう',     color: '#95a5a6' },
+          good:    { key: 'quality_good',    label: 'いい',       color: '#27ae60' },
+          great:   { key: 'quality_great',   label: 'すごくいい', color: '#2980b9' },
+          special: { key: 'quality_special', label: 'スペシャル', color: '#8e44ad' },
+        };
+        const TYPE_COLORS = {
+          'ノーマル':'#a8a878','ほのお':'#f08030','みず':'#6890f0','でんき':'#f8d030',
+          'くさ':'#78c850','こおり':'#98d8d8','かくとう':'#c03028','どく':'#a040a0',
+          'じめん':'#e0c068','ひこう':'#a890f0','エスパー':'#f85888','むし':'#a8b820',
+          'いわ':'#b8a038','ゴースト':'#705898','ドラゴン':'#7038f8','あく':'#705848',
+          'はがね':'#b8b8d0','フェアリー':'#f0a0c0',
+        };
+        function pokemonCardHtml(p) {
+          const no = String(p.pokedex_no).padStart(3, '0');
+          const types = [p.type1, p.type2].filter(Boolean).map(t => {
+            const bg = TYPE_COLORS[t] || '#888';
+            const tc = ['でんき','くさ'].includes(t) ? '#333' : '#fff';
+            return '<span class="type-badge" style="background:' + bg + ';color:' + tc + ';padding:1px 8px;font-size:0.65rem;">' + escHtml(t) + '</span>';
+          }).join(' ');
+          return '<a href="/pokemon-detail.html?no=' + p.pokedex_no + '" class="card pokemon-card-link" style="padding:8px 6px;text-align:center;text-decoration:none;">' +
+            '<img src="/images/pokemon/' + no + '.png" alt="' + escHtml(p.name) + '" style="width:48px;height:48px;object-fit:contain;">' +
+            '<div style="font-size:0.7rem;color:var(--text-secondary);">No.' + no + '</div>' +
+            '<div style="font-size:0.85rem;font-weight:700;">' + escHtml(p.name) + '</div>' +
+            '<div style="display:flex;gap:3px;justify-content:center;margin-top:2px;">' + types + '</div>' +
+          '</a>';
+        }
+
+        let pokemonHtml = '';
+        const qualityOrder = ['normal', 'good', 'great', 'special'];
+        for (const qKey of qualityOrder) {
+          const q = qualityMap[qKey];
+          const filtered = recipePokemon.filter(p => (p[q.key] || 0) >= 10);
+          if (filtered.length === 0) continue;
+          pokemonHtml += '<div style="margin-bottom:16px;">' +
+            '<div style="font-size:0.85rem;font-weight:700;color:' + q.color + ';margin-bottom:8px;">' + q.label + '（' + filtered.length + '匹）</div>' +
+            '<div class="pokemon-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;">' +
+            filtered.map(pokemonCardHtml).join('') +
+            '</div></div>';
+        }
+
+        if (!pokemonHtml) pokemonHtml = '<p style="color:var(--text-secondary);font-size:0.85rem;">データなし</p>';
+        document.getElementById('recipe-pokemon-container').innerHTML = pokemonHtml;
+      } catch (e2) {
+        document.getElementById('recipe-pokemon-container').innerHTML = '<p style="color:var(--text-secondary);">ポケモンデータの取得に失敗しました</p>';
+      }
+
+      // コメントセクション追加
+      const commentCard = document.createElement('div');
+      commentCard.className = 'section-card';
+      commentCard.style.marginTop = '16px';
+      commentCard.innerHTML = `
+        <p class="section-title">💬 コメント</p>
+        <div id="comments-list" style="margin-bottom:12px;">読み込み中...</div>
+        <div id="comment-form" style="display:none;">
+          <textarea id="comment-input" class="comment-input" placeholder="コメントを入力..." maxlength="1000"></textarea>
+          <button id="comment-submit-btn" class="comment-submit" onclick="Comments.post()">投稿する</button>
+        </div>
+        <div id="comment-login-note" style="display:none;font-size:0.85rem;color:var(--text-secondary);">
+          <a href="https://asobi.info/login.php" style="color:var(--accent);">ログイン</a>するとコメントできます
+        </div>`;
+      container.appendChild(commentCard);
+      Comments.init('recipe', recipeNo);
+
+    } catch (e) {
+      container.innerHTML = `<p style="color:red;">エラー: ${escHtml(e.message)}</p>`;
+    }
+  })();
+  </script>
+</body>
+</html>

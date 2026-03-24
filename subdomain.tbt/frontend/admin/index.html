@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理画面 - Tournament Battle</title>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+
+<!-- ログイン画面 -->
+<div id="login-screen" class="login-screen" style="display:none;">
+    <div class="login-box">
+        <h1>Tournament Battle</h1>
+        <p class="subtitle">管理画面ログイン</p>
+        <form id="login-form">
+            <div class="form-group">
+                <label>メールアドレス または 表示名</label>
+                <input type="text" id="login-email" required>
+            </div>
+            <div class="form-group">
+                <label>パスワード</label>
+                <input type="password" id="login-password" required autocomplete="current-password" style="ime-mode:disabled;" inputmode="latin">
+            </div>
+            <div id="login-error" style="color:#e74c3c; font-size:13px; margin-bottom:12px;"></div>
+            <button type="submit" class="btn btn-primary">ログイン</button>
+        </form>
+    </div>
+</div>
+
+<!-- 管理画面本体 -->
+<div id="admin-layout" class="admin-layout" style="display:none;">
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1>TBT Admin</h1>
+            <div class="subtitle">Tournament Battle 管理画面</div>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-item" data-section="players"><span class="nav-icon">👥</span>プレイヤー</div>
+            <div class="nav-item" data-section="characters"><span class="nav-icon">⚔️</span>キャラクター</div>
+            <div class="nav-item" data-section="items"><span class="nav-icon">🎒</span>アイテム</div>
+            <div class="nav-item" data-section="settings"><span class="nav-icon">⚙️</span>設定</div>
+            <div class="nav-item" data-section="npc-names"><span class="nav-icon">🤖</span>NPC名前</div>
+            <div class="nav-item" data-section="tournaments"><span class="nav-icon">🏆</span>トーナメント</div>
+            <div class="nav-item" data-section="logs"><span class="nav-icon">📋</span>ログ</div>
+        </nav>
+        <div class="sidebar-footer">
+            <button id="logout-btn" class="btn btn-ghost btn-sm" style="width:100%">ログアウト</button>
+        </div>
+    </aside>
+    <main class="main-content" id="content">
+        <div class="loading">読み込み中...</div>
+    </main>
+</div>
+
+<!-- JS: Sections first (they define global objects), then app -->
+<script src="js/admin-api.js"></script>
+<script src="js/sections/players.js"></script>
+<script src="js/sections/characters.js"></script>
+<script src="js/sections/items.js"></script>
+<script src="js/sections/settings.js"></script>
+<script src="js/sections/npc-names.js"></script>
+<script src="js/sections/tournaments.js"></script>
+<script src="js/sections/logs.js"></script>
+<script src="js/admin-app.js"></script>
+
+</body>
+</html>

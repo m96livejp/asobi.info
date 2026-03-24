@@ -1,49 +1,73 @@
 #!/bin/bash
-# あそび サイト デプロイスクリプト
-# Usage: bash deploy.sh
+# asobi.info デプロイスクリプト（Conoha VPS）
+# Usage: bash deploy.sh [pkq|dbd|info|shared|all|ファイルパス]
 
-SSH_KEY="G:/マイドライブ/サーバ情報/Key-m96-wpx.key"
-SSH_USER="m96"
-SSH_HOST="sv6112.wpx.ne.jp"
-SSH_PORT="10022"
-REMOTE_DIR="/home/m96/asobi.info/public_html"
-LOCAL_DIR="G:/マイドライブ/claude/asobi.info/public_html"
+KEY="G:/マイドライブ/サーバ情報/key-m96-conoha.pem"
+HOST="root@133.117.75.23"
+LOCAL_BASE="G:/マイドライブ/claude/asobi.info"
 
-echo "=== あそび サイト デプロイ ==="
-echo "ターゲット: ${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}"
+# ===== 旧パスチェック（ロールバック防止） =====
+check_old_paths() {
+    local dir=$1
+    local old=$(grep -rn '/home/m96' "$dir" 2>/dev/null | grep '\.php' | grep -v '.sqlite' | grep -v 'deploy.sh')
+    if [ -n "$old" ]; then
+        echo "❌ 旧パスが残っています！デプロイを中止します。"
+        echo "$old"
+        exit 1
+    fi
+    echo "✅ パスチェックOK: $dir"
+}
 
-# SCP でファイルをアップロード (SQLiteは除外 - サーバーのDBを保持)
-echo ""
-echo "--- ファイルをアップロード中... ---"
-# assets, css, js, images, admin, api(非data), htmlファイルを個別にアップロード
-scp -i "$SSH_KEY" -P $SSH_PORT -r "$LOCAL_DIR/assets" "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/"
-scp -i "$SSH_KEY" -P $SSH_PORT "$LOCAL_DIR/index.html" "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/"
-scp -i "$SSH_KEY" -P $SSH_PORT -r "$LOCAL_DIR/pkq" "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/"
-# DbD (dataディレクトリのSQLiteを除く)
-scp -i "$SSH_KEY" -P $SSH_PORT "$LOCAL_DIR/dbd"/*.html "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/dbd/"
-scp -i "$SSH_KEY" -P $SSH_PORT -r "$LOCAL_DIR/dbd/css" "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/dbd/"
-scp -i "$SSH_KEY" -P $SSH_PORT -r "$LOCAL_DIR/dbd/js" "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/dbd/"
-scp -i "$SSH_KEY" -P $SSH_PORT -r "$LOCAL_DIR/dbd/api" "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/dbd/"
-scp -i "$SSH_KEY" -P $SSH_PORT -r "$LOCAL_DIR/dbd/admin" "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/dbd/"
-scp -i "$SSH_KEY" -P $SSH_PORT -r "$LOCAL_DIR/dbd/images" "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/dbd/"
+deploy() {
+    local src=$1
+    local dst=$2
+    check_old_paths "$LOCAL_BASE/$src"
+    echo "=== $src → $dst ==="
+    scp -r -i "$KEY" "$LOCAL_BASE/$src/"* "$HOST:$dst/"
+    ssh -i "$KEY" "$HOST" "chown -R www-data:www-data $dst/"
+    echo "✅ $src デプロイ完了"
+}
 
-echo ""
-echo "--- .htaccess をアップロード中... ---"
-scp -i "$SSH_KEY" -P $SSH_PORT "$LOCAL_DIR/dbd/.htaccess" "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/dbd/.htaccess"
-scp -i "$SSH_KEY" -P $SSH_PORT "$LOCAL_DIR/pkq/.htaccess" "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/pkq/.htaccess"
+# 単一ファイルデプロイ
+deploy_file() {
+    local file=$1
+    local site=$2
+    local dst="/opt/asobi/$site/$(basename $file)"
+    check_old_paths "$file"
+    echo "=== $file → $dst ==="
+    scp -i "$KEY" "$file" "$HOST:$dst"
+    ssh -i "$KEY" "$HOST" "chown www-data:www-data $dst"
+    echo "✅ $(basename $file) デプロイ完了"
+}
 
-echo ""
-echo "--- パーミッション設定中... ---"
-ssh -i "$SSH_KEY" -p $SSH_PORT "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
-  chmod 755 /home/m96/asobi.info/public_html/dbd/data
-  chmod 644 /home/m96/asobi.info/public_html/dbd/data/dbd.sqlite 2>/dev/null
-  chmod 755 /home/m96/asobi.info/public_html/pkq/data
-  chmod 644 /home/m96/asobi.info/public_html/pkq/data/pokemon_quest.sqlite 2>/dev/null
-  echo "パーミッション設定完了"
-ENDSSH
+SITE=${1:-""}
+if [ -z "$SITE" ]; then
+    echo "使い方:"
+    echo "  bash deploy.sh pkq          # pkq全体をデプロイ"
+    echo "  bash deploy.sh dbd          # dbd全体をデプロイ"
+    echo "  bash deploy.sh info         # メインサイト全体をデプロイ"
+    echo "  bash deploy.sh shared       # 共通assets全体をデプロイ"
+    echo "  bash deploy.sh all          # 全サイトをデプロイ"
+    exit 1
+fi
+
+case "$SITE" in
+    pkq)    deploy "pkq" "/opt/asobi/pkq" ;;
+    dbd)    deploy "dbd" "/opt/asobi/dbd" ;;
+    info)   deploy "info" "/opt/asobi/info" ;;
+    shared) deploy "shared" "/opt/asobi/shared" ;;
+    all)
+        deploy "shared" "/opt/asobi/shared"
+        deploy "info" "/opt/asobi/info"
+        deploy "pkq" "/opt/asobi/pkq"
+        deploy "dbd" "/opt/asobi/dbd"
+        ;;
+    *)  echo "不明なサイト: $SITE" && exit 1 ;;
+esac
 
 echo ""
 echo "=== デプロイ完了 ==="
-echo "トップページ: https://asobi.info"
-echo "DbD: https://dbd.asobi.info"
-echo "ポケクエ: https://pkq.asobi.info"
+echo "  https://asobi.info"
+echo "  https://pkq.asobi.info"
+echo "  https://dbd.asobi.info"
+echo "  https://tbt.asobi.info"

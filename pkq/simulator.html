@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>料理シミュレーター - ポケモンクエスト情報サイト</title>
+  <meta name="description" content="ポケモンクエストの料理シミュレーター。素材を5つ選んでどの料理ができるか確認できます。">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="site-logo">ポケクエ<span>.asobi.info</span></a>
+      <button class="menu-toggle">&#9776;</button>
+      <nav class="site-nav">
+        <ul>
+          <li><a href="/pokemon-list.html">全ポケモン一覧</a></li>
+          <li><a href="/moves.html">全わざ一覧</a></li>
+          <li><a href="/recipes.html">全料理一覧</a></li>
+          <li><a href="/simulator.html" class="active">料理シミュレーター</a></li>
+          <li><a href="/iv-checker.html">個体値チェッカー</a></li>
+          <li><a href="/iv-report.php">料理結果投稿</a></li>
+          <li><a href="/iv-report-list.php">料理結果一覧</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="/">ポケクエ</a><span>料理シミュレーター</span></div>
+      <h1>料理シミュレーター</h1>
+      <p>素材を5つ選んでどの料理ができるか確認しよう</p>
+    </div>
+
+    <div class="simulator">
+
+      <!-- 鍋の種類セレクター -->
+      <div class="pot-selector">
+        <button class="pot-type-btn active" data-pot="鉄" onclick="PQApp.selectPot('鉄', this)">鉄の鍋</button>
+        <button class="pot-type-btn" data-pot="銅" onclick="PQApp.selectPot('銅', this)">銅の鍋</button>
+        <button class="pot-type-btn" data-pot="銀" onclick="PQApp.selectPot('銀', this)">銀の鍋</button>
+        <button class="pot-type-btn" data-pot="金" onclick="PQApp.selectPot('金', this)">金の鍋</button>
+      </div>
+
+      <div class="sim-layout">
+
+        <!-- 鍋エリア -->
+        <div class="pot-area">
+          <div class="pot-wrapper pot-iron">
+          <div class="pot-lid-knob"></div>
+          <div class="pot-lid">
+            <div class="pot-lid-info">
+              <span class="pot-lid-info-label">必要素材個数</span>
+              <span class="pot-lid-info-num" id="pot-lid-num">3</span>
+            </div>
+          </div>
+          <div class="pot-container">
+            <div class="pot-handle pot-handle-left"></div>
+            <div class="pot-handle pot-handle-right"></div>
+            <div class="pot-inner">
+              <div class="pot-row">
+                <div class="pot-slot" id="pot-slot-0"></div>
+                <div class="pot-slot" id="pot-slot-1"></div>
+              </div>
+              <div class="pot-row">
+                <div class="pot-slot" id="pot-slot-2"></div>
+                <div class="pot-slot" id="pot-slot-3"></div>
+                <div class="pot-slot" id="pot-slot-4"></div>
+              </div>
+            </div>
+          </div>
+          </div><!-- /.pot-wrapper -->
+        </div>
+
+        <!-- 素材ピッカー -->
+        <div class="picker-area">
+          <div class="ingredient-picker" id="ingredient-picker">
+            <div class="loading">素材データを読み込み中</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="result-box" id="result-box" style="display:none;"></div>
+
+
+    </div>
+  <!-- Amazon アフィリエイト スライダー -->
+  <div class="container">
+    <div class="amazon-slider" id="amz-slider">
+      <div class="amazon-slider-track" id="amz-track">
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=switch2+%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🎮</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">Nintendo Switch 2 × ポケモン</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3%E3%82%AB%E3%83%BC%E3%83%89%E3%82%B2%E3%83%BC%E3%83%A0&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🃏</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">ポケモンカードゲーム</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=Nintendo+Switch+2&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🕹️</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">Nintendo Switch 2 本体</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3+%E3%82%B0%E3%83%83%E3%82%BA&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🧸</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">ポケモングッズ</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+      </div>
+      <div class="amazon-slider-dots" id="amz-dots">
+        <span class="active" onclick="amzGoTo(0)"></span>
+        <span onclick="amzGoTo(1)"></span>
+        <span onclick="amzGoTo(2)"></span>
+        <span onclick="amzGoTo(3)"></span>
+      </div>
+    </div>
+  </div>
+  <script>
+  (function(){
+    var idx=0, total=4, timer;
+    function amzGoTo(n){
+      idx=n;
+      document.getElementById("amz-track").style.transform="translateX(-"+idx*100+"%)";
+      document.querySelectorAll("#amz-dots span").forEach(function(d,i){d.classList.toggle("active",i===idx);});
+    }
+    window.amzGoTo=amzGoTo;
+    function amzNext(){ amzGoTo((idx+1)%total); }
+    timer=setInterval(amzNext,10000);
+    document.getElementById("amz-slider").addEventListener("mouseenter",function(){clearInterval(timer);});
+    document.getElementById("amz-slider").addEventListener("mouseleave",function(){timer=setInterval(amzNext,10000);});
+  })();
+  </script>  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 あそび - ポケモンクエスト情報サイト</p>
+    </div>
+  </footer>
+
+  <script src="https://asobi.info/assets/js/common.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      PQApp.initSimulator();
+    });
+  </script>
+</body>
+</html>

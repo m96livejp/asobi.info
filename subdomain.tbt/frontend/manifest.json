@@ -1,0 +1,22 @@
+{
+  "name": "Tournament Battle",
+  "short_name": "TBattle",
+  "description": "トーナメント勝ち抜きオートバトルゲーム",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#e8f5e9",
+  "theme_color": "#e8f5e9",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

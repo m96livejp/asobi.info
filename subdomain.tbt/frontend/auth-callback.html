@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>認証処理中... - Tournament Battle</title>
+    <style>
+        body {
+            margin: 0;
+            background: #e8f5e9;
+            color: #2e3d2f;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .container {
+            text-align: center;
+            padding: 24px;
+            max-width: 360px;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(0,0,0,0.1);
+            border-top-color: #f9a8d4;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error {
+            color: #e05080;
+            margin-bottom: 16px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #f9a8d4;
+            color: #2a1040;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .btn-secondary {
+            background: #c8e6c9;
+            color: #2e3d2f;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        .btn + .btn {
+            margin-top: 10px;
+        }
+        .info-box {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        .info-label {
+            font-size: 12px;
+            color: #6b8a6e;
+            margin-bottom: 4px;
+        }
+        .info-value {
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="content">
+        <div class="spinner"></div>
+        <p>認証処理中...</p>
+    </div>
+    <script>
+        (function() {
+            const params = new URLSearchParams(location.search);
+            const token = params.get('token');
+            const userId = params.get('user_id');
+            const error = params.get('error');
+            const confirm = params.get('confirm');
+
+            const content = document.getElementById('content');
+
+            if (error) {
+                content.innerHTML = `
+                    <div class="error">${escapeHtml(error)}</div>
+                    <a class="btn" href="/">トップに戻る</a>
+                `;
+                return;
+            }
+
+            if (confirm === '1') {
+                // 未連携アカウント → 確認画面
+                const provider = params.get('provider') || '';
+                const name = params.get('name') || '';
+                const confirmToken = params.get('confirm_token') || '';
+                const providerLabel = {google: 'Google', line: 'LINE', twitter: 'X (Twitter)'}[provider] || provider;
+
+                content.innerHTML = `
+                    <div style="font-size:18px;font-weight:700;margin-bottom:16px;">アカウントが見つかりません</div>
+                    <p style="font-size:13px;color:#6b8a6e;margin-bottom:16px;">
+                        この${escapeHtml(providerLabel)}アカウントに連携されたデータはありません。
+                    </p>
+                    <div class="info-box">
+                        <div class="info-label">プロバイダー</div>
+                        <div class="info-value">${escapeHtml(providerLabel)}</div>
+                        ${name ? `<div class="info-label" style="margin-top:8px;">表示名</div><div class="info-value">${escapeHtml(name)}</div>` : ''}
+                    </div>
+                    <button class="btn" id="create-btn">新規アカウントを作成する</button>
+                    <a class="btn btn-secondary" href="/">トップに戻る</a>
+                `;
+
+                document.getElementById('create-btn').addEventListener('click', async function() {
+                    this.disabled = true;
+                    this.textContent = '作成中...';
+                    try {
+                        const BASE_URL = location.hostname === 'localhost' ? 'http://localhost:8001/api' : '/api';
+                        const res = await fetch(BASE_URL + '/auth/oauth/confirm', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({confirm_token: confirmToken}),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) {
+                            throw new Error(data.detail || 'エラーが発生しました');
+                        }
+                        localStorage.setItem('access_token', JSON.stringify(data.access_token));
+                        localStorage.setItem('user_id', JSON.stringify(data.user_id));
+                        history.replaceState(null, '', '/auth-callback.html');
+                        location.href = '/';
+                    } catch (e) {
+                        content.innerHTML = `
+                            <div class="error">${escapeHtml(e.message)}</div>
+                            <a class="btn" href="/">トップに戻る</a>
+                        `;
+                    }
+                });
+
+                // URLからトークンを削除
+                history.replaceState(null, '', '/auth-callback.html');
+                return;
+            }
+
+            if (token && userId) {
+                // ログイン成功
+                localStorage.setItem('access_token', JSON.stringify(token));
+                localStorage.setItem('user_id', JSON.stringify(userId));
+                history.replaceState(null, '', '/auth-callback.html');
+                location.href = '/';
+            } else {
+                content.innerHTML = `
+                    <div class="error">認証情報が見つかりません</div>
+                    <a class="btn" href="/">トップに戻る</a>
+                `;
+            }
+
+            function escapeHtml(str) {
+                const div = document.createElement('div');
+                div.textContent = str;
+                return div.innerHTML;
+            }
+        })();
+    </script>
+</body>
+</html>

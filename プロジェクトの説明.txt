@@ -1,0 +1,234 @@
+=====================================
+asobi.info プロジェクト説明書
+=====================================
+
+■ 概要
+asobi.info は情報サイトとオリジナルゲームで構成されるWebサイトです。
+情報コンテンツで集客し、オリジナルコンテンツでユーザーを増やして収益化を目指します。
+
+=====================================
+■ サイト一覧
+=====================================
+
+サイト名              URL                        サーバー      ローカルパス  リモートパス
+メインサイト          https://asobi.info         Conoha VPS    info/         /opt/asobi/info/
+DbD情報サイト         https://dbd.asobi.info     Conoha VPS    dbd/          /opt/asobi/dbd/
+ポケモンクエスト      https://pkq.asobi.info     Conoha VPS    pkq/          /opt/asobi/pkq/
+Tournament Battle     https://tbt.asobi.info     Conoha VPS    tbt/          /opt/asobi/tbt/
+共通ファイル          —                          Conoha VPS    shared/       /opt/asobi/shared/
+
+  ※ローカルパスはすべて G:\マイドライブ\claude\asobi.info\ 以下の相対パス
+
+種類：
+  情報サイト（市販ゲーム攻略）：dbd, pkq
+  オリジナルゲーム：tbt
+
+=====================================
+■ サーバー情報
+=====================================
+
+【Conoha VPS（全サイト共通）】
+  ホスト：133.117.75.23
+  SSHユーザー：root
+  SSH秘密鍵：G:\マイドライブ\サーバ情報\key-m96-conoha.pem
+  共通DB：/opt/asobi/data/users.sqlite
+
+  接続コマンド：
+    ssh -i "G:/マイドライブ/サーバ情報/key-m96-conoha.pem" root@133.117.75.23
+
+  デプロイ（deploy.shを使用）：
+    bash deploy.sh pkq        # pkq全体
+    bash deploy.sh dbd        # dbd全体
+    bash deploy.sh info       # メインサイト全体
+    bash deploy.sh shared     # 共通assets全体
+    bash deploy.sh all        # 全サイト
+
+  単一ファイルデプロイ：
+    scp -i "G:/マイドライブ/サーバ情報/key-m96-conoha.pem" \
+      "ローカルファイル" root@133.117.75.23:/opt/asobi/対象サイト/パス
+
+=====================================
+■ メール設定
+=====================================
+
+  SMTP：133.117.75.23（Conoha VPS）
+  認証アカウント：noreply@asobi.info
+  認証パスワード：Love2233asobi
+  問い合わせ受信：form@asobi.info
+
+=====================================
+■ 収益化
+=====================================
+
+  Amazonアソシエイト
+    StoreID（トラッキングタグ）：asobi-jp-22
+    リンク形式：https://www.amazon.co.jp/s?k=検索キーワード&tag=asobi-jp-22
+    現状：pkq.asobi.infoにスライダーバナー設置済み
+
+  Google AdSense
+    現状：審査申請中
+
+=====================================
+■ OAuth設定
+=====================================
+
+各プロバイダーのコンソールに登録するリダイレクトURI：
+
+  ◆Google Cloud Console
+    リダイレクトURI：
+      https://asobi.info/oauth/callback.php?provider=google
+      https://tbt.asobi.info/api/auth/callback/google
+
+  ◆LINE Developers
+    リダイレクトURI：
+      https://asobi.info/oauth/callback.php?provider=line
+      https://tbt.asobi.info/api/auth/callback/line
+
+  ◆Twitter Developer Portal
+    リダイレクトURI：
+      https://asobi.info/oauth/callback.php?provider=twitter
+    ※既存のtbt用アプリに「追加のリダイレクトURI」として登録すれば共用可能
+
+=====================================
+■ 共通認証システム
+=====================================
+
+  全サブドメイン共有のPHP+SQLiteセッション認証
+  DB：/opt/asobi/data/users.sqlite
+
+  主要ファイル：
+    shared/assets/php/auth.php          認証モジュール
+    shared/assets/php/users_db.php      DB接続
+    shared/assets/php/oauth_config.php  OAuth設定
+    shared/assets/php/me.php            ログイン状態JSON API（CORS対応）
+    shared/assets/php/log-access.php    アクセスログ記録API（JS→AJAX）
+    info/contact.php                    問い合わせフォーム
+
+  使い方（各サブドメインから）：
+    require_once '/opt/asobi/shared/assets/php/auth.php';
+    asobiRequireLogin();   // 未ログインでリダイレクト
+    asobiRequireAdmin();   // 管理者以外に403
+
+  セッションロック対策：
+    me.php・log-access.phpはセッション読み取り直後にsession_write_close()を呼び
+    PHPセッションファイルのロックを早期解放する（並列リクエストの遅延防止）
+
+=====================================
+■ ローカルフォルダ構成
+=====================================
+
+  G:\マイドライブ\claude\asobi.info\
+  ├── CLAUDE.md              Claude Code用引継ぎドキュメント
+  ├── deploy.sh              デプロイスクリプト
+  ├── info\                  メインサイト（asobi.info）
+  ├── dbd\                   DbD情報サイト
+  ├── pkq\                   ポケモンクエスト
+  ├── tbt\                   Tournament Battle
+  ├── shared\                全サイト共通ファイル
+  │   └── assets\
+  │       ├── php\           auth.php / me.php / users_db.php 等
+  │       ├── css\           common.css / font.php
+  │       ├── js\            common.js
+  │       ├── images\
+  │       └── fonts\         Migu フォント（TTF・WOFF2）
+  ├── old\                   旧ファイル（参照用）
+  └── public_html\           旧WPX構成（移行前・参照用）
+
+  G:\マイドライブ\claude\素材\
+  ├── 素材_asobi.info\
+  ├── 素材_dbd_Captures\
+  ├── 素材_dbd_Captures2\
+  └── 素材_ポケモンクエスト\
+
+=====================================
+■ Webフォント
+=====================================
+
+  使用フォント：Migu フォント（IPA Font License v1.0）
+    Migu 1P  プロポーショナル
+    Migu 1C  英字改善・全角かなもプロポーショナル（デフォルト）
+    Migu 1M  等幅（数字の桁ずれなし）
+    Migu 2M  等幅・濁点控えめ
+
+  ライセンス表記：
+    © 2002-2019 M+ FONTS PROJECT / © 2003-2011 IPA
+    https://asobi.info/licenses.html（ライセンスページ）
+
+  適用ルール（重要・毎回守ること）：
+    - body にはシステムフォントを使用
+    - main にのみカスタムフォントを適用（タイトル含む）
+    - font-display: swap 必須
+    - 形式：WOFF2（優先）＋ TTF（フォールバック）
+    - 管理画面（/admin/font.php）でフォント種類を切り替え可能
+
+  良い例：
+    body { font-family: system-ui, -apple-system, sans-serif; }
+    main { font-family: 'Migu 1C', system-ui, sans-serif; }
+
+  悪い例（やってはいけない）：
+    body { font-family: 'Migu 1C', sans-serif; }
+
+=====================================
+■ 各サイト詳細
+=====================================
+
+【メインサイト（asobi.info）】
+  管理画面：https://asobi.info/admin/（PV/UV統計・ログ・禁止ワード管理・フォント切り替え）
+
+  主要ページ：
+    /                    トップ（ゲームカード一覧）
+    /contact.php         問い合わせフォーム（form@asobi.info宛・スパム防止付き）
+    /licenses.html       ライセンス・著作権表示ページ
+    /admin/              管理ダッシュボード
+    /admin/users.php     ユーザー管理
+    /admin/banned-words.php  禁止ワード管理
+    /admin/font.php      フォント切り替え
+
+  禁止ワードシステム：
+    users.sqlite の banned_words テーブルで管理
+    asobiCheckBanned($text, 'username'|'content') で判定
+    テキスト正規化：カタカナ→ひらがな・全角→半角・大文字→小文字
+
+【DbD情報サイト（dbd.asobi.info）】
+  Dead by Daylight の攻略情報
+  DB：/opt/asobi/dbd/data/dbd.sqlite
+  管理画面：https://dbd.asobi.info/admin/
+
+  未対応：
+    各 image_path カラムがほぼ未設定（killers, survivors, perks, addons）
+    survivor-addons.html 未作成
+
+【ポケモンクエスト（pkq.asobi.info）】
+  DB：/opt/asobi/pkq/data/pokemon_quest.sqlite
+  管理画面：https://pkq.asobi.info/admin/
+
+  主要ページ：
+    全ポケモン一覧、全わざ一覧、全料理一覧、料理シミュレーター
+    個体値チェッカー（/iv-checker.html）
+    料理結果投稿（/iv-report.php）
+    料理結果一覧（/iv-report-list.php）
+
+  個体値計算式：
+    stat = 種族値 + level + 鍋の値(固定) + 個体値
+    鍋の値/個体値上限：鉄(0/10) 銅(50/50) 銀(150/100) 金(300/100)
+
+  Amazonアフィリエイトバナー：
+    各ページのコンテンツ下に自動スライダー設置（tag=asobi-jp-22）
+
+【Tournament Battle（tbt.asobi.info）】
+  バックエンド：FastAPI (Python) → /opt/asobi/tbt/app/
+  フロントエンド：静的HTML/JS → /opt/asobi/tbt/frontend/
+  DB：PostgreSQL（SQLAlchemy）
+  認証：JWT + デバイスID（ゲスト）+ OAuth
+
+=====================================
+■ 運用ルール
+=====================================
+
+  - デプロイはdeploy.shを使用（旧パス /home/m96 が残っていると自動中止）
+  - 動作確認後にGitコミット＆プッシュを徹底
+  - Webフォント：font-display:swap必須、mainのみ適用、WOFF2+TTF両用意
+  - プレビューツール：最小限の使用（ウィンドウが増えるため）
+  - 新規ページ追加時はlicenses.htmlへの著作権・ライセンス追記を忘れずに
+  - PHPでセッションを読み取るだけのAPIはsession_write_close()で早期解放すること
+  - require_once のパスは /opt/asobi/shared/assets/php/ を使用すること

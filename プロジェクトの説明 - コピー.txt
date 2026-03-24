@@ -1,0 +1,178 @@
+=====================================
+asobi.info プロジェクト説明書
+=====================================
+
+■ 概要
+asobi.info は情報サイトとオリジナルゲームで構成されるWebサイトです。
+情報コンテンツで集客し、オリジナルコンテンツでユーザーを増やして収益化を目指します。
+
+=====================================
+■ サイト一覧
+=====================================
+
+サイト名              URL                          サーバー        ローカルパス                    リモートパス
+メインサイト          https://asobi.info           WPX             public_html/                    /home/m96/asobi.info/public_html/
+DbD情報サイト         https://dbd.asobi.info       WPX             public_html/dbd/                /home/m96/asobi.info/public_html/dbd/
+ポケモンクエスト      https://pkq.asobi.info       WPX             public_html/pkq/                /home/m96/asobi.info/public_html/pkq/
+Tournament Battle     https://tbt.asobi.info       Conoha VPS      subdomain.tbt/                /opt/tournament-api/
+
+種類：
+  情報サイト（市販ゲーム攻略）：dbd, pkq
+  オリジナルゲーム：tbt
+
+=====================================
+■ サーバー情報
+=====================================
+
+【WPX（シンレンタルサーバー・共用）】
+  用途：静的コンテンツ（メイン・dbd・pkq）
+  ホスト：sv6112.wpx.ne.jp
+  SSHポート：10022
+  SSHユーザー：m96
+  SSH秘密鍵：G:\マイドライブ\サーバ情報\Key-m96-wpx.key
+  Webルート：/home/m96/asobi.info/public_html/
+  共通DB：/home/m96/asobi.info/data/users.sqlite
+
+  接続コマンド：
+    ssh -i "G:/マイドライブ/サーバ情報/Key-m96-wpx.key" -p 10022 m96@sv6112.wpx.ne.jp
+
+  デプロイ（単一ファイル）：
+    scp -i "G:/マイドライブ/サーバ情報/Key-m96-wpx.key" -P 10022 -o StrictHostKeyChecking=no \
+      "ローカルファイル" m96@sv6112.wpx.ne.jp:/home/m96/asobi.info/public_html/対象パス/
+
+【Conoha VPS】
+  用途：動的API・ゲームサーバ（tbt）
+  ホスト：133.117.75.23
+  SSHユーザー：root
+  SSH秘密鍵：G:\マイドライブ\サーバ情報\key-m96-conoha.pem
+  APIルート：/opt/tournament-api/app/
+  フロントエンド：/opt/tournament-api/frontend/
+
+  接続コマンド：
+    ssh -i "G:/マイドライブ/サーバ情報/key-m96-conoha.pem" root@133.117.75.23
+
+  バックエンドデプロイ＋再起動：
+    scp -i "G:/マイドライブ/サーバ情報/key-m96-conoha.pem" \
+      "ローカルファイル" root@133.117.75.23:/opt/tournament-api/app/api/ファイル名
+    ssh -i "G:/マイドライブ/サーバ情報/key-m96-conoha.pem" root@133.117.75.23 \
+      "systemctl restart tournament-api.service"
+
+  フロントエンドデプロイ（再起動不要）：
+    scp -i "G:/マイドライブ/サーバ情報/key-m96-conoha.pem" \
+      "ローカルファイル" root@133.117.75.23:/opt/tournament-api/frontend/パス
+
+=====================================
+■ メール設定
+=====================================
+
+  SMTP：sv6112.wpx.ne.jp
+  認証アカウント：noreply@asobi.info
+  認証パスワード：Love2233asobi
+
+=====================================
+■ OAuth設定
+=====================================
+
+各プロバイダーのコンソールに登録するリダイレクトURI：
+
+  ◆Google Cloud Console
+    https://console.cloud.google.com → 認証情報 → OAuth 2.0クライアント
+    名前：asobi.info
+    リダイレクトURI：
+      https://asobi.info/oauth/callback.php?provider=google
+      https://tbt.asobi.info/api/auth/callback/google
+
+  ◆LINE Developers
+    https://developers.line.biz/ja/ → チャネル → LINE Login → Callback URL
+    リダイレクトURI：
+      https://asobi.info/oauth/callback.php?provider=line
+      https://tbt.asobi.info/api/auth/callback/line
+
+  ◆Twitter Developer Portal
+    https://developer.twitter.com/ → アプリ → User authentication settings
+    OAuth 2.0 キー設定を編集する
+    リダイレクトURI：
+      https://asobi.info/oauth/callback.php?provider=twitter
+    ※既存のtbt用アプリに「追加のリダイレクトURI」として登録すれば、クライアントIDは共用可能
+
+=====================================
+■ 共通認証システム
+=====================================
+
+  全サブドメイン共有のPHP+SQLiteセッション認証
+  DB：/home/m96/asobi.info/data/users.sqlite
+
+  主要ファイル：
+    public_html/assets/php/auth.php      認証モジュール
+    public_html/assets/php/users_db.php  DB接続
+    public_html/assets/php/oauth_config.php  OAuth設定
+    public_html/login.php                ログインページ
+    public_html/register.php             新規登録
+    public_html/profile.php              プロフィール
+
+  使い方（各サブドメインから）：
+    require_once '/home/m96/asobi.info/public_html/assets/php/auth.php';
+    asobiRequireLogin();   // 未ログインでリダイレクト
+    asobiRequireAdmin();   // 管理者以外に403
+    asobiLogAccess();      // アクセスログ記録
+
+=====================================
+■ ローカルフォルダ構成
+=====================================
+
+  G:\マイドライブ\claude\
+  ├── asobi.info\            プロジェクト本体
+  │   ├── CLAUDE.md          Claude Code用引継ぎドキュメント
+  │   ├── public_html\       WPXデプロイ対象（メイン・dbd・pkq）
+  │   └── トーナメントAPI\    Conoha VPSデプロイ対象（tbt）
+  ├── 素材\                  ユーザーからClaudeへの入力素材
+  │   ├── 素材_asobi.info\
+  │   ├── 素材_dbd_Captures\
+  │   ├── 素材_dbd_Captures2\
+  │   └── 素材_ポケモンクエスト\
+  ├── work\                  Claude処理中の一時ファイル
+  └── fonts\                 Webフォント素材
+
+=====================================
+■ 各サイト詳細
+=====================================
+
+【メインサイト（asobi.info）】
+  トップページ、共通認証、管理ダッシュボード
+  管理画面：https://asobi.info/admin/（PV/UV統計・ログ）
+
+【DbD情報サイト（dbd.asobi.info）】
+  Dead by Daylight の攻略情報
+  キラー・サバイバーのパーク、アドオン、オファリング、アイテム、能力・速度
+  DB：/home/m96/asobi.info/public_html/dbd/data/dbd.sqlite
+  管理画面：https://dbd.asobi.info/admin/
+
+【ポケモンクエスト（pkq.asobi.info）】
+  ポケモンクエストのレシピ・素材・ポケモン検索サイト
+  DB：/home/m96/asobi.info/public_html/pkq/data/pokemon_quest.sqlite
+  管理画面：https://pkq.asobi.info/admin/
+  注意：サブドメインのWebルートは /pkq/
+
+  主要ページ：
+    全ポケモン一覧、全わざ一覧、全料理一覧、料理シミュレーター
+    個体値チェッカー、料理結果投稿、料理結果一覧
+
+  個体値計算式：
+    stat = 種族値 + level + 鍋の値(固定) + 個体値
+    鍋の値/個体値上限：鉄(0/10) 銅(50/50) 銀(150/100) 金(300/100)
+
+【Tournament Battle（tbt.asobi.info）】
+  トーナメント対戦ゲーム
+  バックエンド：FastAPI (Python)
+  フロントエンド：静的HTML/JS
+  DB：PostgreSQL（SQLAlchemy）
+  認証：JWT + デバイスID（ゲスト）+ OAuth
+
+=====================================
+■ 運用ルール
+=====================================
+
+  - デプロイ前にローカルとサーバーの同期を確認（ロールバック防止）
+  - 動作確認後にGitコミット＆プッシュを徹底
+  - Webフォント：font-display:swap必須、WOFF2推奨、h1はシステムフォント
+  - プレビューツール：最小限の使用（ウィンドウが増えるため）

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>全ポケモン一覧 - ポケモンクエスト情報サイト</title>
+  <meta name="description" content="ポケモンクエストの全151匹のポケモン一覧。タイプや名前で検索できます。">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="site-logo">ポケクエ<span>.asobi.info</span></a>
+      <button class="menu-toggle">&#9776;</button>
+      <nav class="site-nav">
+        <ul>
+          <li><a href="/pokemon-list.html" class="active">全ポケモン一覧</a></li>
+          <li><a href="/moves.html">全わざ一覧</a></li>
+          <li><a href="/recipes.html">全料理一覧</a></li>
+          <li><a href="/simulator.html">料理シミュレーター</a></li>
+          <li><a href="/iv-checker.html">個体値チェッカー</a></li>
+          <li><a href="/iv-report.php">料理結果投稿</a></li>
+          <li><a href="/iv-report-list.php">料理結果一覧</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="/">ポケクエ</a><span>全ポケモン一覧</span></div>
+      <h1>全ポケモン一覧</h1>
+      <p>全151匹のポケモンデータ</p>
+    </div>
+
+    <div class="search-box">
+      <input type="text" id="search-input" placeholder="ポケモン名、タイプ、図鑑番号で検索...">
+    </div>
+
+    <div class="type-filter-btns" id="type-filters">
+      <button class="type-filter-btn active" data-type="" style="background:#555;">すべて</button>
+      <button class="type-filter-btn" data-type="ノーマル" style="background:#9e9e9e;">ノーマル</button>
+      <button class="type-filter-btn" data-type="ほのお"   style="background:#e74c3c;">ほのお</button>
+      <button class="type-filter-btn" data-type="みず"     style="background:#2980b9;">みず</button>
+      <button class="type-filter-btn" data-type="くさ"     style="background:#27ae60;">くさ</button>
+      <button class="type-filter-btn" data-type="でんき"   style="background:#f1c40f;">でんき</button>
+      <button class="type-filter-btn" data-type="こおり"   style="background:#55d1e8;">こおり</button>
+      <button class="type-filter-btn" data-type="かくとう" style="background:#c03028;">かくとう</button>
+      <button class="type-filter-btn" data-type="どく"     style="background:#9c27b0;">どく</button>
+      <button class="type-filter-btn" data-type="じめん"   style="background:#e0c068;">じめん</button>
+      <button class="type-filter-btn" data-type="ひこう"   style="background:#90caf9;">ひこう</button>
+      <button class="type-filter-btn" data-type="エスパー" style="background:#e91e8c;">エスパー</button>
+      <button class="type-filter-btn" data-type="むし"     style="background:#8bc34a;">むし</button>
+      <button class="type-filter-btn" data-type="いわ"     style="background:#8d6e63;">いわ</button>
+      <button class="type-filter-btn" data-type="ゴースト" style="background:#705898;">ゴースト</button>
+      <button class="type-filter-btn" data-type="ドラゴン" style="background:#3949ab;">ドラゴン</button>
+      <button class="type-filter-btn" data-type="フェアリー" style="background:#f48fb1;">フェアリー</button>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+      <div id="pokedex-count-bar" class="pokedex-filter-btns" style="display:none;">
+        <button class="pokedex-filter-btn active" id="pokedex-btn-all" onclick="PQApp.setPokedexFilter(null)">
+          全ポケモン <span id="pokedex-all-count">151</span>件
+        </button>
+        <button class="pokedex-filter-btn" id="pokedex-btn-registered" onclick="PQApp.setPokedexFilter('registered')">
+          図鑑登録 <span id="pokedex-reg-count">0</span>件
+        </button>
+        <button class="pokedex-filter-btn" id="pokedex-btn-unregistered" onclick="PQApp.setPokedexFilter('unregistered')">
+          未登録 <span id="pokedex-unreg-count">0</span>件
+        </button>
+      </div>
+    </div>
+
+    <div id="pokemon-list" class="card-grid"></div>
+  <!-- Amazon アフィリエイト スライダー -->
+  <div class="container">
+    <div class="amazon-slider" id="amz-slider">
+      <div class="amazon-slider-track" id="amz-track">
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=switch2+%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🎮</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">Nintendo Switch 2 × ポケモン</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3%E3%82%AB%E3%83%BC%E3%83%89%E3%82%B2%E3%83%BC%E3%83%A0&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🃏</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">ポケモンカードゲーム</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=Nintendo+Switch+2&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🕹️</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">Nintendo Switch 2 本体</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+        <a class="amazon-slide" href="https://www.amazon.co.jp/s?k=%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3+%E3%82%B0%E3%83%83%E3%82%BA&tag=asobi-jp-22" target="_blank" rel="noopener sponsored">
+          <span class="amazon-pr">PR</span>
+          <span class="amazon-slide-icon">🧸</span>
+          <span class="amazon-slide-body"><div class="amazon-slide-title">ポケモングッズ</div><div class="amazon-slide-sub">Amazonで関連商品を見る</div></span>
+          <span class="amazon-slide-arrow">›</span>
+        </a>
+      </div>
+      <div class="amazon-slider-dots" id="amz-dots">
+        <span class="active" onclick="amzGoTo(0)"></span>
+        <span onclick="amzGoTo(1)"></span>
+        <span onclick="amzGoTo(2)"></span>
+        <span onclick="amzGoTo(3)"></span>
+      </div>
+    </div>
+  </div>
+  <script>
+  (function(){
+    var idx=0, total=4, timer;
+    function amzGoTo(n){
+      idx=n;
+      document.getElementById("amz-track").style.transform="translateX(-"+idx*100+"%)";
+      document.querySelectorAll("#amz-dots span").forEach(function(d,i){d.classList.toggle("active",i===idx);});
+    }
+    window.amzGoTo=amzGoTo;
+    function amzNext(){ amzGoTo((idx+1)%total); }
+    timer=setInterval(amzNext,10000);
+    document.getElementById("amz-slider").addEventListener("mouseenter",function(){clearInterval(timer);});
+    document.getElementById("amz-slider").addEventListener("mouseleave",function(){timer=setInterval(amzNext,10000);});
+  })();
+  </script>  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 あそび - ポケモンクエスト情報サイト</p>
+    </div>
+  </footer>
+
+  <script src="https://asobi.info/assets/js/common.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      await PQApp.checkAuth();
+      await PQApp.loadPokemon('pokemon-list');
+      if (PQApp.currentUser) {
+        await PQApp.loadPokedex();
+        // チェックボックス付きで再描画
+        PQApp.renderPokemon(PQApp.allPokemon, document.getElementById('pokemon-list'));
+      }
+
+      // 検索
+      document.getElementById('search-input').addEventListener('input', debounce((e) => {
+        PQApp.searchPokemon(e.target.value, document.getElementById('pokemon-list'));
+      }));
+
+      // タイプフィルター（2つまで複数選択）
+      let selectedTypes = [];
+      const listEl = document.getElementById('pokemon-list');
+      document.querySelectorAll('#type-filters .type-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const type = btn.dataset.type;
+          const allBtn = document.querySelector('#type-filters .type-filter-btn[data-type=""]');
+          if (type === '') {
+            selectedTypes = [];
+            document.querySelectorAll('#type-filters .type-filter-btn').forEach(b => b.classList.remove('active'));
+            allBtn.classList.add('active');
+          } else {
+            allBtn.classList.remove('active');
+            if (btn.classList.contains('active')) {
+              btn.classList.remove('active');
+              selectedTypes = selectedTypes.filter(t => t !== type);
+              if (selectedTypes.length === 0) allBtn.classList.add('active');
+            } else {
+              if (selectedTypes.length >= 2) {
+                const old = selectedTypes.shift();
+                const oldBtn = document.querySelector(`#type-filters .type-filter-btn[data-type="${old}"]`);
+                if (oldBtn) oldBtn.classList.remove('active');
+              }
+              btn.classList.add('active');
+              selectedTypes.push(type);
+            }
+          }
+          PQApp.filterByType(selectedTypes, listEl);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

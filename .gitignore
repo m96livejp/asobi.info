@@ -1,13 +1,14 @@
 # Secrets
-public_html/assets/php/oauth_config.php
-public_html/assets/php/tbt_config.php
+shared/assets/php/oauth_config.php
+shared/assets/php/tbt_config.php
+shared/assets/php/admin-token.php
 
 # Database files
 *.sqlite
 
 # Images (large binary files)
-public_html/dbd/images/
-public_html/assets/images/
+dbd/images/
+shared/assets/images/
 
 # Claude Code local settings
 .claude/settings.local.json

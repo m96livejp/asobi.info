@@ -1,0 +1,25 @@
+# フォントファイルの配信設定
+
+# CORS（サブドメインからのフォント読み込みを許可）
+<FilesMatch "\.(ttf|woff2)$">
+  Header set Access-Control-Allow-Origin "*"
+</FilesMatch>
+
+# gzip圧縮（TTF対象。WOFF2は内部圧縮済みのため除外）
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE font/ttf application/font-ttf application/octet-stream
+  <FilesMatch "\.woff2$">
+    SetEnv no-gzip 1
+  </FilesMatch>
+</IfModule>
+
+# ブラウザキャッシュ（1年）
+<IfModule mod_expires.c>
+  ExpiresActive On
+  <FilesMatch "\.(ttf|woff2)$">
+    ExpiresDefault "access plus 1 year"
+  </FilesMatch>
+</IfModule>
+<FilesMatch "\.(ttf|woff2)$">
+  Header append Cache-Control "public, immutable"
+</FilesMatch>

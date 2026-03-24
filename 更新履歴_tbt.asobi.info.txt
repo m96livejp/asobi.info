@@ -1,0 +1,10 @@
+=====================================
+更新履歴 - tbt.asobi.info（Tournament Battle）
+=====================================
+
+【2025年】
+- FastAPI + PostgreSQL バックエンド構築
+- JWT認証 + デバイスID（ゲスト）対応
+- OAuth連携（Google/LINE/Twitter PKCE）
+- トーナメント対戦ゲーム基本機能
+- フロントエンド（静的HTML/JS）構築

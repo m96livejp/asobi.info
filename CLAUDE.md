@@ -2,57 +2,41 @@
 
 ## サイト一覧
 
-| サイト | URL | サーバー | ローカルパス |
-|--------|-----|----------|-------------|
-| メインサイト | https://asobi.info | WPX | `public_html/` |
-| DbD情報サイト | https://dbd.asobi.info | WPX | `public_html/dbd/` |
-| ポケモンクエスト | https://pkq.asobi.info | WPX | `public_html/pkq/` |
-| Tournament Battle | https://tbt.asobi.info | Conoha VPS | `G:/マイドライブ/claude/トーナメントAPI/` |
+| サイト | URL | サーバー | ローカルパス | リモートパス |
+|--------|-----|----------|-------------|-------------|
+| メインサイト | https://asobi.info | Conoha VPS | `info/` | `/opt/asobi/info/` |
+| DbD情報サイト | https://dbd.asobi.info | Conoha VPS | `dbd/` | `/opt/asobi/dbd/` |
+| ポケモンクエスト | https://pkq.asobi.info | Conoha VPS | `pkq/` | `/opt/asobi/pkq/` |
+| Tournament Battle | https://tbt.asobi.info | Conoha VPS | `tbt/` | `/opt/asobi/tbt/` |
+| 共通ファイル | — | Conoha VPS | `shared/assets/` | `/opt/asobi/shared/assets/` |
 
 ---
 
 ## サーバー情報
 
-### WPX（メイン・dbd・pkq）
-
-| 項目 | 値 |
-|------|-----|
-| ホスト | sv6112.wpx.ne.jp |
-| SSHポート | 10022 |
-| SSHユーザー | m96 |
-| SSH秘密鍵 | `G:/マイドライブ/サーバ情報/Key-m96-wpx.key` |
-| Webルート | `/home/m96/asobi.info/public_html/` |
-| 共通DB | `/home/m96/asobi.info/data/users.sqlite` |
-
-```bash
-# デプロイ（単一ファイル）
-scp -i "G:/マイドライブ/サーバ情報/Key-m96-wpx.key" -P 10022 -o StrictHostKeyChecking=no \
-  "ローカルファイル" m96@sv6112.wpx.ne.jp:/home/m96/asobi.info/public_html/対象パス/
-
-# SSH接続
-ssh -i "G:/マイドライブ/サーバ情報/Key-m96-wpx.key" -p 10022 m96@sv6112.wpx.ne.jp
-```
-
-### Conoha VPS（tbt.asobi.info）
+### Conoha VPS（全サイト共通）
 
 | 項目 | 値 |
 |------|-----|
 | ホスト | 133.117.75.23 |
 | SSHユーザー | root |
 | SSH秘密鍵 | `G:/マイドライブ/サーバ情報/key-m96-conoha.pem` |
-| APIルート | `/opt/tournament-api/app/` |
-| フロントエンド | `/opt/tournament-api/frontend/` |
+| 共通DB | `/opt/asobi/data/users.sqlite` |
 
 ```bash
-# バックエンドデプロイ＋再起動
-scp -i "G:/マイドライブ/サーバ情報/key-m96-conoha.pem" \
-  "ローカルファイル" root@133.117.75.23:/opt/tournament-api/app/api/ファイル名
-ssh -i "G:/マイドライブ/サーバ情報/key-m96-conoha.pem" root@133.117.75.23 \
-  "systemctl restart tournament-api.service"
+# SSH接続
+ssh -i "G:/マイドライブ/サーバ情報/key-m96-conoha.pem" root@133.117.75.23
 
-# フロントエンドデプロイ（再起動不要）
+# デプロイ（deploy.shを使用）
+bash deploy.sh pkq        # pkq全体
+bash deploy.sh dbd        # dbd全体
+bash deploy.sh info       # メインサイト全体
+bash deploy.sh shared     # 共通assets全体
+bash deploy.sh all        # 全サイト
+
+# 単一ファイルデプロイ
 scp -i "G:/マイドライブ/サーバ情報/key-m96-conoha.pem" \
-  "ローカルファイル" root@133.117.75.23:/opt/tournament-api/frontend/パス
+  "ローカルファイル" root@133.117.75.23:/opt/asobi/対象サイト/パス
 ```
 
 ---
@@ -63,27 +47,39 @@ scp -i "G:/マイドライブ/サーバ情報/key-m96-conoha.pem" \
 
 ### ファイル構成
 ```
-public_html/
-├── assets/php/
+shared/assets/
+├── php/
 │   ├── auth.php          # 認証モジュール（全サブドメインから require_once）
 │   ├── users_db.php      # DB接続・テーブル定義
-│   └── oauth_config.php  # OAuth クライアント設定
-├── oauth/
-│   ├── start.php         # OAuth開始（プロバイダーへリダイレクト）
-│   └── callback.php      # OAuthコールバック処理
+│   ├── oauth_config.php  # OAuth クライアント設定
+│   ├── me.php            # ログイン状態JSON API（CORS対応）
+│   └── log-access.php    # アクセスログ記録API（JS→AJAX）
+├── css/
+│   ├── common.css        # 全サブドメイン共通スタイル
+│   └── font.php          # フォント設定（管理画面で切り替え）
+└── js/
+    └── common.js         # 共通JS（debounce, API.get等）
+
+info/
 ├── login.php             # ログインページ
 ├── logout.php            # ログアウト
 ├── register.php          # 新規登録
-└── profile.php           # プロフィール・ソーシャル連携管理
+├── profile.php           # プロフィール・ソーシャル連携管理
+├── contact.php           # 問い合わせフォーム（form@asobi.info宛）
+└── licenses.html         # ライセンス・著作権表示ページ
 ```
 
 ### 使い方（各サブドメインから）
 ```php
-require_once '/home/m96/asobi.info/public_html/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/auth.php';
 asobiRequireLogin();   // 未ログインでログインページへリダイレクト
 asobiRequireAdmin();   // 管理者以外に403
-asobiLogAccess();      // アクセスログ記録（GETのみ）
+// ※アクセスログはJS（common.js）がlog-access.phpへAJAX送信
 ```
+
+### セッションロック対策
+me.php・log-access.phpはセッション読み取り直後に `session_write_close()` を呼び、
+PHPセッションファイルのロックを早期解放する（並列リクエストの遅延防止）。
 
 ### セッションキー
 - `$_SESSION['asobi_user_id']` — ユーザーID
@@ -148,6 +144,31 @@ CREATE TABLE login_logs (
     os         TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
+
+-- 禁止ワード
+CREATE TABLE banned_words (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    word       TEXT NOT NULL,
+    normalized TEXT NOT NULL,
+    category   TEXT NOT NULL DEFAULT 'content',
+    action     TEXT NOT NULL DEFAULT 'block',
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 問い合わせ
+CREATE TABLE contact_submissions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip         TEXT,
+    name       TEXT,
+    email      TEXT,
+    category   TEXT,
+    message    TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    type       TEXT,
+    company    TEXT,
+    department TEXT,
+    phone      TEXT
+);
 ```
 
 ### OAuth設定（oauth_config.php）
@@ -162,21 +183,25 @@ CREATE TABLE login_logs (
 
 ### ファイル構成
 ```
-public_html/
+info/
 ├── index.php             # トップページ（ゲームカード一覧）
+├── contact.php           # 問い合わせフォーム
+├── licenses.html         # ライセンス・著作権表示
 ├── admin/
 │   ├── index.php         # 管理ダッシュボード（PV/UV統計・ログ）
 │   ├── users.php         # ユーザー管理
+│   ├── banned-words.php  # 禁止ワード管理
+│   ├── font.php          # フォント切り替え
 │   └── ip-logs.php       # IP別アクセス履歴API（管理者のみ）
-└── assets/
-    ├── css/common.css    # 全サブドメイン共通スタイル
-    └── js/common.js      # 共通JS（debounce, API.get等）
+└── oauth/
+    ├── start.php
+    └── callback.php
 ```
 
 ### 管理画面
 - URL: `https://asobi.info/admin/`
 - asobiRequireAdmin() による保護
-- 機能: PV/UV集計・日別グラフ・人気ページ・ブラウザ統計・ログイン履歴・IP別アクセス詳細
+- 機能: PV/UV集計・日別グラフ・人気ページ・ブラウザ統計・ログイン履歴・IP別アクセス詳細・禁止ワード管理・フォント切り替え
 
 ---
 
@@ -186,31 +211,19 @@ Dead by Daylight の攻略情報。キラー・サバイバーのパーク、ア
 
 ### ファイル構成
 ```
-public_html/dbd/
-├── index.html               # トップページ
-├── killer-perks.html
-├── killer-addons.html
-├── killer-offerings.html
-├── killer-abilities.html
-├── killer-speed.html
-├── survivor-perks.html
-├── survivor-offerings.html
-├── survivor-items.html
+dbd/
+├── index.html
+├── killer-perks.html / killer-addons.html / killer-offerings.html
+├── killer-abilities.html / killer-speed.html
+├── survivor-perks.html / survivor-offerings.html / survivor-items.html
 ├── css/style.css            # ダークテーマ（--accent: #e74c3c）
 ├── js/app.js                # DbDApp オブジェクト
 ├── api/                     # PHP API群
-│   ├── db.php
-│   ├── perks.php / killers.php / characters.php
-│   ├── addons.php / offerings.php / items.php
 └── admin/                   # asobiRequireAdmin() 保護
 ```
 
 ### DBパス
-`/home/m96/asobi.info/public_html/dbd/data/dbd.sqlite`
-
-### 管理画面
-- URL: `https://dbd.asobi.info/admin/`
-- asobiRequireAdmin() を使用（共通認証に統合済み）
+`/opt/asobi/dbd/data/dbd.sqlite`
 
 ### 未完了
 - 各 image_path カラムがほぼ未設定（killers, survivors, perks, addons）
@@ -224,26 +237,32 @@ public_html/dbd/
 
 ### ファイル構成
 ```
-public_html/pkq/
+pkq/
 ├── index.html
-├── recipes.html / simulator.html / pokemon-list.html
+├── recipes.html / simulator.html / pokemon-list.html / moves.html
+├── iv-checker.html          # 個体値チェッカー
+├── iv-report.php            # 料理結果投稿
+├── iv-report-list.php       # 料理結果一覧
+├── pokemon-detail.html / recipe-detail.html
+├── css/style.css
+├── js/
 ├── api/
 │   ├── db.php
-│   ├── ingredients.php / recipes.php / pokemon.php
+│   ├── ingredients.php / recipes.php / pokemon.php / pokedex.php
 └── admin/                   # asobiRequireAdmin() 保護
-    ├── auth.php             # require_once auth.php + asobiRequireAdmin()
     ├── dashboard.php / ingredients.php / recipes.php
-    ├── pokemon.php / settings.php / api.php
-    └── layout.php           # 管理画面共通レイアウト
+    ├── pokemon.php / settings.php / iv.php
+    └── layout.php
 ```
 
-### 注意事項
-- サブドメイン `pkq.asobi.info` の Webルートは `/pkq/`
-- 管理画面内のリンクは `/admin/xxx.php`（`/pkq/admin/xxx.php` ではない）
-- ログアウトは `https://asobi.info/logout.php` へリダイレクト
-
 ### DBパス
-`/home/m96/asobi.info/public_html/pkq/data/pokemon_quest.sqlite`
+`/opt/asobi/pkq/data/pokemon_quest.sqlite`
+
+### 個体値計算式
+```
+stat = 種族値 + level + 鍋の値(固定) + 個体値
+鍋の値/個体値上限：鉄(0/10) 銅(50/50) 銀(150/100) 金(300/100)
+```
 
 ---
 
@@ -252,25 +271,38 @@ public_html/pkq/
 トーナメント対戦ゲーム。FastAPI + PostgreSQL + JWT認証 + OAuth。
 
 ### アーキテクチャ
-- バックエンド: FastAPI (Python) → `/opt/tournament-api/app/`
-- フロントエンド: 静的HTML/JS → `/opt/tournament-api/frontend/`
+- バックエンド: FastAPI (Python) → `/opt/asobi/tbt/app/`
+- フロントエンド: 静的HTML/JS → `/opt/asobi/tbt/frontend/`
 - DB: PostgreSQL（SQLAlchemy）
 - 認証: JWT + デバイスID（ゲスト）+ OAuth（Google/LINE/Twitter）
 
-### OAuth対応プロバイダー（tbt独自）
-- Google / LINE / Twitter（PKCE）
-- コールバック: `https://tbt.asobi.info/api/auth/callback/{provider}`
-- ソーシャルアカウント: `social_accounts` テーブル（PostgreSQL）
+---
 
-### 主要APIエンドポイント
-- `POST /api/auth/login` — デバイスIDでログイン
-- `GET /api/oauth/{provider}/url` — OAuth URL生成
-- `GET /api/callback/{provider}` — OAuthコールバック
-- `GET /api/users/me` — プロフィール取得
+## Webフォント
+
+使用フォント：Migu フォント（IPA Font License v1.0）
+- Migu 1P: プロポーショナル
+- Migu 1C: 英字改善・全角かなもプロポーショナル（**デフォルト**）
+- Migu 1M: 等幅（数字の桁ずれなし）
+- Migu 2M: 等幅・濁点控えめ
+
+管理画面（/admin/font.php）でフォント種類を切り替え可能。TTF・WOFF2両形式を用意。
+
+### 適用ルール（必須）
+```css
+/* NG: bodyに適用しない */
+body { font-family: 'Migu 1C', sans-serif; }
+
+/* OK: mainのみに適用（タイトル含む） */
+body { font-family: system-ui, -apple-system, sans-serif; }
+main { font-family: 'Migu 1C', system-ui, sans-serif; }
+```
+- `font-display: swap` 必須
+- 新規ページ追加時も同じルールを守ること
 
 ---
 
-## 共通スタイル・JS（asobi.info/assets/）
+## 共通スタイル・JS（shared/assets/）
 
 ### common.css
 - ヘッダー `.site-header` / `.site-logo` / `.site-nav` / `.container`
