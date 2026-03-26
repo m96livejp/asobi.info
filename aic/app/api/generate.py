@@ -44,7 +44,7 @@ async def generate_image(
     user: User | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if not user or user.is_guest:
+    if not user or user.asobi_user_id is None:
         raise HTTPException(status_code=401, detail="ログインが必要です")
 
     sd = await _get_sd_settings(db)
@@ -140,7 +140,7 @@ async def get_pending_images(
     db: AsyncSession = Depends(get_db),
 ):
     """未処理の生成画像を返す（画面再訪時のレジューム用）"""
-    if not user or user.is_guest:
+    if not user or user.asobi_user_id is None:
         return {"images": []}
     result = await db.execute(
         select(UserImage)
@@ -158,7 +158,7 @@ async def save_image(
     db: AsyncSession = Depends(get_db),
 ):
     """pending画像をギャラリーに保存"""
-    if not user or user.is_guest:
+    if not user or user.asobi_user_id is None:
         raise HTTPException(status_code=401, detail="ログインが必要です")
     result = await db.execute(
         select(UserImage).where(
@@ -181,7 +181,7 @@ async def discard_pending(
     db: AsyncSession = Depends(get_db),
 ):
     """pending画像を全て破棄（ファイルはサーバーに残す）"""
-    if not user or user.is_guest:
+    if not user or user.asobi_user_id is None:
         raise HTTPException(status_code=401, detail="ログインが必要です")
     result = await db.execute(
         select(UserImage).where(UserImage.user_id == user.id, UserImage.status == "pending")
@@ -202,7 +202,7 @@ async def get_my_images(
     db: AsyncSession = Depends(get_db),
 ):
     """保存済み画像一覧とカウント"""
-    if not user or user.is_guest:
+    if not user or user.asobi_user_id is None:
         return {"images": [], "count": 0}
     result = await db.execute(
         select(UserImage)
@@ -224,7 +224,7 @@ async def delete_my_image(
     db: AsyncSession = Depends(get_db),
 ):
     """ギャラリー画像をソフトデリート（ファイルはサーバーに残す）"""
-    if not user or user.is_guest:
+    if not user or user.asobi_user_id is None:
         raise HTTPException(status_code=401, detail="ログインが必要です")
     result = await db.execute(
         select(UserImage).where(
