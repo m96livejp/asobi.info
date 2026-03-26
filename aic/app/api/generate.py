@@ -289,4 +289,8 @@ async def list_templates(db: AsyncSession = Depends(get_db)):
 async def sd_status(db: AsyncSession = Depends(get_db)):
     """SD機能が有効かどうかを返す（フロントエンド表示切替用）"""
     sd = await _get_sd_settings(db)
-    return {"enabled": bool(sd and sd.enabled and sd.endpoint)}
+    return {
+        "enabled": bool(sd and sd.enabled and sd.endpoint),
+        "width":   sd.width  if sd else 512,
+        "height":  sd.height if sd else 512,
+    }

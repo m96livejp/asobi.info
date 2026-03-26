@@ -633,7 +633,7 @@ body {
 }
 .gen-gallery-item {
   position: relative;
-  aspect-ratio: 1;
+  aspect-ratio: var(--gen-img-ratio, 1);
   border-radius: 6px;
   overflow: hidden;
   background: var(--bg-secondary);

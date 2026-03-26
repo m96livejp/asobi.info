@@ -575,6 +575,11 @@ async function checkSdStatus() {
       sdEnabled = d.enabled;
       const sec = document.getElementById('avatar-gen-section');
       if (sec) sec.style.display = sdEnabled ? 'block' : 'none';
+      // 生成画像の縦横比をCSS変数に反映
+      if (d.width && d.height) {
+        const ratio = d.width / d.height;
+        document.documentElement.style.setProperty('--gen-img-ratio', ratio);
+      }
     }
   } catch (_) {}
 }
