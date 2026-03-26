@@ -117,81 +117,108 @@
           <a id="create-login-link" href="#" class="btn btn-primary">asobi.info でログイン</a>
         </div>
       </div>
-      <!-- ログイン済み向けフォーム -->
+      <!-- ログイン済み向けフォーム（2ステップ） -->
       <div class="create-form" id="create-form">
-        <h2>キャラクター作成</h2>
+        <!-- ステップインジケーター -->
+        <div class="cr-steps">
+          <div class="cr-step active" id="cr-step-ind-1"><span>1</span> アバター</div>
+          <div class="cr-step-line"></div>
+          <div class="cr-step" id="cr-step-ind-2"><span>2</span> 設定</div>
+        </div>
 
-        <!-- アバター画像 -->
-        <div class="form-group">
-          <label>🖼 アバター画像</label>
-          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <div class="avatar-preview" id="avatar-preview" style="width:60px;height:60px;border-radius:50%;background:var(--bg-secondary);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:1.5rem;overflow:hidden;flex-shrink:0">
+        <!-- ─── STEP 1: アバター選択 ─── -->
+        <div id="cr-step-1">
+          <div style="text-align:center;margin-bottom:20px">
+            <!-- 大きいプレビュー -->
+            <div id="avatar-preview" style="width:100px;height:100px;border-radius:50%;background:var(--bg-secondary);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:2.5rem;overflow:hidden;margin:0 auto 10px">
               <span id="avatar-preview-placeholder">👤</span>
-              <img id="avatar-preview-img" style="display:none;width:100%;height:100%;object-fit:cover">
+              <img id="avatar-preview-img" style="display:none;width:100%;height:100%;object-fit:cover" alt="">
             </div>
-            <div style="flex:1;min-width:0">
-              <input type="text" id="cr-avatar-url" placeholder="画像URL（省略可）" style="margin-bottom:6px" oninput="onAvatarUrlInput()">
+            <div id="avatar-selected-name" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:10px">未選択（スキップ可）</div>
+            <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
               <div id="avatar-gen-section" style="display:none">
-                <button class="btn btn-secondary btn-sm" onclick="goToGenerate()">🎨 画像生成ツールで作る</button>
+                <button class="btn btn-secondary" onclick="goToGenerate()">🎨 画像を生成する</button>
               </div>
+              <button class="btn btn-ghost btn-sm" id="btn-clear-avatar" onclick="clearAvatarSelection()" style="display:none">✕ 選択解除</button>
             </div>
+          </div>
+
+          <!-- ギャラリーから選択 -->
+          <div id="cr-gallery-section" style="display:none">
+            <p style="font-size:0.85rem;font-weight:600;margin-bottom:8px">ギャラリーから選ぶ</p>
+            <div id="cr-gallery-grid" class="gen-gallery-grid"></div>
+          </div>
+          <div id="cr-gallery-empty" style="display:none;text-align:center;padding:16px 0;color:var(--text-secondary);font-size:0.85rem">
+            保存した画像がありません。<br>画像生成ツールで作成してみましょう。
+          </div>
+
+          <input type="hidden" id="cr-avatar-url">
+
+          <div class="form-actions" style="margin-top:20px">
+            <button class="btn btn-secondary" onclick="navTo('profile')">キャンセル</button>
+            <button class="btn btn-primary" onclick="goToCreateStep2()">次へ →</button>
           </div>
         </div>
 
-        <div class="form-group">
-          <label>キャラクター名 <span class="required">*</span></label>
-          <input type="text" id="cr-name" placeholder="表示名">
-        </div>
-        <div class="form-group">
-          <label>名前（キャラの名前）</label>
-          <input type="text" id="cr-char-name" placeholder="例：あさひ">
-        </div>
-        <div class="form-group">
-          <label>年齢</label>
-          <input type="text" id="cr-age" placeholder="例：20">
-        </div>
-        <div class="form-group">
-          <label>プロフィール（公開時に見える）</label>
-          <textarea id="cr-profile" rows="3" placeholder="キャラクターの説明..."></textarea>
-        </div>
-        <div class="form-group">
-          <label>非公開プロフィール（AIには渡るが第三者に見えない）</label>
-          <textarea id="cr-private" rows="3" placeholder="口調、性格の詳細、秘密の設定..."></textarea>
-        </div>
-        <div class="form-group">
-          <label>最初のメッセージ</label>
-          <textarea id="cr-first-msg" rows="2" placeholder="会話開始時にキャラが最初に言うセリフ"></textarea>
-        </div>
-        <div class="form-group">
-          <label>物語</label>
-          <div class="tag-select" id="cr-story" data-options="恋愛,友情,ファンタジー,歴史,冒険,コメディ,ミステリー,SF,復讐,異世界,日常,学園,ホラー,仕事"></div>
-        </div>
-        <div class="form-group">
-          <label>キャラクタータイプ</label>
-          <div class="tag-select" id="cr-chartype" data-options="アニメ,漫画,映画,ゲーム,ドラマ,書物,現実世界,獣,ボット"></div>
-        </div>
-        <div class="form-group">
-          <label>性格</label>
-          <div class="tag-select" id="cr-personality" data-options="可愛い,ピュア,セクシー,天然,クール,明るい,暗い,不器用,腹黒,ドS,ドM,先輩,後輩,マイペース,知的"></div>
-        </div>
-        <div class="form-group">
-          <label>時代</label>
-          <div class="tag-select" id="cr-era" data-options="古代,中世,現代,未来"></div>
-        </div>
-        <div class="form-group">
-          <label>ベースアイデア</label>
-          <div class="tag-select" id="cr-base" data-options="オリジナル,二次創作,有名人"></div>
-        </div>
-        <div class="form-group">
-          <label>キーワード（最大5個、カンマ区切り）</label>
-          <input type="text" id="cr-keywords" placeholder="例：冒険,剣,魔法">
-        </div>
-        <div class="form-group">
-          <label><input type="checkbox" id="cr-public"> 公開する</label>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-secondary" onclick="navTo('profile')">キャンセル</button>
-          <button class="btn btn-primary" onclick="saveCharacter()">作成</button>
+        <!-- ─── STEP 2: キャラクター設定 ─── -->
+        <div id="cr-step-2" style="display:none">
+          <div class="form-group">
+            <label>キャラクター名 <span class="required">*</span></label>
+            <input type="text" id="cr-name" placeholder="表示名" oninput="clearInlineError('cr-name-error')">
+            <p class="inline-error" id="cr-name-error"></p>
+          </div>
+          <div class="form-group">
+            <label>名前（キャラの名前）</label>
+            <input type="text" id="cr-char-name" placeholder="例：あさひ">
+          </div>
+          <div class="form-group">
+            <label>年齢</label>
+            <input type="text" id="cr-age" placeholder="例：20">
+          </div>
+          <div class="form-group">
+            <label>プロフィール（公開時に見える）</label>
+            <textarea id="cr-profile" rows="3" placeholder="キャラクターの説明..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>非公開プロフィール（AIには渡るが第三者に見えない）</label>
+            <textarea id="cr-private" rows="3" placeholder="口調、性格の詳細、秘密の設定..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>最初のメッセージ</label>
+            <textarea id="cr-first-msg" rows="2" placeholder="会話開始時にキャラが最初に言うセリフ"></textarea>
+          </div>
+          <div class="form-group">
+            <label>物語</label>
+            <div class="tag-select" id="cr-story" data-options="恋愛,友情,ファンタジー,歴史,冒険,コメディ,ミステリー,SF,復讐,異世界,日常,学園,ホラー,仕事"></div>
+          </div>
+          <div class="form-group">
+            <label>キャラクタータイプ</label>
+            <div class="tag-select" id="cr-chartype" data-options="アニメ,漫画,映画,ゲーム,ドラマ,書物,現実世界,獣,ボット"></div>
+          </div>
+          <div class="form-group">
+            <label>性格</label>
+            <div class="tag-select" id="cr-personality" data-options="可愛い,ピュア,セクシー,天然,クール,明るい,暗い,不器用,腹黒,ドS,ドM,先輩,後輩,マイペース,知的"></div>
+          </div>
+          <div class="form-group">
+            <label>時代</label>
+            <div class="tag-select" id="cr-era" data-options="古代,中世,現代,未来"></div>
+          </div>
+          <div class="form-group">
+            <label>ベースアイデア</label>
+            <div class="tag-select" id="cr-base" data-options="オリジナル,二次創作,有名人"></div>
+          </div>
+          <div class="form-group">
+            <label>キーワード（最大5個、カンマ区切り）</label>
+            <input type="text" id="cr-keywords" placeholder="例：冒険,剣,魔法">
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="cr-public"> 公開する</label>
+          </div>
+          <p class="inline-error" id="cr-save-error" style="margin-bottom:8px"></p>
+          <div class="form-actions">
+            <button class="btn btn-secondary" onclick="backToCreateStep1()">← 戻る</button>
+            <button class="btn btn-primary" onclick="saveCharacter()">作成する</button>
+          </div>
         </div>
       </div>
     </div>
@@ -253,7 +280,8 @@
           <!-- プロンプト入力 -->
           <div class="form-group">
             <label style="font-size:0.85rem;font-weight:600">プロンプト</label>
-            <textarea id="gen-main-prompt" rows="3" placeholder="例: anime girl, blue hair, school uniform, smile, high quality, detailed" style="width:100%;margin-top:4px"></textarea>
+            <textarea id="gen-main-prompt" rows="3" placeholder="例: anime girl, blue hair, school uniform, smile, high quality, detailed" style="width:100%;margin-top:4px" oninput="clearInlineError('gen-prompt-error')"></textarea>
+            <p class="inline-error" id="gen-prompt-error"></p>
           </div>
 
           <div id="gen-limit-msg" style="display:none;background:rgba(233,69,96,0.1);border:1px solid var(--accent);border-radius:8px;padding:12px;margin-bottom:12px;font-size:0.85rem;color:var(--accent)">
@@ -315,6 +343,9 @@
     <span>プロフィール</span>
   </button>
 </nav>
+
+<!-- トースト通知コンテナ -->
+<div id="toast-container"></div>
 
 <script src="/js/app.js"></script>
 </body>

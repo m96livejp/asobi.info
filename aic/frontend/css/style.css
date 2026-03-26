@@ -283,6 +283,34 @@ body {
 .required { color: var(--accent); }
 .form-actions { display: flex; gap: 12px; margin-top: 24px; }
 
+/* === キャラクター作成ステップインジケーター === */
+.cr-steps {
+  display: flex;
+  align-items: center;
+  margin-bottom: 24px;
+  gap: 0;
+}
+.cr-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+.cr-step span {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.75rem; font-weight: 700;
+  flex-shrink: 0;
+}
+.cr-step.active { color: var(--text); font-weight: 600; }
+.cr-step.active span { background: var(--accent); color: #fff; }
+.cr-step.done span { background: #4caf50; color: #fff; }
+.cr-step-line { flex: 1; height: 1px; background: var(--border); margin: 0 10px; }
+
 /* === タグ選択 === */
 .tag-select { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag-btn {
@@ -657,6 +685,70 @@ body {
 .btn-success { background: #4caf50; color: #fff; }
 .btn-success:hover { background: #66bb6a; }
 .btn-danger { background: var(--accent); color: #fff; }
+
+/* === トースト通知（右下） === */
+#toast-container {
+  position: fixed;
+  bottom: 76px;
+  right: 14px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+@media (min-width: 769px) {
+  #toast-container { bottom: 20px; }
+}
+.toast {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 0.84rem;
+  max-width: 280px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  opacity: 0;
+  transform: translateX(16px);
+  transition: opacity 0.25s, transform 0.25s;
+  pointer-events: auto;
+}
+.toast.show { opacity: 1; transform: translateX(0); }
+.toast-success { border-color: #4caf50; color: #81c784; }
+.toast-error   { border-color: var(--accent); color: var(--accent-light); }
+.toast-info    { color: var(--text); }
+
+/* === 確認ダイアログ（画面全体オーバーレイ） === */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.confirm-box {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px 20px 20px;
+  max-width: 320px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.confirm-box p { margin-bottom: 20px; line-height: 1.65; font-size: 0.9rem; }
+.confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* === インラインエラー === */
+.inline-error {
+  color: var(--accent);
+  font-size: 0.79rem;
+  margin-top: 4px;
+  display: none;
+}
+.inline-error.show { display: block; }
 
 /* === スクロールバー === */
 ::-webkit-scrollbar { width: 6px; }

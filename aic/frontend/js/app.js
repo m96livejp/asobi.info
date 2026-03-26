@@ -163,15 +163,22 @@ function navTo(screen) {
     document.getElementById('create-gate').style.display = isGuest ? 'block' : 'none';
     document.getElementById('create-form').style.display = isGuest ? 'none' : 'block';
     if (!isGuest) {
-      initTagSelects();
+      // ステップ1に戻す
+      document.getElementById('cr-step-1').style.display = 'block';
+      document.getElementById('cr-step-2').style.display = 'none';
+      document.getElementById('cr-step-ind-1').className = 'cr-step active';
+      document.getElementById('cr-step-ind-2').className = 'cr-step';
+      clearAvatarSelection();
       checkSdStatus();
-      // sessionStorageからアバターURLを引き継ぐ
-      const pendingAvatar = sessionStorage.getItem('aic_gen_avatar');
-      if (pendingAvatar) {
-        const inp = document.getElementById('cr-avatar-url');
-        if (inp) { inp.value = pendingAvatar; onAvatarUrlInput(); }
-        sessionStorage.removeItem('aic_gen_avatar');
-      }
+      // ギャラリー読み込み（アバター選択用）
+      loadCreateGallery().then(() => {
+        // sessionStorageからアバターURLを引き継ぐ（画像生成画面から戻った時）
+        const pendingAvatar = sessionStorage.getItem('aic_gen_avatar');
+        if (pendingAvatar) {
+          selectAvatarFromGallery(pendingAvatar);
+          sessionStorage.removeItem('aic_gen_avatar');
+        }
+      });
     }
     document.getElementById('header-title').textContent = 'キャラクター作成';
     return;
@@ -491,7 +498,8 @@ async function sendMessage() {
 
 // === キャラ作成 ===
 function initTagSelects() {
-  document.querySelectorAll('#create-form .tag-select').forEach(container => {
+  document.querySelectorAll('#cr-step-2 .tag-select').forEach(container => {
+    if (container.children.length) return; // 初期化済みはスキップ
     const options = container.dataset.options.split(',');
     container.innerHTML = options.map(o =>
       '<button type="button" class="tag-btn" onclick="toggleTag(this)">' + o + '</button>'
@@ -507,7 +515,12 @@ function getSelectedTags(containerId) {
 
 async function saveCharacter() {
   const name = document.getElementById('cr-name').value.trim();
-  if (!name) { alert('キャラクター名を入力してください'); return; }
+  if (!name) {
+    showInlineError('cr-name-error', 'キャラクター名を入力してください', 'cr-name');
+    return;
+  }
+  clearInlineError('cr-name-error');
+  clearInlineError('cr-save-error');
 
   const body = {
     name: name,
@@ -529,10 +542,11 @@ async function saveCharacter() {
   const res = await api('/characters', { method: 'POST', body: JSON.stringify(body) });
   if (res.ok) {
     communityChars = []; // キャッシュクリア
+    showToast('キャラクターを作成しました', 'success');
     navTo('profile');
   } else {
     const err = await res.json().catch(() => ({}));
-    alert(err.detail || '作成に失敗しました');
+    showInlineError('cr-save-error', err.detail || '作成に失敗しました');
   }
 }
 
@@ -647,7 +661,11 @@ function selectGenImage(id) {
 // 6枚生成
 async function generateImages() {
   const prompt = document.getElementById('gen-main-prompt')?.value.trim();
-  if (!prompt) { alert('プロンプトを入力してください'); return; }
+  if (!prompt) {
+    showInlineError('gen-prompt-error', 'プロンプトを入力してください', 'gen-main-prompt');
+    return;
+  }
+  clearInlineError('gen-prompt-error');
 
   const btn = document.getElementById('btn-gen-6');
   const status = document.getElementById('gen-main-status');
@@ -680,7 +698,7 @@ async function generateImages() {
 // 選択した画像を保存
 async function saveSelectedImages() {
   if (selectedGenIds.size === 0) {
-    alert('保存する画像を選択してください（クリックして選択）');
+    showToast('保存する画像をクリックして選択してください', 'info');
     return;
   }
   let saved = 0;
@@ -692,14 +710,15 @@ async function saveSelectedImages() {
   await api('/generate/discard-pending', { method: 'POST' });
   await loadPendingImages();
   await loadGallery();
-  alert(saved + '枚の画像をギャラリーに保存しました');
+  showToast(saved + '枚の画像をギャラリーに保存しました', 'success');
 }
 
 // 全て破棄
 async function discardAllPending() {
-  if (!confirm('生成した画像をすべて破棄しますか？')) return;
-  await api('/generate/discard-pending', { method: 'POST' });
-  await loadPendingImages();
+  showConfirm('生成した画像をすべて破棄しますか？', async () => {
+    await api('/generate/discard-pending', { method: 'POST' });
+    await loadPendingImages();
+  }, '破棄する');
 }
 
 // ギャラリー読み込み
@@ -732,12 +751,16 @@ async function loadGallery() {
 
 // ギャラリーから削除（ソフトデリート）
 async function deleteFromGallery(id) {
-  if (!confirm('ギャラリーから削除しますか？（ファイルはサーバーに残ります）')) return;
-  const r = await api('/generate/my-images/' + id, { method: 'DELETE' });
-  if (r.ok) await loadGallery();
+  showConfirm('ギャラリーから削除しますか？', async () => {
+    const r = await api('/generate/my-images/' + id, { method: 'DELETE' });
+    if (r.ok) {
+      await loadGallery();
+      showToast('ギャラリーから削除しました', 'info');
+    }
+  }, '削除する');
 }
 
-// ギャラリーの画像をアバターとして使う
+// ギャラリーの画像をアバターとして使う（generate画面から）
 function useGalleryImage(url) {
   sessionStorage.setItem('aic_gen_avatar', url);
   navTo('create');
@@ -748,20 +771,93 @@ function goToGenerate() {
   navTo('generate');
 }
 
-// アバターURLを手入力した時のプレビュー更新
-function onAvatarUrlInput() {
-  const url = document.getElementById('cr-avatar-url')?.value.trim();
+// キャラクター作成画面のギャラリー読み込み
+async function loadCreateGallery() {
+  const grid = document.getElementById('cr-gallery-grid');
+  const section = document.getElementById('cr-gallery-section');
+  const emptyEl = document.getElementById('cr-gallery-empty');
+  if (!grid) return;
+  try {
+    const r = await api('/generate/my-images');
+    if (!r.ok) return;
+    const d = await r.json();
+    const imgs = d.images || [];
+    if (imgs.length === 0) {
+      if (section) section.style.display = 'none';
+      if (emptyEl) emptyEl.style.display = 'block';
+      return;
+    }
+    if (section) section.style.display = 'block';
+    if (emptyEl) emptyEl.style.display = 'none';
+    grid.innerHTML = imgs.map(img =>
+      `<div class="gen-gallery-item" id="cgrid-${img.id}" onclick="selectAvatarFromGallery('${esc(img.url)}')" style="cursor:pointer">
+        <img src="${esc(img.url)}" loading="lazy" alt="">
+        <button class="gen-gallery-use" style="display:block;opacity:1;pointer-events:none">選択</button>
+      </div>`
+    ).join('');
+  } catch(_) {}
+}
+
+// ギャラリーからアバターを選択
+function selectAvatarFromGallery(url) {
+  document.getElementById('cr-avatar-url').value = url;
   const img = document.getElementById('avatar-preview-img');
   const placeholder = document.getElementById('avatar-preview-placeholder');
-  if (!img || !placeholder) return;
-  if (url) {
-    img.src = url;
-    img.style.display = 'block';
-    placeholder.style.display = 'none';
-  } else {
-    img.style.display = 'none';
-    placeholder.style.display = 'block';
-  }
+  const nameEl = document.getElementById('avatar-selected-name');
+  const clearBtn = document.getElementById('btn-clear-avatar');
+  if (img) { img.src = url; img.style.display = 'block'; }
+  if (placeholder) placeholder.style.display = 'none';
+  if (nameEl) nameEl.textContent = '✅ 画像を選択しました';
+  if (clearBtn) clearBtn.style.display = 'inline-flex';
+  // 選択中の枠を更新
+  document.querySelectorAll('#cr-gallery-grid .gen-gallery-item').forEach(el => {
+    const isSelected = el.querySelector('img')?.src === url || el.querySelector('img')?.src.endsWith(url.split('/').pop());
+    el.style.outline = isSelected ? '2px solid var(--accent)' : '';
+  });
+}
+
+// アバター選択解除
+function clearAvatarSelection() {
+  document.getElementById('cr-avatar-url').value = '';
+  const img = document.getElementById('avatar-preview-img');
+  const placeholder = document.getElementById('avatar-preview-placeholder');
+  const nameEl = document.getElementById('avatar-selected-name');
+  const clearBtn = document.getElementById('btn-clear-avatar');
+  if (img) { img.src = ''; img.style.display = 'none'; }
+  if (placeholder) placeholder.style.display = 'block';
+  if (nameEl) nameEl.textContent = '未選択';
+  if (clearBtn) clearBtn.style.display = 'none';
+  document.querySelectorAll('#cr-gallery-grid .gen-gallery-item').forEach(el => el.style.outline = '');
+}
+
+// アバターURLプレビュー（hidden input 用、sessionStorageからの引き継ぎで使用）
+function onAvatarUrlInput() {
+  const url = document.getElementById('cr-avatar-url')?.value.trim();
+  if (url) selectAvatarFromGallery(url);
+  else clearAvatarSelection();
+}
+
+// STEP 1 → STEP 2
+function goToCreateStep2() {
+  document.getElementById('cr-step-1').style.display = 'none';
+  document.getElementById('cr-step-2').style.display = 'block';
+  document.getElementById('cr-step-ind-1').classList.remove('active');
+  document.getElementById('cr-step-ind-1').classList.add('done');
+  document.getElementById('cr-step-ind-2').classList.add('active');
+  // タグ初期化（まだなら）
+  initTagSelects();
+  // 先頭にスクロール
+  document.getElementById('create-form').scrollTop = 0;
+  document.getElementById('cr-name').focus();
+}
+
+// STEP 2 → STEP 1
+function backToCreateStep1() {
+  document.getElementById('cr-step-2').style.display = 'none';
+  document.getElementById('cr-step-1').style.display = 'block';
+  document.getElementById('cr-step-ind-2').classList.remove('active');
+  document.getElementById('cr-step-ind-1').classList.remove('done');
+  document.getElementById('cr-step-ind-1').classList.add('active');
 }
 
 // === サイドバー ===
@@ -781,6 +877,54 @@ function closeSidebar() {
 function esc(s) {
   if (!s) return '';
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// 右下トースト通知（alert代替）
+function showToast(msg, type = 'info', duration = 3000) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 300);
+  }, duration);
+}
+
+// 画面全体オーバーレイ確認ダイアログ（confirm代替）
+function showConfirm(msg, onOk, okLabel = '実行', okClass = 'btn-danger') {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box">
+      <p>${esc(msg)}</p>
+      <div class="confirm-actions">
+        <button class="btn btn-ghost">キャンセル</button>
+        <button class="btn ${okClass}">${esc(okLabel)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const [cancelBtn, okBtn] = overlay.querySelectorAll('button');
+  cancelBtn.onclick = () => overlay.remove();
+  okBtn.onclick = () => { overlay.remove(); onOk(); };
+}
+
+// インラインエラー表示
+function showInlineError(errorId, msg, focusId) {
+  const el = document.getElementById(errorId);
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  if (focusId) document.getElementById(focusId)?.focus();
+}
+
+// インラインエラーをクリア
+function clearInlineError(errorId) {
+  const el = document.getElementById(errorId.endsWith('-error') ? errorId : errorId + '-error');
+  if (el) { el.textContent = ''; el.classList.remove('show'); }
 }
 
 // === テキストエリア自動リサイズ ===
