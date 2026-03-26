@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理画面 - AI Chat</title>
+<style>
+:root {
+  --bg:#1a1a2e; --bg2:#16213e; --bg3:#0f3460;
+  --text:#e0e0e0; --sub:#a0a0b0;
+  --accent:#e94560; --accent-l:#ff6b81;
+  --border:#2a2a4a;
+  --ok:#4caf50; --warn:#ff9800; --info:#2196f3;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+/* レイアウト */
+.layout{display:flex;min-height:100vh}
+.sidebar{width:200px;background:var(--bg2);border-right:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column}
+.sidebar-logo{padding:20px 16px;font-size:1.1rem;font-weight:700;border-bottom:1px solid var(--border)}
+.sidebar-logo a{color:var(--sub);text-decoration:none;font-size:0.8rem;display:block;margin-top:4px}
+.sidebar-logo a:hover{color:var(--accent-l)}
+.sidebar-nav{flex:1;padding:8px 0}
+.nav-item{display:block;width:100%;padding:11px 16px;background:none;border:none;color:var(--sub);font-size:0.9rem;text-align:left;cursor:pointer;font-family:inherit;transition:all 0.15s;border-left:3px solid transparent}
+.nav-item:hover{color:var(--text);background:rgba(255,255,255,0.04)}
+.nav-item.active{color:var(--text);background:rgba(233,69,96,0.1);border-left-color:var(--accent)}
+.content{flex:1;overflow-y:auto;padding:24px}
+
+/* セクション */
+.section{display:none}
+.section.active{display:block}
+.section-title{font-size:1.3rem;font-weight:700;margin-bottom:20px}
+
+/* カード */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
+.card-title{font-size:1rem;font-weight:700;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+
+/* 統計グリッド */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:var(--bg3);border-radius:10px;padding:16px;text-align:center}
+.stat-value{font-size:2rem;font-weight:700;color:var(--accent-l)}
+.stat-label{font-size:0.8rem;color:var(--sub);margin-top:4px}
+
+/* フォーム */
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:0.85rem;font-weight:600;margin-bottom:4px}
+.form-group .hint{font-size:0.78rem;color:var(--sub);margin-top:3px}
+input[type=text],input[type=number],input[type=password],select,textarea{
+  width:100%;padding:9px 12px;background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;color:var(--text);font-size:0.9rem;font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+
+/* ボタン */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border:none;border-radius:8px;font-size:0.85rem;font-weight:600;cursor:pointer;transition:opacity 0.2s;font-family:inherit}
+.btn:hover{opacity:0.85}
+.btn:disabled{opacity:0.5;cursor:not-allowed}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-info{background:var(--info);color:#fff}
+.btn-ok{background:var(--ok);color:#fff}
+.btn-warn{background:var(--warn);color:#000}
+.btn-danger{background:var(--accent);color:#fff}
+.btn-sm{padding:5px 12px;font-size:0.8rem}
+.btn-ghost{background:none;border:1px solid var(--border);color:var(--sub)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--text)}
+
+/* テーブル */
+.tbl{width:100%;border-collapse:collapse;font-size:0.85rem}
+.tbl th{padding:8px 12px;text-align:left;color:var(--sub);font-weight:600;border-bottom:2px solid var(--border);white-space:nowrap}
+.tbl td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:rgba(255,255,255,0.03)}
+
+/* バッジ */
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600}
+.badge-admin{background:rgba(233,69,96,0.2);color:var(--accent-l)}
+.badge-user{background:rgba(255,255,255,0.08);color:var(--sub)}
+.badge-guest{background:rgba(255,152,0,0.15);color:var(--warn)}
+.badge-public{background:rgba(76,175,80,0.15);color:var(--ok)}
+.badge-private{background:rgba(255,255,255,0.06);color:var(--sub)}
+.badge-sample{background:rgba(33,150,243,0.15);color:var(--info)}
+
+/* 接続テスト */
+.test-status{display:inline-flex;align-items:center;gap:6px;font-weight:600;margin-bottom:8px}
+.test-status.ok{color:var(--ok)}
+.test-status.err{color:var(--accent)}
+.model-tbl{width:100%;border-collapse:collapse;margin-top:8px}
+.model-tbl th,.model-tbl td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);font-size:0.82rem}
+.model-tbl th{background:var(--bg);color:var(--sub)}
+.model-tbl td{font-family:'Consolas',monospace}
+
+/* トースト */
+.toast{position:fixed;bottom:20px;right:20px;padding:10px 18px;border-radius:8px;color:#fff;font-weight:600;z-index:1000;opacity:0;transition:opacity 0.3s;pointer-events:none}
+.toast.show{opacity:1}
+.toast.ok{background:var(--ok)}
+.toast.err{background:var(--accent)}
+
+/* ヘッダー */
+.admin-header{
+  position:sticky;top:0;z-index:200;
+  background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;height:52px;flex-shrink:0;
+}
+.admin-header-left{display:flex;align-items:center;gap:12px}
+.admin-header-logo{font-size:1rem;font-weight:700}
+.admin-header-back{color:var(--sub);text-decoration:none;font-size:0.82rem;transition:color 0.15s}
+.admin-header-back:hover{color:var(--accent-l)}
+
+/* ヘッダーユーザーエリア（index.htmlと同パターン） */
+.hdr-user-area{position:relative;flex-shrink:0}
+.header-btn-login{display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:16px;background:var(--accent);color:#fff;font-size:0.8rem;font-weight:600;text-decoration:none;white-space:nowrap;transition:background 0.15s}
+.header-btn-login:hover{background:var(--accent-l)}
+.hdr-user-trigger{display:flex;align-items:center;gap:5px;padding:4px 6px;border-radius:20px;cursor:pointer;background:none;border:none;color:var(--text);transition:background 0.15s}
+.hdr-user-trigger:hover{background:rgba(255,255,255,0.08)}
+.hdr-user-avatar{width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.8rem;font-weight:700;flex-shrink:0;overflow:hidden}
+.hdr-user-avatar img{width:100%;height:100%;object-fit:cover}
+.hdr-user-caret{font-size:0.6rem;color:var(--sub)}
+.hdr-user-dropdown{display:none;position:absolute;top:calc(100% + 8px);right:0;min-width:160px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.5);overflow:hidden;z-index:1000}
+.hdr-user-area.open .hdr-user-dropdown{display:block}
+.hdr-user-displayname{padding:10px 14px;font-size:0.8rem;color:var(--sub);border-bottom:1px solid var(--border)}
+.hud-item{display:block;width:100%;padding:10px 14px;font-size:0.85rem;color:var(--text);text-align:left;background:none;border:none;cursor:pointer;font-family:inherit;transition:background 0.1s;text-decoration:none}
+.hud-item:hover{background:rgba(255,255,255,0.06)}
+.hud-divider{height:1px;background:var(--border)}
+.hud-logout{color:var(--accent)!important}
+
+/* レイアウト調整（ヘッダー分） */
+.layout{flex-direction:column}
+.layout-body{display:flex;flex:1;overflow:hidden}
+.sidebar{overflow-y:auto}
+.content{overflow-y:auto;flex:1}
+
+/* レスポンシブ */
+@media(max-width:640px){
+  .layout-body{flex-direction:column}
+  .sidebar{width:100%;flex-direction:row;overflow-x:auto;overflow-y:hidden}
+  .sidebar-logo{display:none}
+  .sidebar-nav{display:flex;flex-direction:row;padding:0}
+  .nav-item{padding:12px 14px;border-left:none;border-bottom:3px solid transparent;white-space:nowrap}
+  .nav-item.active{border-bottom-color:var(--accent);border-left:none}
+  .content{padding:16px}
+  .stats-grid{grid-template-columns:repeat(3,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+
+<!-- ヘッダー -->
+<header class="admin-header">
+  <div class="admin-header-left">
+    <span class="admin-header-logo">🛠 管理画面</span>
+    <a href="/" class="admin-header-back">← チャットに戻る</a>
+  </div>
+  <div id="header-user-area" class="hdr-user-area"></div>
+</header>
+
+<div class="layout-body">
+
+<!-- サイドバー -->
+<aside class="sidebar">
+  <nav class="sidebar-nav">
+    <button class="nav-item active" onclick="showSection('dashboard')">📊 ダッシュボード</button>
+    <button class="nav-item" onclick="showSection('ai')">🤖 AI設定チャット用</button>
+    <button class="nav-item" onclick="showSection('sd')">🎨 AI設定画像用</button>
+    <button class="nav-item" onclick="showSection('users')">👥 ユーザー</button>
+    <button class="nav-item" onclick="showSection('characters')">✨ キャラクター</button>
+  </nav>
+</aside>
+
+<!-- メインコンテンツ -->
+<main class="content">
+
+  <!-- ダッシュボード -->
+  <div id="sec-dashboard" class="section active">
+    <div class="section-title">📊 ダッシュボード</div>
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card"><div class="stat-value" id="st-users">-</div><div class="stat-label">総ユーザー</div></div>
+      <div class="stat-card"><div class="stat-value" id="st-guests">-</div><div class="stat-label">ゲスト</div></div>
+      <div class="stat-card"><div class="stat-value" id="st-chars">-</div><div class="stat-label">キャラクター</div></div>
+      <div class="stat-card"><div class="stat-value" id="st-public">-</div><div class="stat-label">公開中</div></div>
+      <div class="stat-card"><div class="stat-value" id="st-convs">-</div><div class="stat-label">会話数</div></div>
+      <div class="stat-card"><div class="stat-value" id="st-msgs">-</div><div class="stat-label">メッセージ数</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">現在のAI設定</div>
+      <div id="current-ai" style="color:var(--sub);font-size:0.9rem">読み込み中...</div>
+    </div>
+  </div>
+
+  <!-- AI設定 -->
+  <div id="sec-ai" class="section">
+    <div class="section-title">🤖 AI設定チャット用</div>
+    <div class="card">
+      <div class="card-title">AIプロバイダ設定</div>
+      <div class="form-group">
+        <label>AIプロバイダ</label>
+        <select id="provider" onchange="onProviderChange()">
+          <option value="claude">Claude (Anthropic)</option>
+          <option value="openai">OpenAI (ChatGPT)</option>
+          <option value="gemini">Gemini (Google)</option>
+          <option value="ollama">Ollama (ローカル)</option>
+        </select>
+        <div class="hint" id="provider-hint"></div>
+      </div>
+      <div class="form-group" id="grp-endpoint" style="display:none">
+        <label>エンドポイント</label>
+        <input type="text" id="endpoint" placeholder="http://localhost:11434/api/generate">
+        <div class="hint">通常: http://localhost:11434/api/generate</div>
+      </div>
+      <div class="form-group" id="grp-apikey">
+        <label>APIキー</label>
+        <input type="password" id="api-key" placeholder="sk-...">
+      </div>
+      <div class="form-group">
+        <label>接続テスト・モデル一覧</label>
+        <div class="hint" style="margin-bottom:8px">接続を確認し、利用可能なモデルを取得します</div>
+        <button class="btn btn-info btn-sm" id="btn-test" onclick="testConnection()">接続テスト</button>
+        <div id="test-result" style="margin-top:10px"></div>
+      </div>
+      <div class="form-group">
+        <label>AIモデル</label>
+        <input type="text" id="model" placeholder="例: gemma3:27b, gpt-4o-mini, claude-sonnet-4-20250514">
+        <div class="hint">接続テストでモデルを選択するか、直接入力</div>
+      </div>
+      <div class="form-group">
+        <label>最大トークン数</label>
+        <input type="number" id="max-tokens" value="1024" min="64" max="8192">
+        <div class="hint">AIの応答の最大長</div>
+      </div>
+      <div class="form-group">
+        <label>コスト (ポイント/メッセージ)</label>
+        <input type="number" id="cost" value="1" min="0" max="100">
+        <div class="hint">1メッセージあたりの消費ポイント（0 = 無料）</div>
+      </div>
+      <button class="btn btn-primary" id="btn-save" onclick="saveAiSettings()">保存</button>
+    </div>
+  </div>
+
+  <!-- ユーザー管理 -->
+  <div id="sec-users" class="section">
+    <div class="section-title">👥 ユーザー管理</div>
+    <div class="card">
+      <div style="overflow-x:auto">
+        <table class="tbl" id="user-table">
+          <thead><tr>
+            <th>ID</th><th>表示名</th><th>種別</th><th>ロール</th><th>登録日</th><th>操作</th>
+          </tr></thead>
+          <tbody id="user-tbody"><tr><td colspan="6" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- キャラクター管理 -->
+  <div id="sec-characters" class="section">
+    <div class="section-title">✨ キャラクター管理</div>
+    <div class="card">
+      <div style="overflow-x:auto">
+        <table class="tbl" id="char-table">
+          <thead><tr>
+            <th>ID</th><th>名前</th><th>作成者</th><th>状態</th><th>❤</th><th>💬</th><th>作成日</th><th>操作</th>
+          </tr></thead>
+          <tbody id="char-tbody"><tr><td colspan="8" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- SD設定 -->
+  <div id="sec-sd" class="section">
+    <div class="section-title">🎨 AI設定画像用（Stable Diffusion）</div>
+    <div class="card">
+      <div class="card-title">AUTOMATIC1111 接続設定</div>
+      <div class="form-group">
+        <label>画像生成を有効にする</label>
+        <select id="sd-enabled">
+          <option value="0">無効</option>
+          <option value="1">有効</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>エンドポイントURL</label>
+        <input type="text" id="sd-endpoint" placeholder="例: http://127.0.0.1:1233">
+        <div class="hint">
+          A1111 起動オプション: <code>--api --listen --cors-allow-origins "https://aic.asobi.info"</code><br>
+          ・同じPC で管理画面を開く場合: <code>http://127.0.0.1:ポート番号</code><br>
+          ・外部から接続する場合: ngrok 等で HTTPS URL を取得して入力
+        </div>
+      </div>
+      <div class="form-group">
+        <button class="btn btn-info btn-sm" id="btn-sd-test" onclick="testSdConnection()">接続テスト</button>
+        <div class="hint" style="margin-top:4px">※ ブラウザから直接接続します（管理者PCで開いている場合のみ有効）</div>
+        <div id="sd-test-result" style="margin-top:10px"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">生成パラメータ</div>
+      <div class="form-group">
+        <label>使用モデル</label>
+        <input type="text" id="sd-model" placeholder="接続テストでモデルを選択するか直接入力">
+        <div class="hint">チェックポイントモデル名（例: v1-5-pruned-emaonly.safetensors）</div>
+      </div>
+      <div class="form-group">
+        <label>ネガティブプロンプト</label>
+        <textarea id="sd-negative" rows="3" placeholder="lowres, bad anatomy..."></textarea>
+        <div class="hint">生成時に除外する要素</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>ステップ数</label>
+          <input type="number" id="sd-steps" value="20" min="1" max="150">
+        </div>
+        <div class="form-group">
+          <label>CFGスケール</label>
+          <input type="number" id="sd-cfg" value="7.0" min="1" max="30" step="0.5">
+        </div>
+        <div class="form-group">
+          <label>幅 (px)</label>
+          <select id="sd-width">
+            <option value="512">512</option>
+            <option value="640">640</option>
+            <option value="768">768</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>高さ (px)</label>
+          <select id="sd-height">
+            <option value="512">512</option>
+            <option value="640">640</option>
+            <option value="768">768</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-sd-save" onclick="saveSdSettings()">保存</button>
+    </div>
+
+    <!-- テンプレート管理 -->
+    <div class="card">
+      <div class="card-title">プロンプトテンプレート</div>
+      <p style="font-size:0.85rem;color:var(--sub);margin-bottom:14px">ユーザーが画像生成時に選択できるテンプレートを設定します。</p>
+      <div id="tmpl-list" style="margin-bottom:16px"></div>
+      <details style="border:1px solid var(--border);border-radius:8px;padding:12px">
+        <summary style="cursor:pointer;font-weight:600;font-size:0.9rem">＋ 新規テンプレートを追加</summary>
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+          <div class="form-group" style="margin:0">
+            <label>テンプレート名</label>
+            <input type="text" id="new-tmpl-name" placeholder="例: アニメ女性キャラ">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>プロンプト</label>
+            <textarea id="new-tmpl-prompt" rows="3" placeholder="例: anime girl, long hair, school uniform, smile, high quality, detailed"></textarea>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>ネガティブプロンプト <span style="font-weight:400;color:var(--sub)">（空欄でSD設定のデフォルト使用）</span></label>
+            <textarea id="new-tmpl-neg" rows="2" placeholder="空欄の場合はAI設定画像用のデフォルトを使用"></textarea>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>表示順</label>
+            <input type="number" id="new-tmpl-order" value="0" min="0" style="width:100px">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="createTemplate()">追加する</button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+</main>
+</div><!-- layout-body -->
+</div><!-- layout -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api';
+let token = localStorage.getItem('aic_token') || '';
+let currentUser = null;
+
+const LOGIN_URL = 'https://asobi.info/oauth/aic-login.php?callback=' +
+  encodeURIComponent('https://aic.asobi.info/api/auth/asobi/callback');
+
+async function api(path, opts = {}) {
+  const h = { 'Content-Type': 'application/json' };
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  const r = await fetch(API + path, { ...opts, headers: h });
+  if (r.status === 403) {
+    document.querySelector('.layout-body').innerHTML =
+      '<div style="padding:40px;text-align:center"><h2>アクセス拒否</h2><p style="color:var(--sub);margin:12px 0">管理者権限が必要です</p><a href="/" style="color:var(--accent-l)">← 戻る</a></div>';
+  }
+  return r;
+}
+
+// ─── ヘッダーユーザーエリア ───
+async function initHeader() {
+  if (!token) { renderHeaderUser(null); return; }
+  try {
+    const r = await fetch(API + '/auth/me', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (r.ok) { currentUser = await r.json(); }
+  } catch (_) {}
+  renderHeaderUser(currentUser);
+}
+
+function renderHeaderUser(user) {
+  const area = document.getElementById('header-user-area');
+  if (!area) return;
+  if (!user || user.is_guest) {
+    area.innerHTML = `<a href="${LOGIN_URL}" class="header-btn-login">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+      ログイン</a>`;
+    return;
+  }
+  const avatarHtml = user.avatar_url
+    ? `<img src="${esc(user.avatar_url)}" alt="">`
+    : esc((user.display_name || '?')[0].toUpperCase());
+  area.innerHTML = `
+    <button class="hdr-user-trigger" onclick="toggleUserMenu(event)">
+      <div class="hdr-user-avatar">${avatarHtml}</div>
+      <span class="hdr-user-caret">▼</span>
+    </button>
+    <div class="hdr-user-dropdown">
+      <div class="hdr-user-displayname">${esc(user.display_name)}</div>
+      <a href="/" class="hud-item">チャットに戻る</a>
+      <div class="hud-divider"></div>
+      <button class="hud-item hud-logout" onclick="logout()">ログアウト</button>
+    </div>`;
+}
+
+function toggleUserMenu(e) {
+  e.stopPropagation();
+  document.getElementById('header-user-area').classList.toggle('open');
+}
+document.addEventListener('click', () => {
+  document.getElementById('header-user-area')?.classList.remove('open');
+});
+
+async function logout() {
+  localStorage.removeItem('aic_token');
+  sessionStorage.setItem('aic_skip_auto_login', '1');
+  window.location.href = '/';
+}
+
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'toast ' + type + ' show';
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── セクション切り替え ───
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('sec-' + id).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if (id === 'dashboard') loadStats();
+  else if (id === 'ai') loadAiSettings();
+  else if (id === 'users') loadUsers();
+  else if (id === 'characters') loadCharacters();
+}
+
+// ─── ダッシュボード ───
+async function loadStats() {
+  const r = await api('/admin/stats');
+  if (!r.ok) return;
+  const d = await r.json();
+  document.getElementById('st-users').textContent = d.users;
+  document.getElementById('st-guests').textContent = d.guests;
+  document.getElementById('st-chars').textContent = d.characters;
+  document.getElementById('st-public').textContent = d.public_chars;
+  document.getElementById('st-convs').textContent = d.conversations;
+  document.getElementById('st-msgs').textContent = d.messages;
+
+  const r2 = await api('/admin/ai-settings');
+  if (r2.ok) {
+    const s = await r2.json();
+    document.getElementById('current-ai').innerHTML =
+      `プロバイダ: <b>${esc(s.provider)}</b> ／ モデル: <b>${esc(s.model || '未設定')}</b> ／ コスト: <b>${s.cost}pt/メッセージ</b>`;
+  }
+}
+
+// ─── AI設定 ───
+const providerHints = {
+  claude: 'Anthropic Claude API', openai: 'OpenAI ChatGPT API',
+  gemini: 'Google Gemini API', ollama: 'ローカルLLMサーバー (APIキー不要)'
+};
+
+function onProviderChange() {
+  const p = document.getElementById('provider').value;
+  document.getElementById('provider-hint').textContent = providerHints[p] || '';
+  document.getElementById('grp-endpoint').style.display = p === 'ollama' ? '' : 'none';
+  document.getElementById('grp-apikey').style.display = p === 'ollama' ? 'none' : '';
+  document.getElementById('test-result').innerHTML = '';
+}
+
+async function loadAiSettings() {
+  const r = await api('/admin/ai-settings');
+  if (!r.ok) return;
+  const d = await r.json();
+  document.getElementById('provider').value = d.provider || 'claude';
+  document.getElementById('endpoint').value = d.endpoint || '';
+  document.getElementById('api-key').value = d.api_key || '';
+  document.getElementById('model').value = d.model || '';
+  document.getElementById('max-tokens').value = d.max_tokens || 1024;
+  document.getElementById('cost').value = d.cost ?? 1;
+  onProviderChange();
+}
+
+async function saveAiSettings() {
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true; btn.textContent = '保存中...';
+  const body = {
+    provider: document.getElementById('provider').value,
+    endpoint: document.getElementById('endpoint').value || null,
+    api_key: document.getElementById('api-key').value || null,
+    model: document.getElementById('model').value,
+    max_tokens: parseInt(document.getElementById('max-tokens').value) || 1024,
+    cost: parseInt(document.getElementById('cost').value) ?? 1,
+  };
+  const r = await api('/admin/ai-settings', { method: 'PUT', body: JSON.stringify(body) });
+  btn.disabled = false; btn.textContent = '保存';
+  r.ok ? toast('設定を保存しました') : toast('保存に失敗しました', 'err');
+}
+
+async function testConnection() {
+  const btn = document.getElementById('btn-test');
+  const el = document.getElementById('test-result');
+  btn.disabled = true; btn.textContent = 'テスト中...'; el.innerHTML = '';
+  const body = {
+    provider: document.getElementById('provider').value,
+    endpoint: document.getElementById('endpoint').value || null,
+    api_key: document.getElementById('api-key').value || null,
+  };
+  const r = await api('/admin/ai-test', { method: 'POST', body: JSON.stringify(body) });
+  btn.disabled = false; btn.textContent = '接続テスト';
+  const d = await r.json();
+  if (!d.ok) { el.innerHTML = `<div class="test-status err">✗ ${esc(d.error)}</div>`; return; }
+  let html = '<div class="test-status ok">✓ 接続成功</div>';
+  if (d.models?.length) {
+    html += '<div style="background:var(--bg);border-radius:8px;padding:12px;margin-top:8px">';
+    html += '<div style="font-weight:600;margin-bottom:8px;font-size:0.85rem">利用可能なモデル</div>';
+    html += '<table class="model-tbl"><thead><tr><th>モデルID</th><th>名前</th><th></th></tr></thead><tbody>';
+    for (const m of d.models)
+      html += `<tr><td>${esc(m.id)}</td><td>${esc(m.name)}</td><td><button class="btn btn-sm btn-ok" onclick="selectModel('${esc(m.id)}')">選択</button></td></tr>`;
+    html += '</tbody></table></div>';
+  }
+  el.innerHTML = html;
+}
+
+function selectModel(id) {
+  document.getElementById('model').value = id;
+  toast(`モデル "${id}" を選択しました`);
+}
+
+// ─── ユーザー管理 ───
+async function loadUsers() {
+  const r = await api('/admin/users');
+  if (!r.ok) return;
+  const users = await r.json();
+  const tbody = document.getElementById('user-tbody');
+  if (!users.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--sub);padding:20px">ユーザーがいません</td></tr>'; return; }
+  tbody.innerHTML = users.map(u => `
+    <tr>
+      <td style="color:var(--sub)">${u.id}</td>
+      <td>${esc(u.display_name)}</td>
+      <td><span class="badge badge-${u.is_guest ? 'guest' : 'user'}">${u.is_guest ? 'ゲスト' : 'asobi連携'}</span></td>
+      <td><span class="badge badge-${u.role}">${u.role}</span></td>
+      <td style="color:var(--sub);font-size:0.78rem">${u.created_at.slice(0,10)}</td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        ${u.role === 'admin'
+          ? `<button class="btn btn-sm btn-ghost" onclick="setRole(${u.id},'user')">解除</button>`
+          : u.is_guest ? ''
+          : `<button class="btn btn-sm btn-warn" onclick="setRole(${u.id},'admin')">管理者に</button>`}
+        <button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id},'${esc(u.display_name)}')">削除</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function setRole(id, role) {
+  const r = await api(`/admin/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
+  r.ok ? (toast('ロールを変更しました'), loadUsers()) : toast('変更に失敗しました', 'err');
+}
+
+async function deleteUser(id, name) {
+  if (!confirm(`「${name}」を削除しますか？`)) return;
+  const r = await api(`/admin/users/${id}`, { method: 'DELETE' });
+  r.ok ? (toast('削除しました'), loadUsers()) : toast('削除に失敗しました', 'err');
+}
+
+// ─── キャラクター管理 ───
+async function loadCharacters() {
+  const r = await api('/admin/characters');
+  if (!r.ok) return;
+  const chars = await r.json();
+  const tbody = document.getElementById('char-tbody');
+  if (!chars.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:20px">キャラクターがいません</td></tr>'; return; }
+  tbody.innerHTML = chars.map(c => {
+    const badges = [];
+    if (c.is_sample) badges.push('<span class="badge badge-sample">サンプル</span>');
+    else if (c.is_public) badges.push('<span class="badge badge-public">公開</span>');
+    else badges.push('<span class="badge badge-private">非公開</span>');
+    return `<tr>
+      <td style="color:var(--sub)">${c.id}</td>
+      <td>${esc(c.name)}</td>
+      <td style="color:var(--sub)">${c.creator_id}</td>
+      <td>${badges.join('')}</td>
+      <td>${c.like_count}</td>
+      <td>${c.use_count}</td>
+      <td style="color:var(--sub);font-size:0.78rem">${c.created_at.slice(0,10)}</td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        ${c.is_sample
+          ? `<button class="btn btn-sm btn-ghost" onclick="setCharFlag(${c.id},{is_sample:0})">サンプル解除</button>`
+          : `<button class="btn btn-sm btn-info" onclick="setCharFlag(${c.id},{is_sample:1})">サンプルに</button>`}
+        ${c.is_public
+          ? `<button class="btn btn-sm btn-ghost" onclick="setCharFlag(${c.id},{is_public:0})">非公開に</button>`
+          : `<button class="btn btn-sm btn-ok" onclick="setCharFlag(${c.id},{is_public:1})">公開に</button>`}
+        <button class="btn btn-sm btn-danger" onclick="deleteChar(${c.id},'${esc(c.name)}')">削除</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function setCharFlag(id, body) {
+  const r = await api(`/admin/characters/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  r.ok ? (toast('更新しました'), loadCharacters()) : toast('更新に失敗しました', 'err');
+}
+
+async function deleteChar(id, name) {
+  if (!confirm(`「${name}」を削除しますか？関連する会話も削除されます。`)) return;
+  const r = await api(`/admin/characters/${id}`, { method: 'DELETE' });
+  r.ok ? (toast('削除しました'), loadCharacters()) : toast('削除に失敗しました', 'err');
+}
+
+// ─── SD設定 ───
+async function loadSdSettings() {
+  const r = await api('/admin/sd-settings');
+  if (!r.ok) return;
+  const d = await r.json();
+  document.getElementById('sd-enabled').value = d.enabled ?? 0;
+  document.getElementById('sd-endpoint').value = d.endpoint || '';
+  document.getElementById('sd-model').value = d.model || '';
+  document.getElementById('sd-negative').value = d.negative_prompt || '';
+  document.getElementById('sd-steps').value = d.steps || 20;
+  document.getElementById('sd-cfg').value = d.cfg_scale ?? 7.0;
+  document.getElementById('sd-width').value = d.width || 512;
+  document.getElementById('sd-height').value = d.height || 512;
+}
+
+async function saveSdSettings() {
+  const btn = document.getElementById('btn-sd-save');
+  btn.disabled = true; btn.textContent = '保存中...';
+  const body = {
+    enabled: parseInt(document.getElementById('sd-enabled').value),
+    endpoint: document.getElementById('sd-endpoint').value || null,
+    model: document.getElementById('sd-model').value || null,
+    negative_prompt: document.getElementById('sd-negative').value,
+    steps: parseInt(document.getElementById('sd-steps').value) || 20,
+    cfg_scale: parseFloat(document.getElementById('sd-cfg').value) || 7.0,
+    width: parseInt(document.getElementById('sd-width').value) || 512,
+    height: parseInt(document.getElementById('sd-height').value) || 512,
+  };
+  const r = await api('/admin/sd-settings', { method: 'PUT', body: JSON.stringify(body) });
+  btn.disabled = false; btn.textContent = '保存';
+  r.ok ? toast('設定を保存しました') : toast('保存に失敗しました', 'err');
+}
+
+function selectSdModel(name) {
+  document.getElementById('sd-model').value = name;
+  toast(`モデル "${name}" を選択しました`);
+}
+
+// ─── プロンプトテンプレート管理 ───
+async function loadTemplates() {
+  const r = await api('/admin/sd-templates');
+  if (!r.ok) return;
+  const list = await r.json();
+  const el = document.getElementById('tmpl-list');
+  if (!list.length) {
+    el.innerHTML = '<p style="color:var(--sub);font-size:0.85rem">テンプレートがありません</p>';
+    return;
+  }
+  el.innerHTML = list.map(t => `
+    <div class="tmpl-row" id="tmpl-${t.id}" style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:0.9rem">${esc(t.name)}
+            <span class="badge ${t.is_active ? 'badge-public' : 'badge-private'}" style="margin-left:6px">${t.is_active ? '有効' : '無効'}</span>
+            <span style="color:var(--sub);font-size:0.75rem;margin-left:6px">順: ${t.sort_order}</span>
+          </div>
+          <div style="font-size:0.8rem;color:var(--sub);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.prompt)}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-sm btn-ghost" onclick="editTemplate(${t.id})">編集</button>
+          <button class="btn btn-sm ${t.is_active ? 'btn-ghost' : 'btn-ok'}" onclick="toggleTemplate(${t.id},${t.is_active ? 0 : 1})">${t.is_active ? '無効化' : '有効化'}</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteTemplate(${t.id},'${esc(t.name)}')">削除</button>
+        </div>
+      </div>
+      <div id="edit-${t.id}" style="display:none;margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div class="form-group" style="margin:0"><label>テンプレート名</label><input type="text" id="e-name-${t.id}" value="${esc(t.name)}"></div>
+          <div class="form-group" style="margin:0"><label>プロンプト</label><textarea id="e-prompt-${t.id}" rows="3">${esc(t.prompt)}</textarea></div>
+          <div class="form-group" style="margin:0"><label>ネガティブプロンプト</label><textarea id="e-neg-${t.id}" rows="2">${esc(t.negative_prompt || '')}</textarea></div>
+          <div class="form-group" style="margin:0"><label>表示順</label><input type="number" id="e-order-${t.id}" value="${t.sort_order}" style="width:100px"></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="saveTemplate(${t.id})">保存</button>
+            <button class="btn btn-ghost btn-sm" onclick="cancelEdit(${t.id})">キャンセル</button>
+          </div>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function createTemplate() {
+  const name = document.getElementById('new-tmpl-name').value.trim();
+  const prompt = document.getElementById('new-tmpl-prompt').value.trim();
+  if (!name || !prompt) { toast('名前とプロンプトは必須です', 'err'); return; }
+  const body = {
+    name, prompt,
+    negative_prompt: document.getElementById('new-tmpl-neg').value.trim() || null,
+    sort_order: parseInt(document.getElementById('new-tmpl-order').value) || 0,
+    is_active: 1,
+  };
+  const r = await api('/admin/sd-templates', { method: 'POST', body: JSON.stringify(body) });
+  if (r.ok) {
+    toast('テンプレートを追加しました');
+    ['new-tmpl-name','new-tmpl-prompt','new-tmpl-neg'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('new-tmpl-order').value = '0';
+    loadTemplates();
+  } else { toast('追加に失敗しました', 'err'); }
+}
+
+function editTemplate(id) {
+  document.getElementById('edit-' + id).style.display = 'block';
+}
+function cancelEdit(id) {
+  document.getElementById('edit-' + id).style.display = 'none';
+}
+
+async function saveTemplate(id) {
+  const body = {
+    name: document.getElementById(`e-name-${id}`).value.trim(),
+    prompt: document.getElementById(`e-prompt-${id}`).value.trim(),
+    negative_prompt: document.getElementById(`e-neg-${id}`).value.trim() || null,
+    sort_order: parseInt(document.getElementById(`e-order-${id}`).value) || 0,
+    is_active: 1,
+  };
+  if (!body.name || !body.prompt) { toast('名前とプロンプトは必須です', 'err'); return; }
+  const r = await api(`/admin/sd-templates/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+  r.ok ? (toast('保存しました'), loadTemplates()) : toast('保存に失敗しました', 'err');
+}
+
+async function toggleTemplate(id, isActive) {
+  const name = document.querySelector(`#tmpl-${id} [id^="e-name-"]`)?.value
+    || document.querySelector(`#tmpl-${id} .fw-600, #tmpl-${id} [style*="font-weight"]`)?.textContent?.trim()
+    || '';
+  const prompt = document.getElementById(`e-prompt-${id}`)?.value || '';
+  const r = await api(`/admin/sd-templates/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ name, prompt, is_active: isActive, sort_order: 0 }),
+  });
+  r.ok ? (toast(isActive ? '有効化しました' : '無効化しました'), loadTemplates()) : toast('更新に失敗しました', 'err');
+}
+
+async function deleteTemplate(id, name) {
+  if (!confirm(`「${name}」を削除しますか？`)) return;
+  const r = await api(`/admin/sd-templates/${id}`, { method: 'DELETE' });
+  r.ok ? (toast('削除しました'), loadTemplates()) : toast('削除に失敗しました', 'err');
+}
+
+async function testSdConnection() {
+  const btn = document.getElementById('btn-sd-test');
+  const el = document.getElementById('sd-test-result');
+  btn.disabled = true; btn.textContent = 'テスト中...'; el.innerHTML = '';
+  const body = { endpoint: document.getElementById('sd-endpoint').value || null };
+  const r = await api('/admin/sd-test', { method: 'POST', body: JSON.stringify(body) });
+  btn.disabled = false; btn.textContent = '接続テスト';
+  const d = await r.json();
+  if (!d.ok) {
+    let hint = '';
+    if (d.error?.includes('Connection') || d.error?.includes('connect')) {
+      hint = '<div style="color:var(--sub);font-size:0.78rem;margin-top:6px">' +
+        '確認事項：<br>' +
+        '① A1111 を <code>--api --listen</code> オプションで起動しているか<br>' +
+        '② ルーターでポート転送が設定されているか<br>' +
+        '③ Windows ファイアウォールでポートが許可されているか' +
+        '</div>';
+    }
+    el.innerHTML = `<div class="test-status err">✗ ${esc(d.error)}</div>${hint}`;
+    return;
+  }
+  let html = '<div class="test-status ok">✓ 接続成功</div>';
+  if (d.models?.length) {
+    html += '<div style="background:var(--bg);border-radius:8px;padding:12px;margin-top:8px">';
+    html += '<div style="font-weight:600;margin-bottom:8px;font-size:0.85rem">利用可能なモデル</div>';
+    html += '<table class="model-tbl"><thead><tr><th>モデル名</th><th></th></tr></thead><tbody>';
+    for (const m of d.models)
+      html += `<tr><td>${esc(m)}</td><td><button class="btn btn-sm btn-ok" onclick="selectSdModel('${esc(m)}')">選択</button></td></tr>`;
+    html += '</tbody></table></div>';
+  }
+  el.innerHTML = html;
+}
+
+// showSection の拡張
+const _origShowSection = showSection;
+showSection = function(id) {
+  if (id === 'sd') {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    document.getElementById('sec-sd').classList.add('active');
+    event.currentTarget.classList.add('active');
+    loadSdSettings();
+    loadTemplates();
+    return;
+  }
+  _origShowSection(id);
+};
+
+// 初期化
+initHeader();
+loadStats();
+</script>
+</body>
+</html>
