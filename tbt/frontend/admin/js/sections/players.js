@@ -197,7 +197,7 @@ const PlayersSection = {
     },
 
     async deleteUser(userId, name) {
-        if (!confirm(`NPC「${name}」を削除しますか？関連するキャラクター・アイテム等も全て削除されます。`)) return;
+        if (!await AdminApp.confirm(`NPC「${name}」を削除しますか？\n関連するキャラクター・アイテム等も全て削除されます。`)) return;
         try {
             await AdminAPI.deleteUser(userId);
             AdminApp.toast('削除しました');
@@ -208,7 +208,7 @@ const PlayersSection = {
     },
 
     async convertNpc(userId) {
-        if (!confirm('このユーザーをNPC化しますか？ログインできなくなります。')) return;
+        if (!await AdminApp.confirm('このユーザーをNPC化しますか？\nログインできなくなります。', 'NPC化する')) return;
         try {
             await AdminAPI.convertNpc(userId);
             AdminApp.closeModal();

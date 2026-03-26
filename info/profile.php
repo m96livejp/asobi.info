@@ -599,10 +599,12 @@ $lastSentAt   = $pendingRow ? $pendingRow['last_sent_at'] : null;
                 <?= htmlspecialchars($linkedRow['display_name'] ?? '') ?>
                 <?php if ($linkedRow['username']): ?><br>@<?= htmlspecialchars($linkedRow['username']) ?><?php endif; ?>
               </div>
-              <form method="POST" action="" onsubmit="return confirm('<?= $pName ?> の連携を解除しますか？')">
+              <form method="POST" action="">
                 <input type="hidden" name="action" value="unlink_social">
                 <input type="hidden" name="provider" value="<?= $pKey ?>">
-                <button type="submit" class="btn-unlink">解除</button>
+                <button type="button" class="btn-unlink"
+                        data-confirm="<?= htmlspecialchars($pName) ?> の連携を解除しますか？"
+                        data-confirm-ok="解除する">解除</button>
               </form>
             <?php else: ?>
               <div class="social-info">未連携</div>

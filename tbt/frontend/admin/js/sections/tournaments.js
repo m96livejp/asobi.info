@@ -71,7 +71,7 @@ const TournamentsSection = {
     },
 
     async deleteTournament(id) {
-        if (!confirm('このトーナメントを削除しますか？関連するバトルログ・エントリーも全て削除されます。')) return;
+        if (!await AdminApp.confirm('このトーナメントを削除しますか？\n関連するバトルログ・エントリーも全て削除されます。')) return;
         try {
             await AdminAPI.deleteTournament(id);
             AdminApp.toast('削除しました');

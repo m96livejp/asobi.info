@@ -342,10 +342,10 @@ layout_head('個体値データ管理', 'iv');
             <?= htmlspecialchars($obs['memo']) ?>
           </td>
           <td>
-            <form method="POST" onsubmit="return confirm('このデータを削除しますか？')">
+            <form method="POST">
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="id" value="<?= $obs['id'] ?>">
-              <button type="submit" class="btn btn-danger btn-sm">削除</button>
+              <button type="button" class="btn btn-danger btn-sm" data-confirm="このデータを削除しますか？" data-confirm-ok="削除する">削除</button>
             </form>
           </td>
         </tr>

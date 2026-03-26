@@ -96,7 +96,7 @@ const NpcNamesSection = {
     },
 
     async deleteName(id, name) {
-        if (!confirm(`「${name}」を完全に削除しますか？`)) return;
+        if (!await AdminApp.confirm(`「${name}」を完全に削除しますか？`)) return;
         try {
             await AdminAPI.deleteNpcName(id);
             AdminApp.toast('削除しました');

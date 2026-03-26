@@ -137,6 +137,32 @@ const AdminApp = {
         document.querySelector('.modal-overlay')?.remove();
     },
 
+    confirm(msg, okLabel = '削除する') {
+        return new Promise(resolve => {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;animation:cfm-in .12s ease';
+            const box = document.createElement('div');
+            box.style.cssText = 'background:#1e2433;border:1px solid #2a2f3d;border-radius:14px;padding:28px 28px 20px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.6)';
+            box.innerHTML = `
+                <div style="font-size:.95rem;line-height:1.7;color:#dde;margin-bottom:20px;white-space:pre-wrap">${msg.replace(/</g,'&lt;')}</div>
+                <div style="display:flex;gap:10px;justify-content:flex-end">
+                  <button id="_adm_cancel" style="padding:8px 18px;border:1px solid #3a3f50;border-radius:8px;background:none;color:#aab;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit">キャンセル</button>
+                  <button id="_adm_ok" style="padding:8px 18px;border:none;border-radius:8px;background:#e53935;color:#fff;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit">${okLabel.replace(/</g,'&lt;')}</button>
+                </div>`;
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+            if (!document.getElementById('_adm_cfm_anim')) {
+                const s = document.createElement('style');
+                s.id = '_adm_cfm_anim';
+                s.textContent = '@keyframes cfm-in{from{opacity:0}to{opacity:1}}';
+                document.head.appendChild(s);
+            }
+            overlay.querySelector('#_adm_ok').addEventListener('click', () => { overlay.remove(); resolve(true); });
+            overlay.querySelector('#_adm_cancel').addEventListener('click', () => { overlay.remove(); resolve(false); });
+            overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
+        });
+    },
+
     formatDate(dateStr) {
         if (!dateStr) return '-';
         const d = new Date(dateStr);

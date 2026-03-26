@@ -103,13 +103,13 @@ const Comments = {
       });
       const data = await res.json();
       if (data.error) {
-        alert(data.error);
+        this._showError(input, data.error);
       } else {
         input.value = '';
         await this.load();
       }
     } catch (e) {
-      alert('投稿に失敗しました。');
+      this._showError(input, '投稿に失敗しました。');
     }
 
     btn.disabled = false;
@@ -117,24 +117,39 @@ const Comments = {
   },
 
   async deleteComment(id) {
-    if (!confirm('このコメントを削除しますか？')) return;
-
-    try {
-      const res = await fetch('/api/comments.php?id=' + id, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.ok) {
-        const el = document.getElementById('comment-' + id);
-        if (el) el.remove();
-        // リストが空になったら再描画
-        const listEl = document.getElementById('comments-list');
-        if (listEl && !listEl.querySelector('.comment-item')) {
-          listEl.innerHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;">まだコメントはありません。</p>';
+    asobiConfirm('このコメントを削除しますか？', async () => {
+      try {
+        const res = await fetch('/api/comments.php?id=' + id, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) {
+          const el = document.getElementById('comment-' + id);
+          if (el) el.remove();
+          const listEl = document.getElementById('comments-list');
+          if (listEl && !listEl.querySelector('.comment-item')) {
+            listEl.innerHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;">まだコメントはありません。</p>';
+          }
+        } else {
+          this._showError(null, data.error || '削除に失敗しました。');
         }
-      } else {
-        alert(data.error || '削除に失敗しました。');
+      } catch (e) {
+        this._showError(null, '削除に失敗しました。');
       }
-    } catch (e) {
-      alert('削除に失敗しました。');
+    }, '削除する');
+  },
+
+  _showError(nearEl, msg) {
+    // 既存のエラー表示を削除
+    document.querySelectorAll('.comment-error-msg').forEach(el => el.remove());
+    const err = document.createElement('p');
+    err.className = 'comment-error-msg';
+    err.style.cssText = 'color:#c0392b;font-size:0.85rem;margin:6px 0;';
+    err.textContent = msg;
+    if (nearEl && nearEl.parentNode) {
+      nearEl.parentNode.insertBefore(err, nearEl.nextSibling);
+    } else {
+      const list = document.getElementById('comments-list') || document.body;
+      list.prepend(err);
     }
+    setTimeout(() => err.remove(), 5000);
   }
 };

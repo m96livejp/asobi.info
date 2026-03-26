@@ -264,10 +264,10 @@ $currentUser    = asobiGetCurrentUser();
           <td style="color:#637080;"><?= htmlspecialchars($w['note']) ?></td>
           <td style="color:#9ba8b5;font-size:0.78rem;white-space:nowrap;"><?= substr($w['created_at'], 0, 10) ?></td>
           <td>
-            <form method="POST" action="" onsubmit="return confirm('削除しますか？')">
+            <form method="POST" action="">
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="id" value="<?= $w['id'] ?>">
-              <button type="submit" class="btn-delete">削除</button>
+              <button type="button" class="btn-delete" data-confirm="削除しますか？" data-confirm-ok="削除する">削除</button>
             </form>
           </td>
         </tr>

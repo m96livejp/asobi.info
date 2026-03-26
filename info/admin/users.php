@@ -399,12 +399,12 @@ $users = $stmt->fetchAll();
                     <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
                     <?php if ($u['role'] === 'user'): ?>
                       <input type="hidden" name="role" value="admin">
-                      <button type="submit" class="btn btn-sm btn-warning"
-                              onclick="return confirm('管理者に昇格しますか？')">管理者へ</button>
+                      <button type="button" class="btn btn-sm btn-warning"
+                              data-confirm="管理者に昇格しますか？" data-confirm-ok="昇格する">管理者へ</button>
                     <?php else: ?>
                       <input type="hidden" name="role" value="user">
-                      <button type="submit" class="btn btn-sm btn-muted"
-                              onclick="return confirm('管理者権限を外しますか？')">一般へ</button>
+                      <button type="button" class="btn btn-sm btn-muted"
+                              data-confirm="管理者権限を外しますか？" data-confirm-ok="解除する">一般へ</button>
                     <?php endif; ?>
                   </form>
                   <form method="POST" action="" style="display:contents">
@@ -412,8 +412,8 @@ $users = $stmt->fetchAll();
                     <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
                     <?php if ($u['status'] === 'active'): ?>
                       <input type="hidden" name="status" value="suspended">
-                      <button type="submit" class="btn btn-sm btn-danger"
-                              onclick="return confirm('アカウントを停止しますか？')">停止</button>
+                      <button type="button" class="btn btn-sm btn-danger"
+                              data-confirm="アカウントを停止しますか？" data-confirm-ok="停止する">停止</button>
                     <?php else: ?>
                       <input type="hidden" name="status" value="active">
                       <button type="submit" class="btn btn-sm btn-success">復元</button>
@@ -422,8 +422,8 @@ $users = $stmt->fetchAll();
                   <form method="POST" action="" style="display:contents">
                     <input type="hidden" name="action" value="delete">
                     <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
-                    <button type="submit" class="btn btn-sm btn-danger"
-                            onclick="return confirm('「<?= htmlspecialchars(addslashes($u['username'])) ?>」を削除します。この操作は取り消せません。')">削除</button>
+                    <button type="button" class="btn btn-sm btn-danger"
+                            data-confirm="「<?= htmlspecialchars($u['username']) ?>」を削除します。この操作は取り消せません。" data-confirm-ok="削除する">削除</button>
                   </form>
                 <?php else: ?>
                   <span style="font-size:0.8rem;color:#8888a0">（自分）</span>

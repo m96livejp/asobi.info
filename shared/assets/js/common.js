@@ -112,6 +112,72 @@ const API = {
   });
 })();
 
+// ─── カスタム確認ダイアログ（alert/confirm 禁止の代替） ───
+function asobiConfirm(msg, onOk, okLabel = '実行する', okDanger = true) {
+  const CSS_ID = 'asobi-confirm-css';
+  if (!document.getElementById(CSS_ID)) {
+    const s = document.createElement('style');
+    s.id = CSS_ID;
+    s.textContent = [
+      '.asobi-confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;animation:asobi-cfm-in .12s ease}',
+      '@keyframes asobi-cfm-in{from{opacity:0}to{opacity:1}}',
+      '.asobi-confirm-box{background:#fff;border-radius:14px;padding:28px 28px 20px;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:asobi-cfm-box .15s ease}',
+      '@keyframes asobi-cfm-box{from{transform:scale(.92)}to{transform:scale(1)}}',
+      '.asobi-confirm-msg{font-size:.95rem;line-height:1.7;color:#222;margin-bottom:20px;white-space:pre-wrap}',
+      '.asobi-confirm-btns{display:flex;gap:10px;justify-content:flex-end}',
+      '.asobi-confirm-btns button{padding:8px 20px;border:none;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit}',
+      '.asobi-confirm-cancel{background:#f0f0f0;color:#555}',
+      '.asobi-confirm-cancel:hover{background:#e0e0e0}',
+      '.asobi-confirm-ok-danger{background:#e53935;color:#fff}',
+      '.asobi-confirm-ok-danger:hover{background:#c62828}',
+      '.asobi-confirm-ok-normal{background:#1976d2;color:#fff}',
+      '.asobi-confirm-ok-normal:hover{background:#1565c0}',
+    ].join('');
+    document.head.appendChild(s);
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'asobi-confirm-overlay';
+  const okClass = okDanger ? 'asobi-confirm-ok-danger' : 'asobi-confirm-ok-normal';
+  overlay.innerHTML = `<div class="asobi-confirm-box">
+    <div class="asobi-confirm-msg">${escapeHtml(msg)}</div>
+    <div class="asobi-confirm-btns">
+      <button class="asobi-confirm-cancel">キャンセル</button>
+      <button class="${okClass}">${escapeHtml(okLabel)}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.asobi-confirm-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('.' + okClass).addEventListener('click', () => { overlay.remove(); onOk(); });
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// data-confirm 属性を持つ要素の自動インターセプト（PHP ページ向け）
+document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-confirm]');
+    if (!btn) return;
+    e.preventDefault();
+    const msg = btn.dataset.confirm;
+    const okLabel = btn.dataset.confirmOk || '実行する';
+    asobiConfirm(msg, () => {
+      const form = btn.closest('form');
+      if (form) {
+        // hidden input で action を上書きする場合の対応
+        const nameAttr = btn.dataset.name;
+        const valAttr  = btn.dataset.value;
+        if (nameAttr) {
+          const h = document.createElement('input');
+          h.type = 'hidden'; h.name = nameAttr; h.value = valAttr || '';
+          form.appendChild(h);
+        }
+        form.submit();
+      } else if (btn.tagName === 'A') {
+        location.href = btn.href;
+      }
+    }, okLabel);
+  });
+});
+
 // 検索デバウンス
 function debounce(fn, delay = 300) {
   let timer;
