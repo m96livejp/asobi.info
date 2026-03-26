@@ -946,14 +946,19 @@ function imgPage(dir) {
 }
 
 async function adminDeleteImage(id) {
-  showConfirm('この画像レコードをDBから削除しますか？\n（ファイルはサーバーに残ります）', async () => {
+  showConfirm('この画像を削除しますか？\nファイルとDBレコードを両方削除します。', async () => {
     const r = await api(`/admin/images/${id}`, { method: 'DELETE' });
     if (r.ok) {
+      const d = await r.json();
+      const msg = d.file_existed
+        ? (d.file_deleted ? '削除しました（ファイル＋DB）' : 'ファイル削除失敗')
+        : '削除しました（ファイルなし・DBのみ）';
       document.getElementById('imgcard-' + id)?.remove();
-      toast('削除しました');
+      toast(msg);
       loadImages(false);
     } else {
-      toast('削除に失敗しました', 'err');
+      const d = await r.json().catch(() => ({}));
+      toast(d.detail || '削除に失敗しました', 'err');
     }
   }, '削除する');
 }

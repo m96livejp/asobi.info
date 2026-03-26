@@ -1,4 +1,5 @@
 """管理者API"""
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
@@ -420,17 +421,49 @@ async def list_all_images(
     }
 
 
+_FRONTEND_ROOT = "/opt/asobi/aic/frontend"
+
+
 @router.delete("/images/{image_id}")
 async def admin_delete_image(
     image_id: int,
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """画像レコードを物理削除（管理者用）"""
+    """画像ファイルを削除してからDBレコードを削除（管理者用）
+    - ファイルが存在する場合: ファイル削除確認後にDB削除
+    - ファイルが既に存在しない場合: DBレコードのみ削除
+    """
     result = await db.execute(select(UserImage).where(UserImage.id == image_id))
     img = result.scalar_one_or_none()
     if not img:
         raise HTTPException(status_code=404, detail="画像が見つかりません")
+
+    # URL → ファイルパスに変換（例: /images/avatars/gen_xxx.png → /opt/asobi/aic/frontend/images/avatars/gen_xxx.png）
+    file_deleted = False
+    file_existed = False
+    file_path = None
+    if img.url:
+        file_path = os.path.join(_FRONTEND_ROOT, img.url.lstrip("/"))
+
+    if file_path and os.path.exists(file_path):
+        file_existed = True
+        try:
+            os.remove(file_path)
+            # 削除されたことを確認
+            if not os.path.exists(file_path):
+                file_deleted = True
+            else:
+                raise HTTPException(status_code=500, detail="ファイルの削除に失敗しました（削除後も存在しています）")
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=f"ファイル削除エラー: {e}")
+
+    # ファイルが確認できた（削除済み or 最初から存在しない）場合のみDB削除
     await db.delete(img)
     await db.commit()
-    return {"ok": True}
+
+    return {
+        "ok": True,
+        "file_existed": file_existed,
+        "file_deleted": file_deleted,
+    }
