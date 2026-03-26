@@ -551,17 +551,19 @@ body {
 
 /* === 画像生成画面 === */
 .gen-tmpl-btn {
-  padding: 5px 12px;
-  border-radius: 16px;
+  padding: 7px 14px;
+  border-radius: 20px;
   border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 0.8rem;
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-size: 0.82rem;
   cursor: pointer;
   transition: all 0.15s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.gen-tmpl-btn:hover { border-color: var(--accent); color: var(--text); }
-.gen-tmpl-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.gen-tmpl-btn:hover { border-color: var(--accent-light); background: var(--bg-card); }
+.gen-tmpl-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 
 .gen-grid {
   display: grid;

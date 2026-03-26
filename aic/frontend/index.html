@@ -244,9 +244,10 @@
 
         <!-- テンプレート選択（pending中は隠す） -->
         <div id="gen-form-section">
-          <div class="form-group">
-            <label style="font-size:0.85rem;font-weight:600;margin-bottom:8px;display:block">テンプレートを選ぶ</label>
-            <div id="gen-templates" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>
+          <div class="form-group" id="gen-tmpl-group">
+            <label style="font-size:0.85rem;font-weight:600;margin-bottom:8px;display:block">テンプレートを選ぶ <span style="font-weight:400;color:var(--text-secondary)">(プロンプトが自動入力されます)</span></label>
+            <div id="gen-templates" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px"></div>
+            <p id="gen-tmpl-empty" style="display:none;font-size:0.8rem;color:var(--text-secondary)">テンプレートがありません。管理画面から追加してください。</p>
           </div>
 
           <!-- プロンプト入力 -->

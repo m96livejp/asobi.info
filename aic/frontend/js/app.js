@@ -567,18 +567,33 @@ async function loadGenTemplates() {
     if (!r.ok) return;
     const templates = await r.json();
     const el = document.getElementById('gen-templates');
+    const emptyMsg = document.getElementById('gen-tmpl-empty');
     if (!el) return;
-    el.innerHTML = templates.map(t =>
-      `<button class="gen-tmpl-btn" data-id="${t.id}" data-prompt="${esc(t.prompt)}" onclick="selectGenTemplate(this)">${esc(t.name)}</button>`
+    if (!templates.length) {
+      el.innerHTML = '';
+      if (emptyMsg) emptyMsg.style.display = 'block';
+      return;
+    }
+    if (emptyMsg) emptyMsg.style.display = 'none';
+    // テンプレートボタンを生成（onclick はイベントリスナーで登録）
+    el.innerHTML = templates.map((t, i) =>
+      `<button class="gen-tmpl-btn" data-idx="${i}">${esc(t.name)}</button>`
     ).join('');
+    // データを配列で保持してクリック時に参照
+    el._templates = templates;
+    el.querySelectorAll('.gen-tmpl-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        el.querySelectorAll('.gen-tmpl-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        const idx = parseInt(this.dataset.idx);
+        const t = el._templates[idx];
+        const promptEl = document.getElementById('gen-main-prompt');
+        if (promptEl && t) promptEl.value = t.prompt;
+        // template_id を記録
+        el.dataset.selectedId = t ? t.id : '';
+      });
+    });
   } catch(_) {}
-}
-
-function selectGenTemplate(btn) {
-  document.querySelectorAll('.gen-tmpl-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  const el = document.getElementById('gen-main-prompt');
-  if (el) el.value = btn.dataset.prompt;
 }
 
 // pending画像を確認し、あれば表示（画面再訪でのレジューム）
@@ -639,8 +654,8 @@ async function generateImages() {
   btn.disabled = true; btn.textContent = '⏳ 生成中...';
   if (status) { status.style.display = 'block'; status.textContent = '⏳ 生成しています（1〜2分かかることがあります）'; }
 
-  const activeBtn = document.querySelector('.gen-tmpl-btn.active');
-  const templateId = activeBtn ? (parseInt(activeBtn.dataset.id) || null) : null;
+  const tmplContainer = document.getElementById('gen-templates');
+  const templateId = tmplContainer?.dataset.selectedId ? parseInt(tmplContainer.dataset.selectedId) : null;
 
   try {
     const r = await api('/generate/image', {
