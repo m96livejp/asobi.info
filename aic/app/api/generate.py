@@ -207,14 +207,39 @@ async def get_my_images(
     result = await db.execute(
         select(UserImage)
         .where(UserImage.user_id == user.id, UserImage.status == "saved", UserImage.is_deleted == 0)
-        .order_by(UserImage.id.desc())
+        .order_by(UserImage.is_favorite.desc(), UserImage.id.desc())  # お気に入り優先
     )
     imgs = result.scalars().all()
     count = len(imgs)
     return {
-        "images": [{"id": img.id, "url": img.url, "prompt": img.prompt} for img in imgs],
+        "images": [{"id": img.id, "url": img.url, "prompt": img.prompt, "is_favorite": img.is_favorite} for img in imgs],
         "count": count,
     }
+
+
+@router.post("/my-images/{image_id}/favorite")
+async def toggle_favorite(
+    image_id: int,
+    user: User | None = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """ギャラリー画像のお気に入りをトグル"""
+    if not user or user.asobi_user_id is None:
+        raise HTTPException(status_code=401, detail="ログインが必要です")
+    result = await db.execute(
+        select(UserImage).where(
+            UserImage.id == image_id,
+            UserImage.user_id == user.id,
+            UserImage.status == "saved",
+            UserImage.is_deleted == 0,
+        )
+    )
+    img = result.scalar_one_or_none()
+    if not img:
+        raise HTTPException(status_code=404, detail="画像が見つかりません")
+    img.is_favorite = 0 if img.is_favorite else 1
+    await db.commit()
+    return {"ok": True, "is_favorite": img.is_favorite}
 
 
 @router.delete("/my-images/{image_id}")

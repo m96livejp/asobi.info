@@ -128,35 +128,26 @@
 
         <!-- ─── STEP 1: アバター選択 ─── -->
         <div id="cr-step-1">
-          <div style="text-align:center;margin-bottom:20px">
-            <!-- 大きいプレビュー -->
-            <div id="avatar-preview" style="width:100px;height:100px;border-radius:50%;background:var(--bg-secondary);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:2.5rem;overflow:hidden;margin:0 auto 10px">
-              <span id="avatar-preview-placeholder">👤</span>
-              <img id="avatar-preview-img" style="display:none;width:100%;height:100%;object-fit:cover" alt="">
-            </div>
-            <div id="avatar-selected-name" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:10px">未選択（スキップ可）</div>
-            <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-              <div id="avatar-gen-section" style="display:none">
-                <button class="btn btn-secondary" onclick="goToGenerate()">🎨 新規画像生成</button>
-              </div>
-              <button class="btn btn-ghost btn-sm" id="btn-clear-avatar" onclick="clearAvatarSelection()" style="display:none">✕ 選択解除</button>
-            </div>
-          </div>
-
           <!-- ギャラリーから選択 -->
-          <div id="cr-gallery-section" style="display:none">
-            <p style="font-size:0.85rem;font-weight:600;margin-bottom:8px">ギャラリーから選ぶ</p>
+          <div id="cr-gallery-section">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <p style="font-size:0.88rem;font-weight:600;color:var(--text)">ギャラリーから選ぶ</p>
+              <div id="avatar-gen-section">
+                <button class="btn btn-secondary btn-sm" onclick="goToGenerate()">🎨 新規画像生成</button>
+              </div>
+            </div>
             <div id="cr-gallery-grid" class="gen-gallery-grid"></div>
           </div>
-          <div id="cr-gallery-empty" style="display:none;text-align:center;padding:16px 0;color:var(--text-secondary);font-size:0.85rem">
-            保存した画像がありません。<br>画像生成ツールで作成してみましょう。
+          <div id="cr-gallery-empty" style="display:none;text-align:center;padding:24px 0;color:var(--text-secondary);font-size:0.85rem">
+            <div style="font-size:2rem;margin-bottom:8px">🖼</div>
+            保存した画像がありません。<br>
+            <button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="goToGenerate()">🎨 新規画像生成</button>
           </div>
 
           <input type="hidden" id="cr-avatar-url">
 
-          <div class="form-actions" style="margin-top:20px">
-            <button class="btn btn-secondary" onclick="navTo('home')">キャンセル</button>
-            <button class="btn btn-primary" onclick="goToCreateStep2()">次へ →</button>
+          <div class="form-actions" style="margin-top:16px;justify-content:center">
+            <button class="btn btn-ghost btn-sm" onclick="goToCreateStep2()">アバターなしで次へ →</button>
           </div>
         </div>
 
@@ -346,6 +337,21 @@
 
 <!-- トースト通知コンテナ -->
 <div id="toast-container"></div>
+
+<!-- ギャラリーライトボックス -->
+<div id="cr-lightbox" class="cr-lightbox" onclick="crLightboxBgClick(event)">
+  <div class="cr-lightbox-inner">
+    <div class="cr-lightbox-top">
+      <button class="cr-lightbox-icon-btn cr-lightbox-del" id="lb-del-btn" title="削除" onclick="deleteFromCrLightbox()">🗑</button>
+      <button class="cr-lightbox-icon-btn cr-lightbox-close" title="とじる" onclick="closeCrLightbox()">✕</button>
+    </div>
+    <img id="lb-img" class="cr-lightbox-img" src="" alt="">
+    <div class="cr-lightbox-bottom">
+      <button class="cr-lightbox-select-btn" onclick="selectFromCrLightbox()">選んだ画像でキャラクターを作成する</button>
+      <button class="cr-lightbox-fav-btn" id="lb-fav-btn" title="お気に入り" onclick="toggleCrFavorite()">♡</button>
+    </div>
+  </div>
+</div>
 
 <script src="/js/app.js"></script>
 </body>

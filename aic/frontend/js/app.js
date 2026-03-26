@@ -175,8 +175,21 @@ function navTo(screen) {
         // sessionStorageからアバターURLを引き継ぐ（画像生成画面から戻った時）
         const pendingAvatar = sessionStorage.getItem('aic_gen_avatar');
         if (pendingAvatar) {
-          selectAvatarFromGallery(pendingAvatar);
           sessionStorage.removeItem('aic_gen_avatar');
+          // グリッドから該当画像のIDを探してライトボックスを開く
+          const gridItems = document.querySelectorAll('#cr-gallery-grid .gen-gallery-item');
+          let opened = false;
+          for (const item of gridItems) {
+            const img = item.querySelector('img');
+            if (img && (img.src === pendingAvatar || img.src.endsWith(pendingAvatar.split('/').pop()))) {
+              const id = parseInt(item.id.replace('cgrid-', ''));
+              const isFav = item.querySelector('.gen-gallery-fav.active') ? 1 : 0;
+              openCrLightbox(id, pendingAvatar, isFav);
+              opened = true;
+              break;
+            }
+          }
+          if (!opened) selectAvatarFromGallery(pendingAvatar);
         }
       });
     }
@@ -787,15 +800,92 @@ async function loadCreateGallery() {
       if (emptyEl) emptyEl.style.display = 'block';
       return;
     }
-    if (section) section.style.display = 'block';
+    if (section) section.style.display = '';
     if (emptyEl) emptyEl.style.display = 'none';
-    grid.innerHTML = imgs.map(img =>
-      `<div class="gen-gallery-item" id="cgrid-${img.id}" onclick="selectAvatarFromGallery('${esc(img.url)}')" style="cursor:pointer">
+    grid.innerHTML = imgs.map(img => {
+      const favClass = img.is_favorite ? 'active' : '';
+      return `<div class="gen-gallery-item" id="cgrid-${img.id}" style="cursor:pointer"
+                   onclick="openCrLightbox(${img.id}, '${esc(img.url)}', ${img.is_favorite ? 1 : 0})">
         <img src="${esc(img.url)}" loading="lazy" alt="">
-        <button class="gen-gallery-use" style="display:block;opacity:1;pointer-events:none">選択</button>
-      </div>`
-    ).join('');
+        <button class="gen-gallery-fav ${favClass}" onclick="event.stopPropagation();crToggleFavInGrid(${img.id}, this)" title="お気に入り">♡</button>
+      </div>`;
+    }).join('');
   } catch(_) {}
+}
+
+// ─── ギャラリーライトボックス ───
+let _lbCurrentId = null;
+let _lbCurrentUrl = null;
+let _lbCurrentFav = 0;
+
+function openCrLightbox(id, url, isFav) {
+  _lbCurrentId  = id;
+  _lbCurrentUrl = url;
+  _lbCurrentFav = isFav;
+  document.getElementById('lb-img').src = url;
+  const favBtn = document.getElementById('lb-fav-btn');
+  if (favBtn) {
+    favBtn.textContent = isFav ? '♥' : '♡';
+    favBtn.classList.toggle('active', !!isFav);
+  }
+  document.getElementById('cr-lightbox').classList.add('open');
+}
+
+function closeCrLightbox() {
+  document.getElementById('cr-lightbox').classList.remove('open');
+}
+
+function crLightboxBgClick(e) {
+  if (e.target === document.getElementById('cr-lightbox')) closeCrLightbox();
+}
+
+function selectFromCrLightbox() {
+  if (!_lbCurrentUrl) return;
+  selectAvatarFromGallery(_lbCurrentUrl);
+  closeCrLightbox();
+  goToCreateStep2();
+}
+
+async function deleteFromCrLightbox() {
+  if (!_lbCurrentId) return;
+  showConfirm('この画像をギャラリーから削除しますか？', async () => {
+    const r = await api('/generate/my-images/' + _lbCurrentId, { method: 'DELETE' });
+    if (r.ok) {
+      closeCrLightbox();
+      await loadCreateGallery();
+      showToast('削除しました', 'info');
+    } else {
+      showToast('削除に失敗しました', 'error');
+    }
+  }, '削除する');
+}
+
+async function toggleCrFavorite() {
+  if (!_lbCurrentId) return;
+  const r = await api('/generate/my-images/' + _lbCurrentId + '/favorite', { method: 'POST' });
+  if (!r.ok) { showToast('更新に失敗しました', 'error'); return; }
+  const d = await r.json();
+  _lbCurrentFav = d.is_favorite;
+  const favBtn = document.getElementById('lb-fav-btn');
+  if (favBtn) {
+    favBtn.textContent = d.is_favorite ? '♥' : '♡';
+    favBtn.classList.toggle('active', !!d.is_favorite);
+  }
+  // グリッドのバッジも更新
+  const gridFav = document.querySelector(`#cgrid-${_lbCurrentId} .gen-gallery-fav`);
+  if (gridFav) {
+    gridFav.classList.toggle('active', !!d.is_favorite);
+  }
+  // お気に入り変更でギャラリー並び順が変わるため再読み込み
+  await loadCreateGallery();
+}
+
+async function crToggleFavInGrid(id, btnEl) {
+  const r = await api('/generate/my-images/' + id + '/favorite', { method: 'POST' });
+  if (!r.ok) { showToast('更新に失敗しました', 'error'); return; }
+  const d = await r.json();
+  btnEl.classList.toggle('active', !!d.is_favorite);
+  await loadCreateGallery();
 }
 
 // ギャラリーからアバターを選択
