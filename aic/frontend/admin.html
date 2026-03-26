@@ -345,19 +345,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         </div>
         <div class="form-group">
           <label>幅 (px)</label>
-          <select id="sd-width">
-            <option value="512">512</option>
-            <option value="640">640</option>
-            <option value="768">768</option>
-          </select>
+          <input type="number" id="sd-width" value="512" min="64" max="2048" step="64">
+          <div class="hint">64の倍数推奨</div>
         </div>
         <div class="form-group">
           <label>高さ (px)</label>
-          <select id="sd-height">
-            <option value="512">512</option>
-            <option value="640">640</option>
-            <option value="768">768</option>
-          </select>
+          <input type="number" id="sd-height" value="768" min="64" max="2048" step="64">
+          <div class="hint">縦長: 512×768 / 576×1024 など</div>
         </div>
       </div>
       <button class="btn btn-primary" id="btn-sd-save" onclick="saveSdSettings()">保存</button>
