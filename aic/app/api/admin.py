@@ -1,5 +1,5 @@
 """管理者API"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 from ..database import get_db
@@ -8,6 +8,7 @@ from ..models.user import User
 from ..models.character import Character
 from ..models.conversation import Conversation, Message
 from ..models.settings import AiSettings, SdSettings, PromptTemplate
+from ..models.image import UserImage
 from pydantic import BaseModel
 import httpx
 
@@ -111,8 +112,10 @@ async def _test_openai(api_key):
     async with httpx.AsyncClient(timeout=10) as c:
         r = await c.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {api_key}"})
         r.raise_for_status()
+        # チャット対応モデルのみ（embeddings・whisper等を除外）
+        chat_keywords = ("gpt", "o1", "o3", "o4", "chatgpt")
         models = [{"id": m["id"], "name": m["id"]} for m in r.json().get("data", [])
-                  if any(k in m["id"] for k in ("gpt", "o1", "o3"))]
+                  if any(k in m["id"] for k in chat_keywords)]
         return {"ok": True, "models": sorted(models, key=lambda x: x["id"])}
 
 async def _test_claude(api_key):
@@ -306,7 +309,7 @@ async def test_sd_connection(req: SdTestRequest = SdTestRequest(), admin: User =
             r = await c.get(f"{endpoint}/sdapi/v1/sd-models")
             r.raise_for_status()
             models = [m.get("model_name", m.get("title", "")) for m in r.json()]
-            return {"ok": True, "models": models[:20]}
+            return {"ok": True, "models": models}
     except httpx.ConnectError as e:
         return {"ok": False, "error": f"Connection refused: {endpoint} に接続できません。A1111 が --listen オプションで起動しているか確認してください。"}
     except httpx.TimeoutException:
@@ -366,5 +369,68 @@ async def delete_template(tmpl_id: int, admin: User = Depends(require_admin), db
     t = result.scalar_one_or_none()
     if not t: raise HTTPException(status_code=404, detail="テンプレートが見つかりません")
     await db.delete(t)
+    await db.commit()
+    return {"ok": True}
+
+
+# ─────────────────────────────────────────────
+# 生成画像管理
+# ─────────────────────────────────────────────
+
+@router.get("/images")
+async def list_all_images(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    status: str | None = Query(None),
+    user_id: int | None = Query(None),
+    limit: int = Query(200, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """全ユーザーの生成画像一覧（管理者用）"""
+    q = select(UserImage, User.display_name).join(User, User.id == UserImage.user_id, isouter=True)
+    if status:
+        q = q.where(UserImage.status == status)
+    if user_id:
+        q = q.where(UserImage.user_id == user_id)
+    q = q.order_by(UserImage.id.desc()).limit(limit).offset(offset)
+    result = await db.execute(q)
+    rows = result.all()
+
+    # total count
+    cq = select(func.count()).select_from(UserImage)
+    if status:
+        cq = cq.where(UserImage.status == status)
+    if user_id:
+        cq = cq.where(UserImage.user_id == user_id)
+    total = (await db.execute(cq)).scalar()
+
+    return {
+        "total": total,
+        "images": [{
+            "id": img.id,
+            "user_id": img.user_id,
+            "display_name": display_name or f"User#{img.user_id}",
+            "url": img.url,
+            "prompt": img.prompt,
+            "template_id": img.template_id,
+            "status": img.status,
+            "is_deleted": img.is_deleted,
+            "created_at": str(img.created_at) if img.created_at else "",
+        } for img, display_name in rows],
+    }
+
+
+@router.delete("/images/{image_id}")
+async def admin_delete_image(
+    image_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """画像レコードを物理削除（管理者用）"""
+    result = await db.execute(select(UserImage).where(UserImage.id == image_id))
+    img = result.scalar_one_or_none()
+    if not img:
+        raise HTTPException(status_code=404, detail="画像が見つかりません")
+    await db.delete(img)
     await db.commit()
     return {"ok": True}

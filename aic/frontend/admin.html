@@ -130,6 +130,24 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .sidebar{overflow-y:auto}
 .content{overflow-y:auto;flex:1}
 
+/* 生成画像グリッド */
+.img-filter-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.img-filter-bar select,.img-filter-bar input{padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.85rem;font-family:inherit}
+.img-filter-bar input{width:120px}
+.img-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.img-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;position:relative}
+.img-card img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:var(--bg3)}
+.img-card-info{padding:8px}
+.img-card-user{font-size:0.78rem;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.img-card-prompt{font-size:0.75rem;color:var(--text);margin-top:2px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.img-card-footer{display:flex;align-items:center;justify-content:space-between;margin-top:6px;gap:4px}
+.img-card-date{font-size:0.7rem;color:var(--sub)}
+.badge-pending{background:rgba(255,152,0,0.15);color:var(--warn)}
+.badge-saved{background:rgba(76,175,80,0.15);color:var(--ok)}
+.badge-discarded{background:rgba(255,255,255,0.06);color:var(--sub)}
+.img-pagination{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:20px;font-size:0.85rem;color:var(--sub)}
+.img-summary{font-size:0.85rem;color:var(--sub);margin-bottom:12px}
+
 /* レスポンシブ */
 @media(max-width:640px){
   .layout-body{flex-direction:column}
@@ -165,6 +183,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
     <button class="nav-item" onclick="showSection('sd')">🎨 AI設定画像用</button>
     <button class="nav-item" onclick="showSection('users')">👥 ユーザー</button>
     <button class="nav-item" onclick="showSection('characters')">✨ キャラクター</button>
+    <button class="nav-item" onclick="showSection('images')">🖼 生成画像</button>
   </nav>
 </aside>
 
@@ -362,6 +381,26 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           <button class="btn btn-primary btn-sm" onclick="createTemplate()">追加する</button>
         </div>
       </details>
+    </div>
+  </div>
+
+  <!-- 生成画像一覧 -->
+  <div id="sec-images" class="section">
+    <div class="section-title">🖼 生成画像一覧</div>
+    <div class="card">
+      <div class="img-filter-bar">
+        <select id="img-filter-status" onchange="loadImages()">
+          <option value="">全ステータス</option>
+          <option value="saved">保存済み</option>
+          <option value="pending">Pending</option>
+          <option value="discarded">破棄済み</option>
+        </select>
+        <input type="number" id="img-filter-user" placeholder="ユーザーID" oninput="loadImages()">
+        <button class="btn btn-ghost btn-sm" onclick="loadImages()">🔄 再読み込み</button>
+        <span id="img-total" style="font-size:0.85rem;color:var(--sub)"></span>
+      </div>
+      <div id="img-grid" class="img-grid"></div>
+      <div class="img-pagination" id="img-pagination"></div>
     </div>
   </div>
 
@@ -805,6 +844,84 @@ async function testSdConnection() {
   el.innerHTML = html;
 }
 
+// ─── 生成画像管理 ───
+let imgOffset = 0;
+const IMG_LIMIT = 48;
+
+async function loadImages(reset = true) {
+  if (reset) imgOffset = 0;
+  const status = document.getElementById('img-filter-status').value;
+  const userId = document.getElementById('img-filter-user').value;
+  const params = new URLSearchParams({ limit: IMG_LIMIT, offset: imgOffset });
+  if (status) params.append('status', status);
+  if (userId) params.append('user_id', userId);
+  const r = await api('/admin/images?' + params.toString());
+  if (!r.ok) { toast('画像一覧の取得に失敗しました', 'err'); return; }
+  const d = await r.json();
+
+  document.getElementById('img-total').textContent = `全 ${d.total} 件`;
+
+  const grid = document.getElementById('img-grid');
+  if (!d.images.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--sub)">画像がありません</div>';
+    document.getElementById('img-pagination').innerHTML = '';
+    return;
+  }
+
+  grid.innerHTML = d.images.map(img => {
+    const statusLabel = { saved:'保存済み', pending:'Pending', discarded:'破棄済み' }[img.status] || img.status;
+    const statusClass = `badge-${img.status}`;
+    const deletedBadge = img.is_deleted ? '<span class="badge" style="background:rgba(233,69,96,0.15);color:var(--accent-l)">削除済</span>' : '';
+    const date = img.created_at ? img.created_at.slice(0,16) : '';
+    const prompt = esc(img.prompt || '');
+    return `
+      <div class="img-card" id="imgcard-${img.id}">
+        <a href="${esc(img.url)}" target="_blank">
+          <img src="${esc(img.url)}" alt="" loading="lazy" onerror="this.style.minHeight='80px'">
+        </a>
+        <div class="img-card-info">
+          <div class="img-card-user">👤 ${esc(img.display_name)} <span style="color:var(--sub);font-size:0.7rem">#${img.user_id}</span></div>
+          <div class="img-card-prompt" title="${prompt}">${prompt || '<span style="color:var(--sub);font-style:italic">プロンプトなし</span>'}</div>
+          <div class="img-card-footer">
+            <span class="badge ${statusClass}">${statusLabel}</span>${deletedBadge}
+            <span class="img-card-date">${date}</span>
+          </div>
+          <div style="margin-top:6px">
+            <button class="btn btn-sm btn-danger" style="width:100%" onclick="adminDeleteImage(${img.id})">削除</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // ページネーション
+  const pag = document.getElementById('img-pagination');
+  const hasNext = imgOffset + IMG_LIMIT < d.total;
+  const hasPrev = imgOffset > 0;
+  pag.innerHTML = `
+    ${hasPrev ? `<button class="btn btn-ghost btn-sm" onclick="imgPage(-1)">← 前へ</button>` : ''}
+    <span>${imgOffset + 1}〜${Math.min(imgOffset + IMG_LIMIT, d.total)} / ${d.total}</span>
+    ${hasNext ? `<button class="btn btn-ghost btn-sm" onclick="imgPage(1)">次へ →</button>` : ''}
+  `;
+}
+
+function imgPage(dir) {
+  imgOffset = Math.max(0, imgOffset + dir * IMG_LIMIT);
+  loadImages(false);
+}
+
+async function adminDeleteImage(id) {
+  if (!confirm('この画像レコードをDBから削除しますか？（ファイルはサーバーに残ります）')) return;
+  const r = await api(`/admin/images/${id}`, { method: 'DELETE' });
+  if (r.ok) {
+    document.getElementById('imgcard-' + id)?.remove();
+    toast('削除しました');
+    // total更新のため再読み込み
+    loadImages(false);
+  } else {
+    toast('削除に失敗しました', 'err');
+  }
+}
+
 // showSection の拡張
 const _origShowSection = showSection;
 showSection = function(id) {
@@ -815,6 +932,14 @@ showSection = function(id) {
     event.currentTarget.classList.add('active');
     loadSdSettings();
     loadTemplates();
+    return;
+  }
+  if (id === 'images') {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    document.getElementById('sec-images').classList.add('active');
+    event.currentTarget.classList.add('active');
+    loadImages();
     return;
   }
   _origShowSection(id);
