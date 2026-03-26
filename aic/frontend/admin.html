@@ -95,6 +95,15 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .toast.ok{background:var(--ok)}
 .toast.err{background:var(--accent)}
 
+/* 確認ダイアログ（中央オーバーレイ） */
+.adm-confirm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;align-items:center;justify-content:center}
+.adm-confirm-overlay.show{display:flex}
+.adm-confirm-box{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:28px 28px 22px;min-width:300px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);animation:adm-dlg-in 0.15s ease}
+@keyframes adm-dlg-in{from{transform:scale(0.92);opacity:0}to{transform:scale(1);opacity:1}}
+.adm-confirm-msg{font-size:0.95rem;line-height:1.6;margin-bottom:20px;white-space:pre-wrap}
+.adm-confirm-btns{display:flex;gap:10px;justify-content:flex-end}
+.adm-confirm-btns .btn{min-width:80px;justify-content:center}
+
 /* ヘッダー */
 .admin-header{
   position:sticky;top:0;z-index:200;
@@ -410,6 +419,17 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 
 <div class="toast" id="toast"></div>
 
+<!-- 確認ダイアログ -->
+<div class="adm-confirm-overlay" id="adm-confirm-overlay">
+  <div class="adm-confirm-box">
+    <div class="adm-confirm-msg" id="adm-confirm-msg"></div>
+    <div class="adm-confirm-btns">
+      <button class="btn btn-ghost" id="adm-confirm-cancel" onclick="admConfirmClose()">キャンセル</button>
+      <button class="btn btn-danger" id="adm-confirm-ok">OK</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API = '/api';
 let token = localStorage.getItem('aic_token') || '';
@@ -490,6 +510,25 @@ function esc(s) {
   if (!s) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ─── 確認ダイアログ（中央表示） ───
+function showConfirm(msg, onOk, okLabel = 'OK', okClass = 'btn-danger') {
+  const overlay = document.getElementById('adm-confirm-overlay');
+  const msgEl   = document.getElementById('adm-confirm-msg');
+  const okBtn   = document.getElementById('adm-confirm-ok');
+  msgEl.textContent = msg;
+  okBtn.className = 'btn ' + okClass;
+  okBtn.textContent = okLabel;
+  okBtn.onclick = () => { admConfirmClose(); onOk(); };
+  overlay.classList.add('show');
+}
+function admConfirmClose() {
+  document.getElementById('adm-confirm-overlay').classList.remove('show');
+}
+// オーバーレイ背景クリックで閉じる
+document.getElementById('adm-confirm-overlay')?.addEventListener('click', function(e) {
+  if (e.target === this) admConfirmClose();
+});
 
 // ─── セクション切り替え ───
 function showSection(id) {
@@ -626,9 +665,10 @@ async function setRole(id, role) {
 }
 
 async function deleteUser(id, name) {
-  if (!confirm(`「${name}」を削除しますか？`)) return;
-  const r = await api(`/admin/users/${id}`, { method: 'DELETE' });
-  r.ok ? (toast('削除しました'), loadUsers()) : toast('削除に失敗しました', 'err');
+  showConfirm(`「${name}」を削除しますか？`, async () => {
+    const r = await api(`/admin/users/${id}`, { method: 'DELETE' });
+    r.ok ? (toast('削除しました'), loadUsers()) : toast('削除に失敗しました', 'err');
+  }, '削除する');
 }
 
 // ─── キャラクター管理 ───
@@ -670,9 +710,10 @@ async function setCharFlag(id, body) {
 }
 
 async function deleteChar(id, name) {
-  if (!confirm(`「${name}」を削除しますか？関連する会話も削除されます。`)) return;
-  const r = await api(`/admin/characters/${id}`, { method: 'DELETE' });
-  r.ok ? (toast('削除しました'), loadCharacters()) : toast('削除に失敗しました', 'err');
+  showConfirm(`「${name}」を削除しますか？\n関連する会話も削除されます。`, async () => {
+    const r = await api(`/admin/characters/${id}`, { method: 'DELETE' });
+    r.ok ? (toast('削除しました'), loadCharacters()) : toast('削除に失敗しました', 'err');
+  }, '削除する');
 }
 
 // ─── SD設定 ───
@@ -806,9 +847,10 @@ async function toggleTemplate(id, isActive) {
 }
 
 async function deleteTemplate(id, name) {
-  if (!confirm(`「${name}」を削除しますか？`)) return;
-  const r = await api(`/admin/sd-templates/${id}`, { method: 'DELETE' });
-  r.ok ? (toast('削除しました'), loadTemplates()) : toast('削除に失敗しました', 'err');
+  showConfirm(`「${name}」を削除しますか？`, async () => {
+    const r = await api(`/admin/sd-templates/${id}`, { method: 'DELETE' });
+    r.ok ? (toast('削除しました'), loadTemplates()) : toast('削除に失敗しました', 'err');
+  }, '削除する');
 }
 
 async function testSdConnection() {
@@ -910,16 +952,16 @@ function imgPage(dir) {
 }
 
 async function adminDeleteImage(id) {
-  if (!confirm('この画像レコードをDBから削除しますか？（ファイルはサーバーに残ります）')) return;
-  const r = await api(`/admin/images/${id}`, { method: 'DELETE' });
-  if (r.ok) {
-    document.getElementById('imgcard-' + id)?.remove();
-    toast('削除しました');
-    // total更新のため再読み込み
-    loadImages(false);
-  } else {
-    toast('削除に失敗しました', 'err');
-  }
+  showConfirm('この画像レコードをDBから削除しますか？\n（ファイルはサーバーに残ります）', async () => {
+    const r = await api(`/admin/images/${id}`, { method: 'DELETE' });
+    if (r.ok) {
+      document.getElementById('imgcard-' + id)?.remove();
+      toast('削除しました');
+      loadImages(false);
+    } else {
+      toast('削除に失敗しました', 'err');
+    }
+  }, '削除する');
 }
 
 // showSection の拡張
