@@ -12,7 +12,7 @@
   <aside id="sidebar" class="sidebar">
     <div class="sidebar-header">
       <button class="sidebar-close-btn" onclick="closeSidebar()">＜</button>
-      <h1 class="logo">🤖 AI Chat</h1>
+      <h1 class="logo">AI Chat</h1>
       <button id="new-chat-btn" class="btn btn-primary" onclick="navTo('chat-list')">＋ 新しい会話</button>
     </div>
     <div class="sidebar-user" id="user-info"></div>
@@ -20,11 +20,11 @@
     <nav class="sidebar-nav">
       <div class="nav-section-title">メニュー</div>
       <div class="sidebar-menu">
-        <button class="sidebar-menu-item" onclick="navTo('home');closeSidebar()">🏠 ホーム</button>
-        <button class="sidebar-menu-item" onclick="navTo('community');closeSidebar()">👥 コミュニティ</button>
-        <button class="sidebar-menu-item" onclick="navTo('create');closeSidebar()">✨ キャラクターを作る</button>
-        <button class="sidebar-menu-item" onclick="navTo('chat-list');closeSidebar()">💬 チャット</button>
-        <button class="sidebar-menu-item" onclick="navTo('profile');closeSidebar()">👤 プロフィール</button>
+        <button class="sidebar-menu-item" onclick="navTo('home');closeSidebar()"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg> ホーム</button>
+        <button class="sidebar-menu-item" onclick="navTo('community');closeSidebar()"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg> コミュニティ</button>
+        <button class="sidebar-menu-item" onclick="navTo('create');closeSidebar()"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/></svg> キャラクターを作る</button>
+        <button class="sidebar-menu-item" onclick="navTo('chat-list');closeSidebar()"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg> チャット</button>
+        <button class="sidebar-menu-item" onclick="navTo('profile');closeSidebar()"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg> プロフィール</button>
       </div>
       <div id="admin-link-section" style="display:none;padding:8px 0;border-top:1px solid var(--border);margin-top:4px">
         <a href="/admin.html" class="sidebar-menu-item" style="color:var(--accent-light);text-decoration:none;display:block">🛠 管理画面</a>
@@ -47,7 +47,6 @@
     <div id="screen-home" class="screen active">
       <div class="home-content">
         <div class="home-hero">
-          <div class="home-hero-icon">🤖</div>
           <h2 class="home-title">AI Chat</h2>
           <p class="home-subtitle">AIキャラクターとリアルタイムで会話しよう</p>
         </div>
@@ -129,19 +128,20 @@
         <!-- ─── STEP 1: アバター選択 ─── -->
         <div id="cr-step-1">
           <!-- ギャラリーから選択 -->
-          <div id="cr-gallery-section">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-              <p style="font-size:0.88rem;font-weight:600;color:var(--text)">ギャラリーから選ぶ</p>
-              <div id="avatar-gen-section">
-                <button class="btn btn-secondary btn-sm" onclick="goToGenerate()">🎨 新規画像生成</button>
-              </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <p style="font-size:0.88rem;font-weight:600;color:var(--text)">ギャラリー</p>
+            <div id="avatar-gen-section">
+              <button class="btn btn-secondary btn-sm" onclick="goToGenerate()">新規画像生成</button>
             </div>
+          </div>
+          <div id="gen-done-banner" class="gen-done-banner" style="display:none" onclick="navTo('generate')">
+            ✨ 画像の生成が完了しました — タップして確認
+          </div>
+          <div id="cr-gallery-section">
             <div id="cr-gallery-grid" class="gen-gallery-grid"></div>
           </div>
-          <div id="cr-gallery-empty" style="display:none;text-align:center;padding:24px 0;color:var(--text-secondary);font-size:0.85rem">
-            <div style="font-size:2rem;margin-bottom:8px">🖼</div>
-            保存した画像がありません。<br>
-            <button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="goToGenerate()">🎨 新規画像生成</button>
+          <div id="cr-gallery-empty" style="display:none;padding:16px 0;color:var(--text-secondary);font-size:0.85rem">
+            保存した画像がありません
           </div>
 
           <input type="hidden" id="cr-avatar-url">
@@ -196,8 +196,14 @@
             <div class="tag-select" id="cr-base" data-options="オリジナル,二次創作,有名人"></div>
           </div>
           <div class="form-group">
-            <label>キーワード（最大5個、カンマ区切り）</label>
-            <input type="text" id="cr-keywords" placeholder="例：冒険,剣,魔法">
+            <label>キーワード（最大5個）</label>
+            <div id="cr-keywords-group" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:4px">
+              <input type="text" class="cr-kw-input" placeholder="例: 冒険">
+              <input type="text" class="cr-kw-input" placeholder="例: 剣">
+              <input type="text" class="cr-kw-input" placeholder="例: 魔法">
+              <input type="text" class="cr-kw-input" placeholder="">
+              <input type="text" class="cr-kw-input" placeholder="">
+            </div>
           </div>
           <div class="form-group">
             <label><input type="checkbox" id="cr-public"> 公開する</label>
@@ -218,10 +224,6 @@
           <h3>最近の会話</h3>
           <div id="chatlist-convs"></div>
         </div>
-        <div class="chat-list-section">
-          <h3>マイキャラクター</h3>
-          <div id="chatlist-mine" class="char-grid"></div>
-        </div>
         <div class="chat-list-section" id="chatlist-liked-section" style="display:none">
           <h3>お気に入りキャラクター</h3>
           <div id="chatlist-liked" class="char-grid"></div>
@@ -231,11 +233,16 @@
 
     <!-- チャット画面 -->
     <div id="screen-chat" class="screen">
+      <div class="chat-header">
+        <button class="chat-back-btn" onclick="navTo('chat-list')">‹</button>
+        <div class="chat-header-name" id="chat-header-name"></div>
+      </div>
       <div id="chat-messages" class="chat-messages"></div>
       <div class="chat-input-area">
-        <textarea id="chat-input" placeholder="メッセージを入力..." rows="1"
-          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
-        <button id="send-btn" class="send-btn" onclick="sendMessage()">➤</button>
+        <div id="chat-input" contenteditable="true" role="textbox"
+          data-placeholder="メッセージを入力..."
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></div>
+        <button id="send-btn" class="send-btn" onmousedown="event.preventDefault()" ontouchend="event.preventDefault();sendMessage()" onclick="sendMessage()">➤</button>
       </div>
     </div>
 
@@ -253,12 +260,29 @@
         </div>
 
         <!-- 前回の生成が残っている場合の通知 -->
-        <div id="gen-pending-notice" class="gen-pending-notice" style="display:none">
-          ⏸ 前回の生成結果が残っています。画像を選んで保存、または全て破棄してから新しい生成ができます。
+        <div id="gen-pending-notice" class="gen-done-banner" style="display:none;cursor:default">
+          ✨ 生成が完了しました！ 下にスクロールして画像を確認してください
         </div>
 
         <!-- テンプレート選択（pending中は隠す） -->
         <div id="gen-form-section">
+
+          <!-- モデル選択 -->
+          <div class="form-group" id="gen-model-group" style="display:none">
+            <label style="font-size:0.85rem;font-weight:600;margin-bottom:8px;display:block">モデル</label>
+            <div id="gen-models" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+          </div>
+
+          <!-- キャラクタータイプ選択 -->
+          <div class="form-group">
+            <label style="font-size:0.85rem;font-weight:600;margin-bottom:8px;display:block">キャラクタータイプ</label>
+            <div id="gen-char-type" style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="gen-type-btn" data-type="female" data-keyword="1girl" onclick="selectCharType(this)">女性キャラ</button>
+              <button class="gen-type-btn" data-type="male"   data-keyword="1boy"  onclick="selectCharType(this)">男性キャラ</button>
+              <button class="gen-type-btn" data-type="other"  data-keyword="no humans" onclick="selectCharType(this)">人外・生き物</button>
+            </div>
+          </div>
+
           <div class="form-group" id="gen-tmpl-group">
             <label style="font-size:0.85rem;font-weight:600;margin-bottom:8px;display:block">テンプレートを選ぶ <span style="font-weight:400;color:var(--text-secondary)">(プロンプトが自動入力されます)</span></label>
             <div id="gen-templates" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px"></div>
@@ -267,23 +291,28 @@
 
           <!-- プロンプト入力 -->
           <div class="form-group">
-            <label style="font-size:0.85rem;font-weight:600">プロンプト</label>
-            <textarea id="gen-main-prompt" rows="3" placeholder="例: anime girl, blue hair, school uniform, smile, high quality, detailed" style="width:100%;margin-top:4px" oninput="clearInlineError('gen-prompt-error')"></textarea>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+              <label style="font-size:0.85rem;font-weight:600;margin:0">プロンプト</label>
+              <button class="btn btn-sm" id="btn-translate" onclick="translatePrompt()" style="display:none;font-size:0.78rem;padding:3px 10px">🌐 日→英 翻訳</button>
+            </div>
+            <textarea id="gen-main-prompt" rows="3" placeholder="例: anime girl, blue hair, school uniform, smile, high quality, detailed" style="width:100%;margin-top:0" oninput="clearInlineError('gen-prompt-error')"></textarea>
             <p class="inline-error" id="gen-prompt-error"></p>
+            <p id="gen-translate-status" style="font-size:0.8rem;color:var(--text-secondary);margin:4px 0 0;display:none"></p>
           </div>
 
           <div id="gen-limit-msg" style="display:none;background:rgba(233,69,96,0.1);border:1px solid var(--accent);border-radius:8px;padding:12px;margin-bottom:12px;font-size:0.85rem;color:var(--accent)">
             画像が100枚に達しています。ギャラリーから画像を削除すると生成できるようになります。
           </div>
 
-          <button class="btn btn-primary" id="btn-gen-6" onclick="generateImages()">✨ 6枚生成する</button>
+          <button class="btn btn-primary" id="btn-gen-6" onclick="generateImages()">✨ 画像を生成する</button>
           <div id="gen-main-status" style="font-size:0.82rem;color:var(--text-secondary);margin-top:8px;display:none"></div>
         </div>
 
         <!-- 生成結果 / 前回のpending画像 -->
+        <!-- 生成結果 / 前回のpending画像 -->
         <div id="gen-results-wrap" style="display:none;margin-top:16px">
           <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:10px">
-            生成結果 — 保存したい画像をクリックして選択してください
+            生成結果 — 下の○をタップで選択、画像タップで拡大表示
           </h3>
           <div id="gen-results-grid" class="gen-grid"></div>
           <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
@@ -292,14 +321,6 @@
           </div>
         </div>
 
-        <!-- ギャラリー -->
-        <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:20px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <h3 style="font-size:0.9rem;font-weight:600">マイギャラリー</h3>
-            <button class="btn btn-ghost btn-sm" onclick="loadGallery()">更新</button>
-          </div>
-          <div id="gen-gallery" class="gen-gallery-grid"></div>
-        </div>
       </div>
     </div>
   </main>
@@ -334,6 +355,21 @@
 
 <!-- トースト通知コンテナ -->
 <div id="toast-container"></div>
+
+<!-- マイギャラリーライトボックス（generate画面） -->
+<div id="gen-gallery-lightbox" class="cr-lightbox" onclick="glbBgClick(event)">
+  <div class="cr-lightbox-inner">
+    <div class="cr-lightbox-top">
+      <button class="cr-lightbox-icon-btn cr-lightbox-del" title="削除" onclick="glbDelete()">🗑</button>
+      <button class="cr-lightbox-icon-btn cr-lightbox-close" title="とじる" onclick="closeGalleryLightbox()">✕</button>
+    </div>
+    <img id="glb-img" class="cr-lightbox-img" src="" alt="">
+    <div class="cr-lightbox-bottom">
+      <button class="cr-lightbox-select-btn" onclick="glbUseAsAvatar()">この画像をアバターに使う</button>
+      <button class="cr-lightbox-fav-btn" id="glb-fav-btn" title="お気に入り" onclick="glbToggleFav()">♡</button>
+    </div>
+  </div>
+</div>
 
 <!-- ギャラリーライトボックス -->
 <div id="cr-lightbox" class="cr-lightbox" onclick="crLightboxBgClick(event)">

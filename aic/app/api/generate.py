@@ -1,25 +1,22 @@
-"""画像生成API（Stable Diffusion AUTOMATIC1111）"""
-import base64
+"""画像生成API（Stable Diffusion AUTOMATIC1111）- SQLiteキューベース"""
 import os
-import uuid as uuid_mod
-from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func
 from pydantic import BaseModel
-import httpx
 
 from ..database import get_db
 from ..deps import get_current_user
 from ..models.user import User
-from ..models.settings import SdSettings, PromptTemplate
-from ..models.image import UserImage
+from ..models.settings import SdSettings, PromptTemplate, SdSelectableModel
+from ..models.image import UserImage, ImageFeedback, GenerationQueue
+from ..services import queue_worker
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
 IMAGE_DIR = "/opt/asobi/aic/frontend/images/avatars"
-IMAGE_URL_BASE = "/images/avatars"
 MAX_SAVED_IMAGES = 100
+MAX_QUEUE_SIZE = 100
 BATCH_SIZE = 6
 
 
@@ -29,13 +26,14 @@ async def _get_sd_settings(db: AsyncSession) -> SdSettings | None:
 
 
 # ─────────────────────────────────────────────
-# 生成
+# 生成（キューに追加）
 # ─────────────────────────────────────────────
 
 class ImageGenRequest(BaseModel):
     prompt: str
     negative_prompt: str | None = None
     template_id: int | None = None
+    selected_model_id: int | None = None
 
 
 @router.post("/image")
@@ -59,6 +57,17 @@ async def generate_image(
     if pending_count > 0:
         raise HTTPException(status_code=409, detail="前回の生成結果を保存または破棄してから生成してください")
 
+    # 既にキューにpending/processingのジョブがある場合は拒否
+    existing_job = (await db.execute(
+        select(func.count()).select_from(GenerationQueue)
+        .where(
+            GenerationQueue.user_id == user.id,
+            GenerationQueue.status.in_(["pending", "processing"]),
+        )
+    )).scalar()
+    if existing_job > 0:
+        raise HTTPException(status_code=409, detail="処理中のジョブがあります。完了をお待ちください。")
+
     # 保存済み画像数チェック
     saved_count = (await db.execute(
         select(func.count()).select_from(UserImage)
@@ -67,67 +76,130 @@ async def generate_image(
     if saved_count >= MAX_SAVED_IMAGES:
         raise HTTPException(status_code=429, detail=f"画像の保存上限（{MAX_SAVED_IMAGES}枚）に達しています。ギャラリーから削除してください。")
 
-    endpoint = sd.endpoint.rstrip("/")
-    payload = {
-        "prompt": req.prompt,
-        "negative_prompt": req.negative_prompt or sd.negative_prompt,
-        "steps": sd.steps,
-        "cfg_scale": sd.cfg_scale,
-        "width": sd.width,
-        "height": sd.height,
-        "sampler_name": "DPM++ 2M Karras",
-        "batch_size": BATCH_SIZE,
-        "n_iter": 1,
-    }
-    if sd.model:
-        payload["override_settings"] = {"sd_model_checkpoint": sd.model}
+    # キュー停止中チェック
+    if queue_worker.is_stopped():
+        raise HTTPException(status_code=503, detail=f"生成キューが停止中です: {queue_worker.stop_reason()}")
 
-    try:
-        async with httpx.AsyncClient(timeout=180) as client:
-            r = await client.post(f"{endpoint}/sdapi/v1/txt2img", json=payload)
-            r.raise_for_status()
-            data = r.json()
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="タイムアウト: 画像生成に時間がかかっています")
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"SD接続エラー: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成エラー: {str(e)}")
+    # キューが満杯なら拒否
+    queue_count = (await db.execute(
+        select(func.count()).select_from(GenerationQueue)
+        .where(GenerationQueue.status.in_(["pending", "processing"]))
+    )).scalar()
+    if queue_count >= MAX_QUEUE_SIZE:
+        raise HTTPException(status_code=503, detail="生成キューが満杯です。しばらくしてからお試しください。")
 
-    images = data.get("images", [])
-    if not images:
-        raise HTTPException(status_code=500, detail="画像が生成されませんでした")
-
-    # ファイル保存 & DB登録（status=pending）
-    os.makedirs(IMAGE_DIR, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    db_images = []
-
-    for img_b64 in images[:BATCH_SIZE]:
-        uid = uuid_mod.uuid4().hex[:8]
-        filename = f"gen_{ts}_{uid}.png"
-        save_path = os.path.join(IMAGE_DIR, filename)
-        with open(save_path, "wb") as f:
-            f.write(base64.b64decode(img_b64))
-        url = f"{IMAGE_URL_BASE}/{filename}"
-        img_record = UserImage(
-            user_id=user.id,
-            url=url,
-            prompt=req.prompt,
-            template_id=req.template_id,
-            status="pending",
+    # 選択モデルの解決
+    use_model = sd.model
+    if req.selected_model_id:
+        sel_result = await db.execute(
+            select(SdSelectableModel).where(
+                SdSelectableModel.id == req.selected_model_id,
+                SdSelectableModel.is_active == 1,
+            )
         )
-        db.add(img_record)
-        db_images.append(img_record)
+        sel = sel_result.scalar_one_or_none()
+        if sel:
+            use_model = sel.model_id
 
+    # キューに追加
+    job = GenerationQueue(
+        user_id=user.id,
+        prompt=req.prompt,
+        negative_prompt=req.negative_prompt or sd.negative_prompt,
+        model=use_model,
+        template_id=req.template_id,
+        steps=sd.steps,
+        cfg_scale=sd.cfg_scale,
+        width=sd.width,
+        height=sd.height,
+        batch_size=BATCH_SIZE,
+    )
+    db.add(job)
     await db.commit()
-    for img in db_images:
-        await db.refresh(img)
+    await db.refresh(job)
 
+    # キュー情報を返す
+    info = await queue_worker.get_queue_info(db, user.id)
     return {
-        "urls": [img.url for img in db_images],
-        "ids": [img.id for img in db_images],
+        "queued": True,
+        "job_id": job.id,
+        **info,
     }
+
+
+# ─────────────────────────────────────────────
+# キュー状態
+# ─────────────────────────────────────────────
+
+@router.get("/queue-status")
+async def get_queue_status(
+    user: User | None = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """生成キューの状態を返す"""
+    user_id = user.id if user else None
+    return await queue_worker.get_queue_info(db, user_id)
+
+
+@router.get("/queue/{job_id}")
+async def get_job_status(
+    job_id: int,
+    user: User | None = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """特定ジョブの状態を返す"""
+    if not user:
+        raise HTTPException(status_code=401, detail="ログインが必要です")
+    result = await db.execute(
+        select(GenerationQueue).where(
+            GenerationQueue.id == job_id,
+            GenerationQueue.user_id == user.id,
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="ジョブが見つかりません")
+    return {
+        "id": job.id,
+        "status": job.status,
+        "error_message": job.error_message,
+        "created_at": str(job.created_at) if job.created_at else None,
+        "started_at": str(job.started_at) if job.started_at else None,
+        "completed_at": str(job.completed_at) if job.completed_at else None,
+    }
+
+
+@router.delete("/queue/{job_id}")
+async def cancel_job(
+    job_id: int,
+    user: User | None = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """pendingジョブをキャンセル"""
+    if not user:
+        raise HTTPException(status_code=401, detail="ログインが必要です")
+    result = await db.execute(
+        select(GenerationQueue).where(
+            GenerationQueue.id == job_id,
+            GenerationQueue.user_id == user.id,
+            GenerationQueue.status == "pending",
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="キャンセルできるジョブが見つかりません")
+    job.status = "cancelled"
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/queue-resume")
+async def queue_resume(user: User | None = Depends(get_current_user)):
+    """停止中のキューを再開"""
+    if not user or user.asobi_user_id is None:
+        raise HTTPException(status_code=401, detail="ログインが必要です")
+    queue_worker.resume()
+    return {"ok": True}
 
 
 # ─────────────────────────────────────────────
@@ -148,7 +220,7 @@ async def get_pending_images(
         .order_by(UserImage.id)
     )
     imgs = result.scalars().all()
-    return {"images": [{"id": img.id, "url": img.url, "prompt": img.prompt} for img in imgs]}
+    return {"images": [{"id": img.id, "url": img.url, "prompt": img.prompt, "rating": img.rating} for img in imgs]}
 
 
 @router.post("/save/{image_id}")
@@ -180,7 +252,7 @@ async def discard_pending(
     user: User | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """pending画像を全て破棄（ファイルはサーバーに残す）"""
+    """pending画像を全て破棄"""
     if not user or user.asobi_user_id is None:
         raise HTTPException(status_code=401, detail="ログインが必要です")
     result = await db.execute(
@@ -188,6 +260,87 @@ async def discard_pending(
     )
     for img in result.scalars().all():
         img.status = "discarded"
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/discard/{image_id}")
+async def discard_single_image(
+    image_id: int,
+    user: User | None = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """pending画像を1枚だけ破棄"""
+    if not user or user.asobi_user_id is None:
+        raise HTTPException(status_code=401, detail="ログインが必要です")
+    result = await db.execute(
+        select(UserImage).where(
+            UserImage.id == image_id,
+            UserImage.user_id == user.id,
+            UserImage.status == "pending",
+        )
+    )
+    img = result.scalar_one_or_none()
+    if not img:
+        raise HTTPException(status_code=404, detail="画像が見つかりません")
+    img.status = "discarded"
+    await db.commit()
+    return {"ok": True}
+
+
+# ─────────────────────────────────────────────
+# 画像評価
+# ─────────────────────────────────────────────
+
+class RateRequest(BaseModel):
+    rating: int | None
+
+@router.post("/rate/{image_id}")
+async def rate_image(
+    image_id: int,
+    req: RateRequest,
+    user: User | None = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not user or user.asobi_user_id is None:
+        raise HTTPException(status_code=401, detail="ログインが必要です")
+    if req.rating is not None and req.rating not in (-1, 1, 2, 3):
+        raise HTTPException(status_code=400, detail="不正な評価値です")
+    result = await db.execute(
+        select(UserImage).where(
+            UserImage.id == image_id,
+            UserImage.user_id == user.id,
+            UserImage.status.in_(["pending", "saved"]),
+        )
+    )
+    img = result.scalar_one_or_none()
+    if not img:
+        raise HTTPException(status_code=404, detail="画像が見つかりません")
+    img.rating = req.rating
+    await db.commit()
+    return {"ok": True, "rating": img.rating}
+
+
+class FeedbackRequest(BaseModel):
+    reasons: list[str] = []
+    comment: str | None = None
+
+@router.post("/feedback/{image_id}")
+async def submit_feedback(
+    image_id: int,
+    req: FeedbackRequest,
+    user: User | None = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not user or user.asobi_user_id is None:
+        raise HTTPException(status_code=401, detail="ログインが必要です")
+    fb = ImageFeedback(
+        image_id=image_id,
+        user_id=user.id,
+        reasons=",".join(req.reasons),
+        comment=req.comment,
+    )
+    db.add(fb)
     await db.commit()
     return {"ok": True}
 
@@ -201,19 +354,17 @@ async def get_my_images(
     user: User | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """保存済み画像一覧とカウント"""
     if not user or user.asobi_user_id is None:
         return {"images": [], "count": 0}
     result = await db.execute(
         select(UserImage)
         .where(UserImage.user_id == user.id, UserImage.status == "saved", UserImage.is_deleted == 0)
-        .order_by(UserImage.is_favorite.desc(), UserImage.id.desc())  # お気に入り優先
+        .order_by(UserImage.is_favorite.desc(), UserImage.id.desc())
     )
     imgs = result.scalars().all()
-    count = len(imgs)
     return {
         "images": [{"id": img.id, "url": img.url, "prompt": img.prompt, "is_favorite": img.is_favorite} for img in imgs],
-        "count": count,
+        "count": len(imgs),
     }
 
 
@@ -223,15 +374,12 @@ async def toggle_favorite(
     user: User | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """ギャラリー画像のお気に入りをトグル"""
     if not user or user.asobi_user_id is None:
         raise HTTPException(status_code=401, detail="ログインが必要です")
     result = await db.execute(
         select(UserImage).where(
-            UserImage.id == image_id,
-            UserImage.user_id == user.id,
-            UserImage.status == "saved",
-            UserImage.is_deleted == 0,
+            UserImage.id == image_id, UserImage.user_id == user.id,
+            UserImage.status == "saved", UserImage.is_deleted == 0,
         )
     )
     img = result.scalar_one_or_none()
@@ -248,15 +396,12 @@ async def delete_my_image(
     user: User | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """ギャラリー画像をソフトデリート（ファイルはサーバーに残す）"""
     if not user or user.asobi_user_id is None:
         raise HTTPException(status_code=401, detail="ログインが必要です")
     result = await db.execute(
         select(UserImage).where(
-            UserImage.id == image_id,
-            UserImage.user_id == user.id,
-            UserImage.status == "saved",
-            UserImage.is_deleted == 0,
+            UserImage.id == image_id, UserImage.user_id == user.id,
+            UserImage.status == "saved", UserImage.is_deleted == 0,
         )
     )
     img = result.scalar_one_or_none()
@@ -268,12 +413,11 @@ async def delete_my_image(
 
 
 # ─────────────────────────────────────────────
-# テンプレート・ステータス（公開エンドポイント）
+# テンプレート・ステータス
 # ─────────────────────────────────────────────
 
 @router.get("/templates")
 async def list_templates(db: AsyncSession = Depends(get_db)):
-    """有効なプロンプトテンプレート一覧（ユーザー向け）"""
     result = await db.execute(
         select(PromptTemplate)
         .where(PromptTemplate.is_active == 1)
@@ -285,12 +429,68 @@ async def list_templates(db: AsyncSession = Depends(get_db)):
     ]
 
 
+@router.get("/selectable-models")
+async def list_selectable_models(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(SdSelectableModel)
+        .where(SdSelectableModel.is_active == 1)
+        .order_by(SdSelectableModel.sort_order, SdSelectableModel.id)
+    )
+    return [{"id": m.id, "display_name": m.display_name} for m in result.scalars()]
+
+
 @router.get("/sd-status")
 async def sd_status(db: AsyncSession = Depends(get_db)):
-    """SD機能が有効かどうかを返す（フロントエンド表示切替用）"""
     sd = await _get_sd_settings(db)
     return {
-        "enabled": bool(sd and sd.enabled and sd.endpoint),
-        "width":   sd.width  if sd else 512,
-        "height":  sd.height if sd else 512,
+        "enabled":      bool(sd and sd.enabled and sd.endpoint),
+        "width":        sd.width       if sd else 512,
+        "height":       sd.height      if sd else 512,
+        "lt_enabled":   bool(sd and sd.lt_endpoint),
     }
+
+
+# ─────────────────────────────────────────────
+# 翻訳（LibreTranslate プロキシ）
+# ─────────────────────────────────────────────
+
+class TranslateRequest(BaseModel):
+    text: str
+    source: str = "ja"
+    target: str = "en"
+
+
+@router.post("/translate")
+async def translate_text(
+    req: TranslateRequest,
+    user: User | None = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not user or user.asobi_user_id is None:
+        raise HTTPException(status_code=401, detail="ログインが必要です")
+
+    sd = await _get_sd_settings(db)
+    if not sd or not sd.lt_endpoint:
+        raise HTTPException(status_code=503, detail="翻訳機能が設定されていません")
+
+    endpoint = sd.lt_endpoint.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                f"{endpoint}/translate",
+                json={"q": req.text, "source": req.source, "target": req.target, "format": "text"},
+            )
+            r.raise_for_status()
+            data = r.json()
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="翻訳サービスがタイムアウトしました")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"翻訳サービスへの接続エラー: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"翻訳エラー: {str(e)}")
+
+    translated = data.get("translatedText", "")
+    if not translated:
+        raise HTTPException(status_code=500, detail="翻訳結果が空です")
+
+    return {"translated_text": translated}

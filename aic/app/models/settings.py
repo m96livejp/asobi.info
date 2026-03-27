@@ -17,6 +17,7 @@ class SdSettings(Base):
     cfg_scale        = Column(Float,   nullable=False, default=7.0)
     width            = Column(Integer, nullable=False, default=512)
     height           = Column(Integer, nullable=False, default=512)
+    lt_endpoint      = Column(String, nullable=True)          # LibreTranslate エンドポイント（例: http://127.0.0.1:5000）
     updated_at       = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
@@ -31,6 +32,18 @@ class PromptTemplate(Base):
     is_active       = Column(Integer, nullable=False, default=1)
     sort_order      = Column(Integer, nullable=False, default=0)
     created_at      = Column(DateTime, server_default=func.now())
+
+
+class SdSelectableModel(Base):
+    """画像生成画面でユーザーが選択できるモデル一覧（管理者が登録）"""
+    __tablename__ = "sd_selectable_models"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    model_id     = Column(String,  nullable=False)           # SDのモデル識別子
+    display_name = Column(String,  nullable=False)           # 表示名（例: リアル系、アニメ系）
+    is_active    = Column(Integer, nullable=False, default=1)
+    sort_order   = Column(Integer, nullable=False, default=0)
+    created_at   = Column(DateTime, server_default=func.now())
 
 
 class AiSettings(Base):

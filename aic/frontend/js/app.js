@@ -149,6 +149,9 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + id).classList.add('active');
 
+  // チャット画面ではヘッダー・フッターを非表示
+  document.body.classList.toggle('chat-active', id === 'chat');
+
   // ボトムナビのアクティブ状態を更新
   const navScreen = id === 'chat' ? 'chat-list' : id;
   document.querySelectorAll('.bnav-item').forEach(btn => {
@@ -157,6 +160,13 @@ function showScreen(id) {
 }
 
 function navTo(screen) {
+  // URL ハッシュを更新（ブラウザバック・リロード対応）
+  // chat は会話IDを持たないため chat-list として記録
+  const hashTarget = screen === 'chat' ? 'chat-list' : screen;
+  if (location.hash !== '#' + hashTarget) {
+    history.pushState(null, '', '#' + hashTarget);
+  }
+
   if (screen === 'create') {
     showScreen('create');
     const isGuest = !currentUser || currentUser.is_guest;
@@ -260,6 +270,21 @@ function sortCommunity(mode) {
   renderCommunity();
 }
 
+// 会話時間のフォーマット
+function _formatChatTime(dateStr) {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diff = now - d;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'たった今';
+  if (min < 60) return min + '分前';
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return hr + '時間前';
+  const days = Math.floor(hr / 24);
+  if (days < 7) return days + '日前';
+  return (d.getMonth() + 1) + '/' + d.getDate();
+}
+
 // === チャットリスト ===
 async function loadChatList() {
   const isGuest = !currentUser || currentUser.is_guest;
@@ -274,11 +299,17 @@ async function loadChatList() {
         convsEl.innerHTML = '<p class="chatlist-empty">まだ会話がありません</p>';
       } else {
         convsEl.innerHTML = convs.map(c => {
-          const avatar = c.character_name ? c.character_name[0] : '?';
+          const avatarHtml = c.character_avatar
+            ? `<img src="${esc(c.character_avatar)}" alt="">`
+            : esc(c.character_name ? c.character_name[0] : '?');
+          const timeStr = c.updated_at ? _formatChatTime(c.updated_at) : '';
           return `<div class="chatlist-conv-item" onclick="openConversation(${c.id})">
-            <div class="chatlist-conv-avatar">${esc(avatar)}</div>
+            <div class="chatlist-conv-avatar">${avatarHtml}</div>
             <div class="chatlist-conv-info">
-              <div class="chatlist-conv-name">${esc(c.character_name)}</div>
+              <div class="chatlist-conv-top">
+                <div class="chatlist-conv-name">${esc(c.character_name)}</div>
+                <div class="chatlist-conv-time">${esc(timeStr)}</div>
+              </div>
               <div class="chatlist-conv-preview">${esc(c.last_message || '会話を始める')}</div>
             </div>
           </div>`;
@@ -287,19 +318,8 @@ async function loadChatList() {
     }
   }
 
-  // マイキャラ
-  const mineEl = document.getElementById('chatlist-mine');
+  // お気に入り
   if (!isGuest) {
-    const mineRes = await api('/characters/mine');
-    if (mineRes.ok) {
-      const mine = await mineRes.json();
-      if (mine.length === 0) {
-        mineEl.innerHTML = '<p class="chatlist-empty"><a href="#" onclick="navTo(\'create\')" style="color:var(--accent)">キャラクターを作成</a>してチャットしましょう</p>';
-      } else {
-        renderCharCards('chatlist-mine', mine);
-      }
-    }
-    // お気に入り
     const likedRes = await api('/characters/liked');
     if (likedRes.ok) {
       const liked = await likedRes.json();
@@ -425,13 +445,25 @@ async function openConversation(convId) {
   const data = await res.json();
   currentCharacter = data.character;
   document.getElementById('header-title').textContent = currentCharacter ? currentCharacter.name : 'チャット';
+  document.getElementById('chat-header-name').textContent = currentCharacter ? currentCharacter.name : 'チャット';
+
+  // 背景にキャラクター画像
+  const chatScreen = document.getElementById('screen-chat');
+  if (currentCharacter?.avatar_url) {
+    chatScreen.style.backgroundImage = `url('${currentCharacter.avatar_url}')`;
+    chatScreen.style.backgroundSize = 'cover';
+    chatScreen.style.backgroundPosition = 'center';
+  } else {
+    chatScreen.style.backgroundImage = '';
+  }
+
   showScreen('chat');
 
   const el = document.getElementById('chat-messages');
   el.innerHTML = data.messages.map(m =>
     m.role === 'user'
       ? '<div class="msg msg-user">' + esc(m.content) + '</div>'
-      : '<div class="msg msg-ai"><div class="msg-ai-name">' + esc(currentCharacter?.name || 'AI') + '</div>' + esc(m.content) + '</div>'
+      : '<div class="msg msg-ai">' + esc(m.content) + '</div>'
   ).join('');
   el.scrollTop = el.scrollHeight;
 
@@ -442,11 +474,11 @@ async function openConversation(convId) {
 // === メッセージ送信 ===
 async function sendMessage() {
   const input = document.getElementById('chat-input');
-  const msg = input.value.trim();
+  const msg = (input.textContent || input.value || '').trim();
   if (!msg || isStreaming || !currentConversationId) return;
 
+  input.textContent = '';
   input.value = '';
-  input.style.height = 'auto';
   isStreaming = true;
   document.getElementById('send-btn').disabled = true;
 
@@ -455,7 +487,7 @@ async function sendMessage() {
 
   const aiMsg = document.createElement('div');
   aiMsg.className = 'msg msg-ai';
-  aiMsg.innerHTML = '<div class="msg-ai-name">' + esc(currentCharacter?.name || 'AI') + '</div><span class="msg-typing">考え中...</span>';
+  aiMsg.innerHTML = '<div class="msg-typing"><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span></div>';
   chatEl.appendChild(aiMsg);
   chatEl.scrollTop = chatEl.scrollHeight;
 
@@ -468,14 +500,14 @@ async function sendMessage() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      aiMsg.innerHTML = '<div class="msg-ai-name">エラー</div>' + esc(err.detail || '送信に失敗しました');
+      aiMsg.innerHTML = esc(err.detail || '送信に失敗しました');
       return;
     }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let aiText = '';
-    aiMsg.innerHTML = '<div class="msg-ai-name">' + esc(currentCharacter?.name || 'AI') + '</div>';
+    aiMsg.innerHTML = '';
 
     while (true) {
       const { done, value } = await reader.read();
@@ -487,7 +519,7 @@ async function sendMessage() {
           const data = JSON.parse(line.slice(6));
           if (data.text) {
             aiText += data.text;
-            aiMsg.innerHTML = '<div class="msg-ai-name">' + esc(currentCharacter?.name || 'AI') + '</div>' + esc(aiText);
+            aiMsg.innerHTML = esc(aiText);
             chatEl.scrollTop = chatEl.scrollHeight;
           }
           if (data.done) {
@@ -547,7 +579,7 @@ async function saveCharacter() {
     genre_personality: getSelectedTags('cr-personality'),
     genre_era: getSelectedTags('cr-era'),
     genre_base: getSelectedTags('cr-base'),
-    keywords: document.getElementById('cr-keywords').value.split(',').map(s => s.trim()).filter(s => s).slice(0, 5),
+    keywords: Array.from(document.querySelectorAll('#cr-keywords-group .cr-kw-input')).map(el => el.value.trim()).filter(s => s).slice(0, 5),
     is_public: document.getElementById('cr-public').checked ? 1 : 0,
     avatar_url: document.getElementById('cr-avatar-url')?.value || null,
   };
@@ -587,9 +619,77 @@ async function checkSdStatus() {
 // 画像生成画面を開く
 async function openGenerateScreen() {
   selectedGenIds = new Set();
-  await loadGenTemplates();
+  await Promise.all([loadGenTemplates(), loadSelectableModels(), loadSdStatus()]);
   await loadPendingImages();
-  await loadGallery();
+}
+
+// SD ステータス取得（翻訳ボタン表示制御）
+async function loadSdStatus() {
+  try {
+    const r = await api('/generate/sd-status');
+    if (!r.ok) return;
+    const d = await r.json();
+    const btnTl = document.getElementById('btn-translate');
+    if (btnTl) btnTl.style.display = d.lt_enabled ? '' : 'none';
+  } catch(_) {}
+}
+
+// 選択可能モデル読み込み
+async function loadSelectableModels() {
+  try {
+    const r = await api('/generate/selectable-models');
+    if (!r.ok) return;
+    const models = await r.json();
+    const group = document.getElementById('gen-model-group');
+    const el    = document.getElementById('gen-models');
+    if (!group || !el) return;
+    if (!models.length) { group.style.display = 'none'; return; }
+    group.style.display = 'block';
+    el.innerHTML = models.map(m =>
+      `<button class="gen-type-btn" data-model-id="${m.id}" onclick="selectGenModel(this)">${esc(m.display_name)}</button>`
+    ).join('');
+  } catch(_) {}
+}
+
+// モデル選択
+function selectGenModel(btn) {
+  document.querySelectorAll('#gen-models .gen-type-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// プロンプト翻訳（日→英）
+async function translatePrompt() {
+  const ta = document.getElementById('gen-main-prompt');
+  const statusEl = document.getElementById('gen-translate-status');
+  const btn = document.getElementById('btn-translate');
+  const text = ta?.value?.trim();
+  if (!text) return;
+  btn.disabled = true; btn.textContent = '翻訳中...';
+  if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '🌐 翻訳しています...'; }
+  try {
+    const r = await api('/generate/translate', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      if (statusEl) statusEl.textContent = '❌ ' + (e.detail || '翻訳に失敗しました');
+      return;
+    }
+    const d = await r.json();
+    ta.value = d.translated_text;
+    if (statusEl) { statusEl.textContent = '✓ 翻訳しました'; setTimeout(() => { statusEl.style.display = 'none'; }, 3000); }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '❌ 通信エラー: ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '🌐 日→英 翻訳';
+  }
+}
+
+// 選択中モデルIDを取得
+function getSelectedModelId() {
+  const active = document.querySelector('#gen-models .gen-type-btn.active');
+  return active ? parseInt(active.dataset.modelId) : null;
 }
 
 // テンプレート一覧を読み込む
@@ -620,7 +720,7 @@ async function loadGenTemplates() {
         const idx = parseInt(this.dataset.idx);
         const t = el._templates[idx];
         const promptEl = document.getElementById('gen-main-prompt');
-        if (promptEl && t) promptEl.value = t.prompt;
+        if (promptEl && t) promptEl.value = stripGenderKeywords(t.prompt);
         // template_id を記録
         el.dataset.selectedId = t ? t.id : '';
       });
@@ -651,21 +751,24 @@ async function loadPendingImages() {
 }
 
 // 生成結果グリッドを描画
+let _genImgRatings = {};  // id -> rating のキャッシュ
 function renderGenResults(imgs) {
   const wrap = document.getElementById('gen-results-wrap');
   const grid = document.getElementById('gen-results-grid');
   if (!wrap || !grid) return;
   selectedGenIds = new Set();
+  _genImgRatings = {};
+  imgs.forEach(img => _genImgRatings[img.id] = img.rating);
   grid.innerHTML = imgs.map(img =>
-    `<div class="gen-img-card" id="gcard-${img.id}" onclick="selectGenImage(${img.id})">
+    `<div class="gen-img-card" id="gcard-${img.id}" data-url="${esc(img.url)}" data-id="${img.id}" onclick="openGenFullscreen(${img.id})">
       <img src="${esc(img.url)}" loading="lazy" alt="">
-      <div class="gen-img-check">✓</div>
+      <div class="gen-img-select" onclick="event.stopPropagation();selectGenImage(${img.id})">✓</div>
     </div>`
   ).join('');
   wrap.style.display = 'block';
 }
 
-// 画像を選択/解除
+// 画像を選択/解除（右下○タップ）
 function selectGenImage(id) {
   if (selectedGenIds.has(id)) {
     selectedGenIds.delete(id);
@@ -676,19 +779,234 @@ function selectGenImage(id) {
   }
 }
 
-// 6枚生成
+// フルスクリーン表示 + 評価UI
+function openGenFullscreen(id) {
+  const card = document.getElementById('gcard-' + id);
+  if (!card) return;
+  const url = card.dataset.url;
+  const rating = _genImgRatings[id] || null;
+  const overlay = document.createElement('div');
+  overlay.className = 'gen-fullscreen';
+  overlay.innerHTML = `
+    <div class="gen-fs-img-wrap" onclick="this.parentElement.remove()">
+      <img src="${esc(url)}" alt="">
+    </div>
+    <div class="gen-fs-rating" data-id="${id}">
+      <button class="gen-rate-btn ${rating === -1 ? 'active-neg' : ''}" onclick="rateGenImage(${id},-1,this)" title="悪い">👎</button>
+      <button class="gen-rate-btn ${rating === 1 ? 'active-1' : ''}" onclick="rateGenImage(${id},1,this)">まあ良い</button>
+      <button class="gen-rate-btn ${rating === 2 ? 'active-2' : ''}" onclick="rateGenImage(${id},2,this)">良い</button>
+      <button class="gen-rate-btn ${rating === 3 ? 'active-3' : ''}" onclick="rateGenImage(${id},3,this)">凄く良い</button>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+// 画像評価
+async function rateGenImage(id, rating, btnEl) {
+  const bar = btnEl.parentElement;
+  if (!bar) return;
+  const overlay = bar.closest('.gen-fullscreen');
+
+  // マイナス評価の場合はフィードバックポップアップを表示
+  if (rating === -1) {
+    openNegFeedback(id, overlay);
+    return;
+  }
+
+  // 評価バーを「ありがとう」に置き換え
+  bar.outerHTML = '<div class="gen-fs-thanks">ご意見ありがとうございました</div>';
+
+  try {
+    await api('/generate/rate/' + id, {
+      method: 'POST',
+      body: JSON.stringify({ rating }),
+    });
+    _genImgRatings[id] = rating;
+  } catch(_) {}
+
+  // 1.2秒後にフルスクリーンを閉じる
+  setTimeout(() => { if (overlay) overlay.remove(); }, 1200);
+}
+
+// マイナス評価フィードバックポップアップ
+let _negFbFsOverlay = null;  // フィードバック送信後にフルスクリーンを閉じるための参照
+
+function openNegFeedback(imageId, fsOverlay) {
+  _negFbFsOverlay = fsOverlay;
+  const reasons = ['顔や表情の魅力がない','スタイルの魅力がない','指定内容と不一致','不自然な骨格や体勢','その他'];
+  const overlay = document.createElement('div');
+  overlay.className = 'gen-fb-overlay';
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="gen-fb-popup">
+      <h4>👎 気になった点を教えてください</h4>
+      ${reasons.map((r, i) => `
+        <label class="gen-fb-reason">
+          <input type="checkbox" value="${esc(r)}" id="fb-r-${i}">
+          <span>${esc(r)}</span>
+        </label>`).join('')}
+      <textarea class="gen-fb-comment" id="fb-comment" rows="3" placeholder="コメント（任意）"></textarea>
+      <div class="gen-fb-actions">
+        <button class="btn btn-ghost" onclick="this.closest('.gen-fb-overlay').remove()">キャンセル</button>
+        <button class="btn btn-primary" onclick="submitNegFeedback(${imageId},this)">送信</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function submitNegFeedback(imageId, btnEl) {
+  const overlay = btnEl.closest('.gen-fb-overlay');
+  const checked = [...overlay.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
+  const comment = overlay.querySelector('#fb-comment')?.value.trim() || null;
+
+  btnEl.disabled = true;
+  btnEl.textContent = '送信中...';
+  try {
+    await api('/generate/rate/' + imageId, {
+      method: 'POST',
+      body: JSON.stringify({ rating: -1 }),
+    });
+    await api('/generate/feedback/' + imageId, {
+      method: 'POST',
+      body: JSON.stringify({ reasons: checked, comment }),
+    });
+    _genImgRatings[imageId] = -1;
+    overlay.remove();
+    // フルスクリーンに「ありがとう」を表示して閉じる
+    const fs = _negFbFsOverlay;
+    if (fs) {
+      const ratingEl = fs.querySelector('.gen-fs-rating');
+      if (ratingEl) ratingEl.outerHTML = '<div class="gen-fs-thanks">ご意見ありがとうございました</div>';
+      setTimeout(() => fs.remove(), 1200);
+    }
+    _negFbFsOverlay = null;
+  } catch(_) {
+    btnEl.disabled = false;
+    btnEl.textContent = '送信';
+  }
+}
+
+// テンプレートプロンプトから性別キーワードを除去
+function stripGenderKeywords(prompt) {
+  const genderTags = ['1girl', '1boy', '1woman', '1man', '2girls', '2boys', 'multiple girls', 'multiple boys'];
+  let result = prompt;
+  for (const tag of genderTags) {
+    // カンマ区切りを考慮して前後のスペース・カンマごと除去
+    result = result.replace(new RegExp(`(^|,\\s*)${tag}(\\s*,|$)`, 'gi'), (_, pre, post) => {
+      if (pre && post) return ', ';
+      return '';
+    });
+  }
+  return result.replace(/^[\s,]+|[\s,]+$/g, '').replace(/,\s*,/g, ',').trim();
+}
+
+// キャラクタータイプ選択
+function selectCharType(btn) {
+  document.querySelectorAll('#gen-char-type .gen-type-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// 選択中のキャラクタータイプキーワードを取得
+function getCharTypeKeyword() {
+  const active = document.querySelector('#gen-char-type .gen-type-btn.active');
+  return active ? active.dataset.keyword : '';
+}
+
+// キュー状態ポーリング
+let _genPollTimer = null;
+let _genCurrentJobId = null;
+
+async function _startJobPolling(jobId, statusEl) {
+  _stopQueuePolling();
+  _genCurrentJobId = jobId;
+  const poll = async () => {
+    try {
+      const r = await api('/generate/queue-status');
+      if (!r.ok) return;
+      const d = await r.json();
+      if (!statusEl) return;
+      if (d.is_stopped) {
+        statusEl.innerHTML = `❌ キューが停止しています: ${esc(d.stop_reason)}<br>
+          <button class="btn btn-sm btn-primary" style="margin-top:6px" onclick="resumeQueue()">再送する</button>`;
+        return;
+      }
+      // 自分のジョブの状態を確認
+      const jr = await api('/generate/queue/' + _genCurrentJobId);
+      if (!jr.ok) return;
+      const job = await jr.json();
+
+      if (job.status === 'completed') {
+        _stopQueuePolling();
+        statusEl.style.display = 'none';
+        const btn = document.getElementById('btn-gen-6');
+        if (btn) { btn.disabled = false; btn.textContent = '✨ 画像を生成する'; }
+        await loadPendingImages();
+        return;
+      }
+      if (job.status === 'failed') {
+        _stopQueuePolling();
+        statusEl.textContent = '❌ ' + (job.error_message || '生成に失敗しました');
+        const btn = document.getElementById('btn-gen-6');
+        if (btn) { btn.disabled = false; btn.textContent = '✨ 画像を生成する'; }
+        return;
+      }
+      if (job.status === 'cancelled') {
+        _stopQueuePolling();
+        statusEl.style.display = 'none';
+        const btn = document.getElementById('btn-gen-6');
+        if (btn) { btn.disabled = false; btn.textContent = '✨ 画像を生成する'; }
+        return;
+      }
+
+      // pending or processing — 待ち表示
+      if (d.my_position === 0 || job.status === 'processing') {
+        statusEl.textContent = '⏳ 生成しています...';
+      } else if (d.my_position !== null) {
+        statusEl.textContent = `⏸ キュー ${d.my_position}番目`;
+      } else {
+        statusEl.textContent = `⏸ キュー待機中（${d.queue_length}件）`;
+      }
+    } catch(_) {}
+  };
+  await poll();
+  _genPollTimer = setInterval(poll, 3000);
+}
+
+function _stopQueuePolling() {
+  if (_genPollTimer) { clearInterval(_genPollTimer); _genPollTimer = null; }
+  _genCurrentJobId = null;
+}
+
+// キュー再開（再送ボタン）
+async function resumeQueue() {
+  const r = await api('/generate/queue-resume', { method: 'POST' });
+  if (r.ok) {
+    showToast('キューを再開しました。再度生成してください。', 'info');
+    const status = document.getElementById('gen-main-status');
+    if (status) status.style.display = 'none';
+    const btn = document.getElementById('btn-gen-6');
+    if (btn) { btn.disabled = false; btn.textContent = '✨ 画像を生成する'; }
+  } else {
+    showToast('再開に失敗しました', 'error');
+  }
+}
+
+// 画像生成
 async function generateImages() {
-  const prompt = document.getElementById('gen-main-prompt')?.value.trim();
-  if (!prompt) {
+  const basePrompt = document.getElementById('gen-main-prompt')?.value.trim();
+  if (!basePrompt) {
     showInlineError('gen-prompt-error', 'プロンプトを入力してください', 'gen-main-prompt');
     return;
   }
   clearInlineError('gen-prompt-error');
 
+  // キャラクタータイプキーワードをプロンプト先頭に付加
+  const typeKeyword = getCharTypeKeyword();
+  const prompt = typeKeyword ? `${typeKeyword}, ${basePrompt}` : basePrompt;
+
   const btn = document.getElementById('btn-gen-6');
   const status = document.getElementById('gen-main-status');
-  btn.disabled = true; btn.textContent = '⏳ 生成中...';
-  if (status) { status.style.display = 'block'; status.textContent = '⏳ 生成しています（1〜2分かかることがあります）'; }
+  btn.disabled = true; btn.textContent = '⏳ キューに追加中...';
+  if (status) { status.style.display = 'block'; status.textContent = '⏳ キューに追加しています...'; }
 
   const tmplContainer = document.getElementById('gen-templates');
   const templateId = tmplContainer?.dataset.selectedId ? parseInt(tmplContainer.dataset.selectedId) : null;
@@ -696,22 +1014,31 @@ async function generateImages() {
   try {
     const r = await api('/generate/image', {
       method: 'POST',
-      body: JSON.stringify({ prompt, template_id: templateId }),
+      body: JSON.stringify({ prompt, template_id: templateId, selected_model_id: getSelectedModelId() }),
     });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
-      if (status) status.textContent = '❌ ' + (err.detail || '生成に失敗しました');
+      const msg = err.detail || '生成に失敗しました';
+      if (r.status === 503 && msg.includes('停止中')) {
+        if (status) status.innerHTML = `❌ ${esc(msg)}<br>
+          <button class="btn btn-sm btn-primary" style="margin-top:6px" onclick="resumeQueue()">再送する</button>`;
+      } else {
+        if (status) status.textContent = '❌ ' + msg;
+      }
+      btn.disabled = false; btn.textContent = '✨ 画像を生成する';
       return;
     }
-    if (status) status.style.display = 'none';
-    await loadPendingImages();
-    await loadGallery();
+    const d = await r.json();
+    // キューに追加された → ジョブポーリング開始
+    btn.textContent = '⏳ 生成待機中...';
+    await _startJobPolling(d.job_id, status);
   } catch(e) {
+    _stopQueuePolling();
     if (status) status.textContent = '❌ 通信エラー: ' + e.message;
-  } finally {
-    btn.disabled = false; btn.textContent = '✨ 6枚生成する';
+    btn.disabled = false; btn.textContent = '✨ 画像を生成する';
   }
 }
+
 
 // 選択した画像を保存
 async function saveSelectedImages() {
@@ -726,9 +1053,9 @@ async function saveSelectedImages() {
   }
   // 残りのpendingを破棄
   await api('/generate/discard-pending', { method: 'POST' });
-  await loadPendingImages();
-  await loadGallery();
   showToast(saved + '枚の画像をギャラリーに保存しました', 'success');
+  // ギャラリー（キャラクター作成画面）に戻す
+  navTo('create');
 }
 
 // 全て破棄
@@ -758,29 +1085,82 @@ async function loadGallery() {
       return;
     }
     el.innerHTML = imgs.map(img =>
-      `<div class="gen-gallery-item">
+      `<div class="gen-gallery-item" id="ggrid-${img.id}" onclick="openGalleryLightbox(${img.id}, '${esc(img.url)}', ${img.is_favorite ? 1 : 0})">
         <img src="${esc(img.url)}" loading="lazy" alt="">
-        <button class="gen-gallery-del" onclick="deleteFromGallery(${img.id})" title="削除">✕</button>
-        <button class="gen-gallery-use" onclick="useGalleryImage('${esc(img.url)}')">アバターに使う</button>
+        <button class="gen-gallery-fav ${img.is_favorite ? 'active' : ''}" onclick="event.stopPropagation();galleryToggleFav(${img.id}, this)" title="お気に入り">♡</button>
       </div>`
     ).join('');
   } catch(_) {}
 }
 
-// ギャラリーから削除（ソフトデリート）
-async function deleteFromGallery(id) {
-  showConfirm('ギャラリーから削除しますか？', async () => {
-    const r = await api('/generate/my-images/' + id, { method: 'DELETE' });
+// ギャラリーのお気に入りトグル（グリッドから直接）
+async function galleryToggleFav(id, btnEl) {
+  const r = await api('/generate/my-images/' + id + '/favorite', { method: 'POST' });
+  if (!r.ok) { showToast('更新に失敗しました', 'error'); return; }
+  const d = await r.json();
+  btnEl.classList.toggle('active', !!d.is_favorite);
+  btnEl.textContent = '♡';
+  await loadGallery();
+}
+
+// ギャラリーライトボックス（generate画面用）
+let _glbCurrentId = null;
+let _glbCurrentUrl = null;
+let _glbCurrentFav = 0;
+
+function openGalleryLightbox(id, url, isFav) {
+  _glbCurrentId  = id;
+  _glbCurrentUrl = url;
+  _glbCurrentFav = isFav;
+  document.getElementById('glb-img').src = url;
+  const favBtn = document.getElementById('glb-fav-btn');
+  if (favBtn) {
+    favBtn.textContent = isFav ? '♥' : '♡';
+    favBtn.classList.toggle('active', !!isFav);
+  }
+  document.getElementById('gen-gallery-lightbox').classList.add('open');
+}
+
+function closeGalleryLightbox() {
+  document.getElementById('gen-gallery-lightbox').classList.remove('open');
+}
+
+function glbBgClick(e) {
+  if (e.target === document.getElementById('gen-gallery-lightbox')) closeGalleryLightbox();
+}
+
+async function glbDelete() {
+  if (!_glbCurrentId) return;
+  showConfirm('この画像をギャラリーから削除しますか？\n削除すると元に戻すことはできません。', async () => {
+    const r = await api('/generate/my-images/' + _glbCurrentId, { method: 'DELETE' });
     if (r.ok) {
+      closeGalleryLightbox();
       await loadGallery();
       showToast('ギャラリーから削除しました', 'info');
+    } else {
+      showToast('削除に失敗しました', 'error');
     }
   }, '削除する');
 }
 
-// ギャラリーの画像をアバターとして使う（generate画面から）
-function useGalleryImage(url) {
-  sessionStorage.setItem('aic_gen_avatar', url);
+async function glbToggleFav() {
+  if (!_glbCurrentId) return;
+  const r = await api('/generate/my-images/' + _glbCurrentId + '/favorite', { method: 'POST' });
+  if (!r.ok) { showToast('更新に失敗しました', 'error'); return; }
+  const d = await r.json();
+  _glbCurrentFav = d.is_favorite;
+  const favBtn = document.getElementById('glb-fav-btn');
+  if (favBtn) {
+    favBtn.textContent = d.is_favorite ? '♥' : '♡';
+    favBtn.classList.toggle('active', !!d.is_favorite);
+  }
+  await loadGallery();
+}
+
+function glbUseAsAvatar() {
+  if (!_glbCurrentUrl) return;
+  sessionStorage.setItem('aic_gen_avatar', _glbCurrentUrl);
+  closeGalleryLightbox();
   navTo('create');
 }
 
@@ -794,8 +1174,21 @@ async function loadCreateGallery() {
   const grid = document.getElementById('cr-gallery-grid');
   const section = document.getElementById('cr-gallery-section');
   const emptyEl = document.getElementById('cr-gallery-empty');
+  const banner = document.getElementById('gen-done-banner');
   if (!grid) return;
   try {
+    // pending画像チェック（生成完了バナー表示用）
+    if (banner) {
+      try {
+        const pr = await api('/generate/pending');
+        if (pr.ok) {
+          const pd = await pr.json();
+          banner.style.display = (pd.images || []).length > 0 ? 'block' : 'none';
+        } else {
+          banner.style.display = 'none';
+        }
+      } catch(_) { banner.style.display = 'none'; }
+    }
     const r = await api('/generate/my-images');
     if (!r.ok) return;
     const d = await r.json();
@@ -853,7 +1246,7 @@ function selectFromCrLightbox() {
 
 async function deleteFromCrLightbox() {
   if (!_lbCurrentId) return;
-  showConfirm('この画像をギャラリーから削除しますか？', async () => {
+  showConfirm('この画像をギャラリーから削除しますか？\n削除すると元に戻すことはできません。', async () => {
     const r = await api('/generate/my-images/' + _lbCurrentId, { method: 'DELETE' });
     if (r.ok) {
       closeCrLightbox();
@@ -995,7 +1388,7 @@ function showConfirm(msg, onOk, okLabel = '実行', okClass = 'btn-danger') {
   overlay.className = 'confirm-overlay';
   overlay.innerHTML = `
     <div class="confirm-box">
-      <p>${esc(msg)}</p>
+      <p style="white-space:pre-line">${esc(msg)}</p>
       <div class="confirm-actions">
         <button class="btn btn-ghost">キャンセル</button>
         <button class="btn ${okClass}">${esc(okLabel)}</button>
@@ -1033,9 +1426,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// ブラウザ戻る/進むでハッシュが変わったら画面を切り替える
+window.addEventListener('popstate', () => {
+  const screen = location.hash.slice(1) || 'home';
+  navTo(screen);
+});
+
 // === 初期化 ===
 (async () => {
   await initAuth();
-  await loadHomeChars();
+  // リロード・直リンク時はURLハッシュの画面を復元
+  const initScreen = location.hash.slice(1) || 'home';
+  const validScreens = ['home', 'community', 'chat-list', 'create', 'generate', 'profile'];
+  navTo(validScreens.includes(initScreen) ? initScreen : 'home');
   await loadConversations();
 })();

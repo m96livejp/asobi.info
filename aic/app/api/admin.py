@@ -8,8 +8,8 @@ from ..deps import require_admin
 from ..models.user import User
 from ..models.character import Character
 from ..models.conversation import Conversation, Message
-from ..models.settings import AiSettings, SdSettings, PromptTemplate
-from ..models.image import UserImage
+from ..models.settings import AiSettings, SdSettings, PromptTemplate, SdSelectableModel
+from ..models.image import UserImage, ImageFeedback
 from pydantic import BaseModel
 import httpx
 
@@ -262,6 +262,7 @@ class SdSettingsUpdate(BaseModel):
     cfg_scale: float = 7.0
     width: int = 512
     height: int = 512
+    lt_endpoint: str | None = None
 
 
 @router.get("/sd-settings")
@@ -272,6 +273,7 @@ async def get_sd_settings(admin: User = Depends(require_admin), db: AsyncSession
         "negative_prompt": s.negative_prompt,
         "steps": s.steps, "cfg_scale": s.cfg_scale,
         "width": s.width, "height": s.height,
+        "lt_endpoint": s.lt_endpoint,
     }
 
 
@@ -281,6 +283,7 @@ async def update_sd_settings(req: SdSettingsUpdate, admin: User = Depends(requir
     s.enabled = req.enabled; s.endpoint = req.endpoint; s.model = req.model
     s.negative_prompt = req.negative_prompt; s.steps = req.steps
     s.cfg_scale = req.cfg_scale; s.width = req.width; s.height = req.height
+    s.lt_endpoint = req.lt_endpoint or None
     await db.commit()
     return {"ok": True}
 
@@ -370,6 +373,60 @@ async def delete_template(tmpl_id: int, admin: User = Depends(require_admin), db
     t = result.scalar_one_or_none()
     if not t: raise HTTPException(status_code=404, detail="テンプレートが見つかりません")
     await db.delete(t)
+    await db.commit()
+    return {"ok": True}
+
+
+# ─────────────────────────────────────────────
+# 選択可能モデル管理
+# ─────────────────────────────────────────────
+
+class SelectableModelBody(BaseModel):
+    model_id: str
+    display_name: str
+    is_active: int = 1
+    sort_order: int = 0
+
+
+def _selmodel_dict(m: SdSelectableModel) -> dict:
+    return {"id": m.id, "model_id": m.model_id, "display_name": m.display_name,
+            "is_active": m.is_active, "sort_order": m.sort_order}
+
+
+@router.get("/selectable-models")
+async def list_selectable_models(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(SdSelectableModel).order_by(SdSelectableModel.sort_order, SdSelectableModel.id))
+    return [_selmodel_dict(m) for m in result.scalars()]
+
+
+@router.post("/selectable-models")
+async def create_selectable_model(body: SelectableModelBody, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    m = SdSelectableModel(**body.model_dump())
+    db.add(m)
+    await db.commit()
+    await db.refresh(m)
+    return _selmodel_dict(m)
+
+
+@router.put("/selectable-models/{model_id}")
+async def update_selectable_model(model_id: int, body: SelectableModelBody, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(SdSelectableModel).where(SdSelectableModel.id == model_id))
+    m = result.scalar_one_or_none()
+    if not m: raise HTTPException(status_code=404, detail="モデルが見つかりません")
+    m.model_id     = body.model_id
+    m.display_name = body.display_name
+    m.is_active    = body.is_active
+    m.sort_order   = body.sort_order
+    await db.commit()
+    return _selmodel_dict(m)
+
+
+@router.delete("/selectable-models/{model_id}")
+async def delete_selectable_model(model_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(SdSelectableModel).where(SdSelectableModel.id == model_id))
+    m = result.scalar_one_or_none()
+    if not m: raise HTTPException(status_code=404, detail="モデルが見つかりません")
+    await db.delete(m)
     await db.commit()
     return {"ok": True}
 
@@ -466,4 +523,45 @@ async def admin_delete_image(
         "ok": True,
         "file_existed": file_existed,
         "file_deleted": file_deleted,
+    }
+
+
+# ─────────────────────────────────────────────
+# 画像フィードバック一覧
+# ─────────────────────────────────────────────
+
+@router.get("/image-feedbacks")
+async def list_image_feedbacks(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(100, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """マイナス評価フィードバック一覧"""
+    q = (
+        select(ImageFeedback, User.display_name, UserImage.url, UserImage.prompt)
+        .join(User, User.id == ImageFeedback.user_id, isouter=True)
+        .join(UserImage, UserImage.id == ImageFeedback.image_id, isouter=True)
+        .order_by(ImageFeedback.id.desc())
+        .limit(limit).offset(offset)
+    )
+    result = await db.execute(q)
+    rows = result.all()
+
+    cq = select(func.count()).select_from(ImageFeedback)
+    total = (await db.execute(cq)).scalar()
+
+    return {
+        "total": total,
+        "feedbacks": [{
+            "id": fb.id,
+            "image_id": fb.image_id,
+            "user_id": fb.user_id,
+            "display_name": display_name or f"User#{fb.user_id}",
+            "image_url": image_url or "",
+            "prompt": prompt or "",
+            "reasons": fb.reasons,
+            "comment": fb.comment or "",
+            "created_at": str(fb.created_at) if fb.created_at else "",
+        } for fb, display_name, image_url, prompt in rows],
     }

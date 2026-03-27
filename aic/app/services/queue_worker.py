@@ -1,0 +1,261 @@
+"""SD画像生成キューワーカー（バックグラウンドタスク）"""
+import asyncio
+import base64
+import os
+import uuid as uuid_mod
+from datetime import datetime
+from sqlalchemy import select, func, update
+from sqlalchemy.ext.asyncio import AsyncSession
+import httpx
+
+from ..database import async_session
+from ..models.image import GenerationQueue, UserImage
+from ..models.settings import SdSettings
+
+IMAGE_DIR = "/opt/asobi/aic/frontend/images/avatars"
+IMAGE_URL_BASE = "/images/avatars"
+BATCH_SIZE = 6
+POLL_INTERVAL = 2  # seconds
+
+# ワーカー状態
+_worker_stopped = False
+_worker_stop_reason = ""
+_worker_task: asyncio.Task | None = None
+
+
+def is_stopped() -> bool:
+    return _worker_stopped
+
+
+def stop_reason() -> str:
+    return _worker_stop_reason
+
+
+def resume():
+    global _worker_stopped, _worker_stop_reason
+    _worker_stopped = False
+    _worker_stop_reason = ""
+
+
+async def _get_sd_settings(db: AsyncSession) -> SdSettings | None:
+    result = await db.execute(select(SdSettings).where(SdSettings.id == 1))
+    return result.scalar_one_or_none()
+
+
+async def _get_avg_generation_seconds(db: AsyncSession) -> float:
+    """直近10件の完了ジョブから平均生成時間を算出"""
+    result = await db.execute(
+        select(GenerationQueue)
+        .where(
+            GenerationQueue.status == "completed",
+            GenerationQueue.started_at.isnot(None),
+            GenerationQueue.completed_at.isnot(None),
+        )
+        .order_by(GenerationQueue.id.desc())
+        .limit(10)
+    )
+    jobs = result.scalars().all()
+    if not jobs:
+        return 60.0  # デフォルト60秒
+    total = 0.0
+    count = 0
+    for job in jobs:
+        if job.started_at and job.completed_at:
+            delta = (job.completed_at - job.started_at).total_seconds()
+            if delta > 0:
+                total += delta
+                count += 1
+    return total / count if count > 0 else 60.0
+
+
+async def get_queue_info(db: AsyncSession, user_id: int | None = None) -> dict:
+    """キュー状態を返す"""
+    # 待ち件数（pending + processing）
+    pending_count = (await db.execute(
+        select(func.count()).select_from(GenerationQueue)
+        .where(GenerationQueue.status.in_(["pending", "processing"]))
+    )).scalar() or 0
+
+    # 処理中のジョブ
+    current_result = await db.execute(
+        select(GenerationQueue).where(GenerationQueue.status == "processing").limit(1)
+    )
+    current_job = current_result.scalar_one_or_none()
+
+    # ユーザーの順番
+    my_position = None
+    my_job_id = None
+    if user_id:
+        my_pending = await db.execute(
+            select(GenerationQueue)
+            .where(
+                GenerationQueue.user_id == user_id,
+                GenerationQueue.status.in_(["pending", "processing"]),
+            )
+            .order_by(GenerationQueue.id)
+            .limit(1)
+        )
+        my_job = my_pending.scalar_one_or_none()
+        if my_job:
+            my_job_id = my_job.id
+            if my_job.status == "processing":
+                my_position = 0
+            else:
+                ahead_count = (await db.execute(
+                    select(func.count()).select_from(GenerationQueue)
+                    .where(
+                        GenerationQueue.status.in_(["pending", "processing"]),
+                        GenerationQueue.id < my_job.id,
+                    )
+                )).scalar() or 0
+                my_position = ahead_count
+
+    avg_seconds = await _get_avg_generation_seconds(db)
+    estimated_wait = int(my_position * avg_seconds) if my_position is not None else None
+
+    return {
+        "queue_length": pending_count,
+        "my_position": my_position,
+        "my_job_id": my_job_id,
+        "estimated_wait_seconds": estimated_wait,
+        "avg_generation_seconds": int(avg_seconds),
+        "is_stopped": _worker_stopped,
+        "stop_reason": _worker_stop_reason,
+        "current_job": {
+            "id": current_job.id,
+            "user_id": current_job.user_id,
+            "started_at": str(current_job.started_at) if current_job.started_at else None,
+        } if current_job else None,
+    }
+
+
+async def _process_job(job: GenerationQueue, db: AsyncSession):
+    """1件のジョブをSD APIに送信して処理する"""
+    global _worker_stopped, _worker_stop_reason
+
+    sd = await _get_sd_settings(db)
+    if not sd or not sd.enabled or not sd.endpoint:
+        job.status = "failed"
+        job.error_message = "SD設定が無効です"
+        job.completed_at = datetime.now()
+        await db.commit()
+        return
+
+    endpoint = sd.endpoint.rstrip("/")
+    payload = {
+        "prompt": job.prompt,
+        "negative_prompt": job.negative_prompt or sd.negative_prompt,
+        "steps": job.steps or sd.steps,
+        "cfg_scale": job.cfg_scale or sd.cfg_scale,
+        "width": job.width or sd.width,
+        "height": job.height or sd.height,
+        "sampler_name": "DPM++ 2M Karras",
+        "batch_size": job.batch_size or BATCH_SIZE,
+        "n_iter": 1,
+    }
+    if job.model:
+        payload["override_settings"] = {"sd_model_checkpoint": job.model}
+
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            r = await client.post(f"{endpoint}/sdapi/v1/txt2img", json=payload)
+            r.raise_for_status()
+            data = r.json()
+    except httpx.TimeoutException:
+        _worker_stopped = True
+        _worker_stop_reason = "タイムアウト: 画像生成に時間がかかっています"
+        job.status = "failed"
+        job.error_message = _worker_stop_reason
+        job.completed_at = datetime.now()
+        await db.commit()
+        return
+    except httpx.RequestError as e:
+        _worker_stopped = True
+        _worker_stop_reason = f"SD接続エラー: {str(e)}"
+        job.status = "failed"
+        job.error_message = _worker_stop_reason
+        job.completed_at = datetime.now()
+        await db.commit()
+        return
+    except Exception as e:
+        _worker_stopped = True
+        _worker_stop_reason = f"生成エラー: {str(e)}"
+        job.status = "failed"
+        job.error_message = _worker_stop_reason
+        job.completed_at = datetime.now()
+        await db.commit()
+        return
+
+    images = data.get("images", [])
+    if not images:
+        job.status = "failed"
+        job.error_message = "画像が生成されませんでした"
+        job.completed_at = datetime.now()
+        await db.commit()
+        return
+
+    # ファイル保存 & DB登録（status=pending）
+    os.makedirs(IMAGE_DIR, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d%H%M%S")
+
+    for img_b64 in images[:job.batch_size or BATCH_SIZE]:
+        uid = uuid_mod.uuid4().hex[:8]
+        filename = f"gen_{ts}_{uid}.png"
+        save_path = os.path.join(IMAGE_DIR, filename)
+        with open(save_path, "wb") as f:
+            f.write(base64.b64decode(img_b64))
+        url = f"{IMAGE_URL_BASE}/{filename}"
+        db.add(UserImage(
+            user_id=job.user_id,
+            url=url,
+            prompt=job.prompt,
+            template_id=job.template_id,
+            status="pending",
+        ))
+
+    job.status = "completed"
+    job.completed_at = datetime.now()
+    await db.commit()
+
+
+async def _worker_loop():
+    """メインワーカーループ: pending ジョブを1件ずつ処理"""
+    global _worker_stopped
+    while True:
+        try:
+            if _worker_stopped:
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
+
+            async with async_session() as db:
+                # 最古のpendingジョブを取得
+                result = await db.execute(
+                    select(GenerationQueue)
+                    .where(GenerationQueue.status == "pending")
+                    .order_by(GenerationQueue.id)
+                    .limit(1)
+                )
+                job = result.scalar_one_or_none()
+
+                if not job:
+                    await asyncio.sleep(POLL_INTERVAL)
+                    continue
+
+                # processing に更新
+                job.status = "processing"
+                job.started_at = datetime.now()
+                await db.commit()
+
+                # SD API に送信
+                await _process_job(job, db)
+
+        except Exception as e:
+            print(f"[queue_worker] unexpected error: {e}")
+            await asyncio.sleep(POLL_INTERVAL * 2)
+
+
+def start_worker():
+    """ワーカーを起動する（FastAPI lifespan から呼ぶ）"""
+    global _worker_task
+    _worker_task = asyncio.create_task(_worker_loop())
+    print("[queue_worker] started")

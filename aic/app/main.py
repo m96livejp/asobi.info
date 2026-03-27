@@ -14,6 +14,9 @@ async def lifespan(app: FastAPI):
     # サンプルキャラクター初期化
     from .services.init_samples import init_sample_characters
     await init_sample_characters()
+    # SD画像生成キューワーカー起動
+    from .services.queue_worker import start_worker
+    start_worker()
     yield
 
 app = FastAPI(title="aic.asobi.info", lifespan=lifespan)

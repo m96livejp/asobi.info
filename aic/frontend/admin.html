@@ -193,6 +193,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
     <button class="nav-item" onclick="showSection('users')">👥 ユーザー</button>
     <button class="nav-item" onclick="showSection('characters')">✨ キャラクター</button>
     <button class="nav-item" onclick="showSection('images')">🖼 生成画像</button>
+    <button class="nav-item" onclick="showSection('feedbacks')">📝 フィードバック</button>
   </nav>
 </aside>
 
@@ -318,7 +319,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       </div>
       <div class="form-group">
         <button class="btn btn-info btn-sm" id="btn-sd-test" onclick="testSdConnection()">接続テスト</button>
-        <div class="hint" style="margin-top:4px">※ ブラウザから直接接続します（管理者PCで開いている場合のみ有効）</div>
+        <div class="hint" style="margin-top:4px">※ サーバーからSDへ接続します（サーバーがSDのエンドポイントに到達できる必要があります）</div>
         <div id="sd-test-result" style="margin-top:10px"></div>
       </div>
     </div>
@@ -354,7 +355,44 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           <div class="hint">縦長: 512×768 / 576×1024 など</div>
         </div>
       </div>
+      <div class="form-group" style="margin-top:16px">
+        <label>翻訳エンドポイント（LibreTranslate）</label>
+        <input type="text" id="sd-lt-endpoint" placeholder="例: http://127.0.0.1:5000">
+        <div class="hint">
+          空欄の場合は翻訳ボタンが非表示になります。<br>
+          LibreTranslate 起動例: <code>libretranslate --host 0.0.0.0 --port 5000</code>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-sm" id="btn-lt-test" onclick="testLtConnection()">接続テスト</button>
+          <span id="lt-test-result" style="font-size:0.85rem"></span>
+        </div>
+      </div>
       <button class="btn btn-primary" id="btn-sd-save" onclick="saveSdSettings()">保存</button>
+    </div>
+
+    <!-- 選択可能モデル管理 -->
+    <div class="card">
+      <div class="card-title">選択可能モデル</div>
+      <p style="font-size:0.85rem;color:var(--sub);margin-bottom:14px">ユーザーが画像生成時に選択できるモデルを設定します。表示名は自由に設定できます。</p>
+      <div id="selmodel-list" style="margin-bottom:16px"></div>
+      <details style="border:1px solid var(--border);border-radius:8px;padding:12px">
+        <summary style="cursor:pointer;font-weight:600;font-size:0.9rem">＋ モデルを追加</summary>
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+          <div class="form-group" style="margin:0">
+            <label>表示名</label>
+            <input type="text" id="new-sm-name" placeholder="例: リアル系、アニメ系">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>モデルID <span style="font-weight:400;color:var(--sub)">（SDのチェックポイント名）</span></label>
+            <input type="text" id="new-sm-id" placeholder="例: v1-5-pruned-emaonly.safetensors">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>表示順</label>
+            <input type="number" id="new-sm-order" value="0" min="0" style="width:100px">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="createSelectableModel()">追加する</button>
+        </div>
+      </details>
     </div>
 
     <!-- テンプレート管理 -->
@@ -384,6 +422,19 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           <button class="btn btn-primary btn-sm" onclick="createTemplate()">追加する</button>
         </div>
       </details>
+    </div>
+  </div>
+
+  <!-- フィードバック一覧 -->
+  <div id="sec-feedbacks" class="section">
+    <div class="section-title">📝 画像フィードバック</div>
+    <div class="card">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="loadFeedbacks()">🔄 再読み込み</button>
+        <span id="fb-total" style="font-size:0.85rem;color:var(--sub)"></span>
+      </div>
+      <div id="fb-list"></div>
+      <div class="img-pagination" id="fb-pagination"></div>
     </div>
   </div>
 
@@ -616,9 +667,9 @@ async function testConnection() {
   if (d.models?.length) {
     html += '<div style="background:var(--bg);border-radius:8px;padding:12px;margin-top:8px">';
     html += '<div style="font-weight:600;margin-bottom:8px;font-size:0.85rem">利用可能なモデル</div>';
-    html += '<table class="model-tbl"><thead><tr><th>モデルID</th><th>名前</th><th></th></tr></thead><tbody>';
+    html += '<table class="model-tbl"><thead><tr><th></th><th>モデルID</th><th>名前</th></tr></thead><tbody>';
     for (const m of d.models)
-      html += `<tr><td>${esc(m.id)}</td><td>${esc(m.name)}</td><td><button class="btn btn-sm btn-ok" onclick="selectModel('${esc(m.id)}')">選択</button></td></tr>`;
+      html += `<tr><td><button class="btn btn-sm btn-ok" onclick="selectModel('${esc(m.id)}')">選択</button></td><td>${esc(m.id)}</td><td>${esc(m.name)}</td></tr>`;
     html += '</tbody></table></div>';
   }
   el.innerHTML = html;
@@ -723,6 +774,7 @@ async function loadSdSettings() {
   document.getElementById('sd-cfg').value = d.cfg_scale ?? 7.0;
   document.getElementById('sd-width').value = d.width || 512;
   document.getElementById('sd-height').value = d.height || 512;
+  document.getElementById('sd-lt-endpoint').value = d.lt_endpoint || '';
 }
 
 async function saveSdSettings() {
@@ -737,6 +789,7 @@ async function saveSdSettings() {
     cfg_scale: parseFloat(document.getElementById('sd-cfg').value) || 7.0,
     width: parseInt(document.getElementById('sd-width').value) || 512,
     height: parseInt(document.getElementById('sd-height').value) || 512,
+    lt_endpoint: document.getElementById('sd-lt-endpoint').value || null,
   };
   const r = await api('/admin/sd-settings', { method: 'PUT', body: JSON.stringify(body) });
   btn.disabled = false; btn.textContent = '保存';
@@ -746,6 +799,64 @@ async function saveSdSettings() {
 function selectSdModel(name) {
   document.getElementById('sd-model').value = name;
   toast(`モデル "${name}" を選択しました`);
+}
+
+// ─── 選択可能モデル管理 ───
+async function loadSelectableModels() {
+  const r = await api('/admin/selectable-models');
+  const el = document.getElementById('selmodel-list');
+  if (!r.ok) { el.innerHTML = '<p style="color:var(--err)">読み込み失敗</p>'; return; }
+  const models = await r.json();
+  if (!models.length) { el.innerHTML = '<p style="color:var(--sub);font-size:0.85rem">登録されていません</p>'; return; }
+  el.innerHTML = models.map(m => `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div>
+          <span style="font-weight:600">${esc(m.display_name)}</span>
+          <span style="font-size:0.8rem;color:var(--sub);margin-left:8px">${esc(m.model_id)}</span>
+          ${m.is_active ? '' : '<span style="font-size:0.75rem;color:var(--err);margin-left:6px">無効</span>'}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-sm ${m.is_active ? 'btn-ghost' : 'btn-ok'}" onclick="toggleSelectableModel(${m.id},${m.is_active})">${m.is_active ? '無効化' : '有効化'}</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteSelectableModel(${m.id},'${esc(m.display_name)}')">削除</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function createSelectableModel() {
+  const name = document.getElementById('new-sm-name').value.trim();
+  const mid  = document.getElementById('new-sm-id').value.trim();
+  const ord  = parseInt(document.getElementById('new-sm-order').value) || 0;
+  if (!name || !mid) { toast('表示名とモデルIDは必須です', 'err'); return; }
+  const r = await api('/admin/selectable-models', { method: 'POST', body: JSON.stringify({ display_name: name, model_id: mid, sort_order: ord }) });
+  if (r.ok) {
+    document.getElementById('new-sm-name').value = '';
+    document.getElementById('new-sm-id').value = '';
+    document.getElementById('new-sm-order').value = '0';
+    toast('追加しました'); loadSelectableModels();
+  } else { toast('追加に失敗しました', 'err'); }
+}
+
+async function toggleSelectableModel(id, isActive) {
+  // 現在のデータを取得してから is_active だけ変更
+  const listR = await api('/admin/selectable-models');
+  if (!listR.ok) { toast('更新に失敗しました', 'err'); return; }
+  const models = await listR.json();
+  const m = models.find(x => x.id === id);
+  if (!m) { toast('モデルが見つかりません', 'err'); return; }
+  const r = await api(`/admin/selectable-models/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ model_id: m.model_id, display_name: m.display_name, is_active: isActive ? 0 : 1, sort_order: m.sort_order }),
+  });
+  r.ok ? (toast(isActive ? '無効化しました' : '有効化しました'), loadSelectableModels()) : toast('更新に失敗しました', 'err');
+}
+
+async function deleteSelectableModel(id, name) {
+  showConfirm(`「${name}」を削除しますか？`, async () => {
+    const r = await api(`/admin/selectable-models/${id}`, { method: 'DELETE' });
+    r.ok ? (toast('削除しました'), loadSelectableModels()) : toast('削除に失敗しました', 'err');
+  }, '削除する');
 }
 
 // ─── プロンプトテンプレート管理 ───
@@ -872,12 +983,35 @@ async function testSdConnection() {
   if (d.models?.length) {
     html += '<div style="background:var(--bg);border-radius:8px;padding:12px;margin-top:8px">';
     html += '<div style="font-weight:600;margin-bottom:8px;font-size:0.85rem">利用可能なモデル</div>';
-    html += '<table class="model-tbl"><thead><tr><th>モデル名</th><th></th></tr></thead><tbody>';
+    html += '<table class="model-tbl"><thead><tr><th></th><th>モデル名</th></tr></thead><tbody>';
     for (const m of d.models)
-      html += `<tr><td>${esc(m)}</td><td><button class="btn btn-sm btn-ok" onclick="selectSdModel('${esc(m)}')">選択</button></td></tr>`;
+      html += `<tr><td><button class="btn btn-sm btn-ok" onclick="selectSdModel('${esc(m)}')">選択</button></td><td>${esc(m)}</td></tr>`;
     html += '</tbody></table></div>';
   }
   el.innerHTML = html;
+}
+
+async function testLtConnection() {
+  const btn = document.getElementById('btn-lt-test');
+  const el = document.getElementById('lt-test-result');
+  btn.disabled = true; btn.textContent = 'テスト中...'; el.innerHTML = '';
+  const endpoint = (document.getElementById('sd-lt-endpoint').value || '').trim().replace(/\/$/, '');
+  if (!endpoint) { btn.disabled = false; btn.textContent = '接続テスト'; el.textContent = 'URLを入力してください'; return; }
+  try {
+    const r = await fetch(endpoint + '/languages');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const langs = await r.json();
+    const hasJa = langs.some(l => l.code === 'ja');
+    const hasEn = langs.some(l => l.code === 'en');
+    if (hasJa && hasEn) {
+      el.innerHTML = '<span style="color:var(--ok)">✓ 接続成功（日→英 翻訳可能）</span>';
+    } else {
+      el.innerHTML = `<span style="color:orange">⚠ 接続成功（ja:${hasJa ? '○' : '×'} / en:${hasEn ? '○' : '×'}）</span>`;
+    }
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--err)">✗ ${esc(e.message)}</span>`;
+  }
+  btn.disabled = false; btn.textContent = '接続テスト';
 }
 
 // ─── 生成画像管理 ───
@@ -963,6 +1097,63 @@ async function adminDeleteImage(id) {
   }, '削除する');
 }
 
+// ─── フィードバック管理 ───
+let fbOffset = 0;
+const FB_LIMIT = 50;
+
+async function loadFeedbacks(reset = true) {
+  if (reset) fbOffset = 0;
+  const params = new URLSearchParams({ limit: FB_LIMIT, offset: fbOffset });
+  const r = await api('/admin/image-feedbacks?' + params.toString());
+  if (!r.ok) { toast('フィードバックの取得に失敗しました', 'err'); return; }
+  const d = await r.json();
+  document.getElementById('fb-total').textContent = `全 ${d.total} 件`;
+
+  const list = document.getElementById('fb-list');
+  if (!d.feedbacks.length) {
+    list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--sub)">フィードバックがありません</div>';
+    document.getElementById('fb-pagination').innerHTML = '';
+    return;
+  }
+
+  list.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.85rem">'
+    + '<thead><tr style="border-bottom:1px solid var(--border);text-align:left">'
+    + '<th style="padding:8px 6px;width:60px">画像</th>'
+    + '<th style="padding:8px 6px">理由</th>'
+    + '<th style="padding:8px 6px">コメント</th>'
+    + '<th style="padding:8px 6px">ユーザー</th>'
+    + '<th style="padding:8px 6px;width:80px">日時</th>'
+    + '</tr></thead><tbody>'
+    + d.feedbacks.map(fb => {
+      const reasons = fb.reasons ? fb.reasons.split(',').map(r => `<span style="display:inline-block;background:rgba(233,69,96,0.15);color:var(--accent-l);border-radius:4px;padding:2px 6px;margin:1px;font-size:0.75rem">${esc(r)}</span>`).join('') : '';
+      const imgThumb = fb.image_url ? `<a href="${esc(fb.image_url)}" target="_blank"><img src="${esc(fb.image_url)}" style="width:50px;height:50px;object-fit:cover;border-radius:4px"></a>` : '-';
+      const date = fb.created_at ? fb.created_at.slice(0, 16) : '';
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:8px 6px">${imgThumb}</td>
+        <td style="padding:8px 6px">${reasons || '<span style="color:var(--sub)">-</span>'}</td>
+        <td style="padding:8px 6px">${fb.comment ? esc(fb.comment) : '<span style="color:var(--sub)">-</span>'}</td>
+        <td style="padding:8px 6px">${esc(fb.display_name)} <span style="color:var(--sub);font-size:0.7rem">#${fb.user_id}</span></td>
+        <td style="padding:8px 6px;font-size:0.75rem;color:var(--sub)">${date}</td>
+      </tr>`;
+    }).join('')
+    + '</tbody></table>';
+
+  // ページネーション
+  const pag = document.getElementById('fb-pagination');
+  const hasNext = fbOffset + FB_LIMIT < d.total;
+  const hasPrev = fbOffset > 0;
+  pag.innerHTML = `
+    ${hasPrev ? `<button class="btn btn-ghost btn-sm" onclick="fbPage(-1)">← 前へ</button>` : ''}
+    <span>${fbOffset + 1}〜${Math.min(fbOffset + FB_LIMIT, d.total)} / ${d.total}</span>
+    ${hasNext ? `<button class="btn btn-ghost btn-sm" onclick="fbPage(1)">次へ →</button>` : ''}
+  `;
+}
+
+function fbPage(dir) {
+  fbOffset = Math.max(0, fbOffset + dir * FB_LIMIT);
+  loadFeedbacks(false);
+}
+
 // showSection の拡張
 const _origShowSection = showSection;
 showSection = function(id) {
@@ -973,6 +1164,7 @@ showSection = function(id) {
     event.currentTarget.classList.add('active');
     loadSdSettings();
     loadTemplates();
+    loadSelectableModels();
     return;
   }
   if (id === 'images') {
@@ -981,6 +1173,14 @@ showSection = function(id) {
     document.getElementById('sec-images').classList.add('active');
     event.currentTarget.classList.add('active');
     loadImages();
+    return;
+  }
+  if (id === 'feedbacks') {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    document.getElementById('sec-feedbacks').classList.add('active');
+    event.currentTarget.classList.add('active');
+    loadFeedbacks();
     return;
   }
   _origShowSection(id);
