@@ -36,7 +36,7 @@ img {
 
 /* ヘッダー共通 */
 .site-header {
-  padding: 16px 0;
+  padding: 12px 0;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -174,8 +174,12 @@ img {
     font-size: 0.9rem;
   }
 
+  .container {
+    padding: 0 8px;
+  }
+
   .site-header .container {
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 8px;
   }
 
@@ -201,11 +205,22 @@ img {
 @media (max-width: 768px) {
   .menu-toggle {
     display: block;
+    order: -1;
+  }
+
+  .site-logo {
+    order: 0;
+    flex: 1;
+  }
+
+  .header-user-area {
+    order: 1;
   }
 
   .site-nav {
     display: none;
     width: 100%;
+    order: 3;
   }
 
   .site-nav.open {

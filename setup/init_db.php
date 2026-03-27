@@ -73,7 +73,7 @@ function initDatabase($dbPath, $schemaFile, $dataFile, $label) {
 
 // DbD データベース
 $ok1 = initDatabase(
-    $baseDir . '/public_html/dbd/data/dbd.sqlite',
+    $baseDir . '/dbd/data/dbd.sqlite',
     __DIR__ . '/dbd_schema.sql',
     __DIR__ . '/dbd_data.sql',
     'Dead by Daylight'
@@ -81,7 +81,7 @@ $ok1 = initDatabase(
 
 // ポケモンクエスト データベース
 $ok2 = initDatabase(
-    $baseDir . '/public_html/pokemon-quest/data/pokemon_quest.sqlite',
+    $baseDir . '/pkq/data/pokemon_quest.sqlite',
     __DIR__ . '/pq_schema.sql',
     __DIR__ . '/pq_data.sql',
     'ポケモンクエスト'

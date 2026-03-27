@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>あそびウォレットカードと通貨について - あそび</title>
+  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
+  <style>
+    main { max-width: 760px; margin: 0 auto; padding: 40px 16px; }
+    h1 { font-size: 1.4rem; margin-bottom: 32px; }
+    h2 { font-size: 1.1rem; margin: 36px 0 12px; border-bottom: 1px solid var(--border, #ddd); padding-bottom: 6px; }
+    p, li { font-size: 0.88rem; line-height: 1.8; color: var(--text-secondary, #555); }
+    a { color: var(--accent, #3498db); }
+
+    .currency-section {
+      background: var(--bg-secondary, #f8f8f8);
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 12px;
+    }
+    .currency-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .currency-icon {
+      width: 56px;
+      height: 56px;
+      flex-shrink: 0;
+    }
+    .currency-icons-row {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .currency-icons-row img {
+      width: 40px;
+      height: 40px;
+    }
+    .currency-icon-placeholder {
+      width: 56px;
+      height: 56px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+    }
+    .currency-icon-coin {
+      background: linear-gradient(135deg, #FFD700, #FFA000);
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+    .currency-icon-star {
+      background: linear-gradient(135deg, #42A5F5, #1565C0);
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+    .currency-name {
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: var(--text-primary, #333);
+    }
+    .currency-unit {
+      font-size: 0.8rem;
+      color: var(--text-secondary, #555);
+      margin-top: 2px;
+    }
+    .currency-desc {
+      margin: 0;
+    }
+    .currency-note {
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: rgba(0,0,0,0.04);
+      border-radius: 8px;
+      font-size: 0.82rem;
+      color: var(--text-secondary, #888);
+    }
+
+    /* フロー図 */
+    .flow-diagram {
+      margin: 32px 0;
+    }
+    .flow-top {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+      max-width: 636px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .flow-source-box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 16px 24px;
+      background: #333;
+      color: #fff;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: bold;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .flow-source-box img {
+      width: 40px;
+      height: 40px;
+      flex-shrink: 0;
+    }
+    /* 分岐矢印 */
+    .flow-branch-arrows {
+      display: flex;
+      margin-bottom: 4px;
+      font-size: 1.2rem;
+      color: var(--text-secondary, #999);
+      max-width: 636px;
+      margin-left: auto;
+      margin-right: auto;
+      gap: 12px;
+    }
+    .flow-branch-arrow {
+      flex: 1;
+      max-width: 200px;
+      text-align: center;
+      line-height: 1;
+    }
+    /* コンテンツ枠の並び */
+    .flow-contents {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      max-width: 636px;
+      margin: 0 auto;
+    }
+    .flow-content-box {
+      border: 2px solid var(--border, #ddd);
+      border-radius: 12px;
+      padding: 14px;
+      text-align: center;
+      flex: 1;
+      max-width: 200px;
+      background: var(--bg-secondary, #f8f8f8);
+    }
+    .flow-content-label {
+      font-size: 0.7rem;
+      color: var(--text-secondary, #999);
+      margin-bottom: 8px;
+    }
+    .flow-content-icon {
+      width: 36px;
+      height: 36px;
+      margin: 0 auto;
+    }
+    .flow-content-name {
+      font-size: 0.8rem;
+      font-weight: bold;
+      color: var(--text-primary, #333);
+      margin: 6px 0 8px;
+    }
+    .flow-content-icon-sub {
+      width: 28px;
+      height: 28px;
+      margin: 8px auto 4px;
+    }
+    .flow-content-detail {
+      font-size: 0.7rem;
+      color: var(--text-secondary, #888);
+      margin-top: 2px;
+    }
+    .flow-content-divider {
+      border: none;
+      border-top: 1px dashed var(--border, #ccc);
+      margin: 8px 0;
+    }
+    .flow-content-use {
+      font-size: 0.72rem;
+      color: var(--text-secondary, #888);
+    }
+    /* 交換不可表示 */
+    .flow-no-exchange {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 16px;
+      font-size: 0.78rem;
+      color: #c0392b;
+    }
+    .flow-no-exchange-x {
+      font-size: 0.9rem;
+      font-weight: bold;
+    }
+
+    @media (max-width: 768px) {
+      .currency-header { gap: 12px; }
+      .currency-icon, .currency-icon-placeholder { width: 44px; height: 44px; }
+      .currency-icon-placeholder { font-size: 1.3rem; }
+      .flow-contents { flex-direction: column; align-items: center; }
+      .flow-content-box { max-width: 100%; width: 100%; }
+      .flow-branch-arrows { flex-direction: column; align-items: center; gap: 0; }
+      .flow-branch-arrow { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="site-logo">あそび</a>
+    </div>
+  </header>
+
+  <main>
+    <h1>あそびウォレットカードと通貨について</h1>
+
+    <p>あそびでは、サイト全体で使える共通通貨と、各コンテンツごとの通貨・ポイントがあります。</p>
+
+    <!-- 通貨の流れ図 -->
+    <div class="flow-diagram">
+      <!-- AC（上部中央） -->
+      <div class="flow-top">
+        <div class="flow-source-box">
+          <img src="/assets/images/asobi-card.svg" alt="">
+          あそびウォレットカード（AC）
+        </div>
+      </div>
+      <!-- 分岐矢印 -->
+      <div class="flow-branch-arrows">
+        <div class="flow-branch-arrow">↓</div>
+        <div class="flow-branch-arrow">↓</div>
+        <div class="flow-branch-arrow">↓</div>
+      </div>
+      <!-- コンテンツごとの枠 -->
+      <div class="flow-contents">
+        <div class="flow-content-box">
+          <div class="flow-content-label">コンテンツ A</div>
+          <img src="/assets/images/currency-rupee.svg" alt="" class="flow-content-icon">
+          <div class="flow-content-name">通貨A</div>
+          <div class="flow-content-detail">コンテンツA内の買い物に使用</div>
+          <hr class="flow-content-divider">
+          <img src="/assets/images/currency-money-stack.svg" alt="" class="flow-content-icon-sub">
+          <div class="flow-content-use">ポイントA</div>
+        </div>
+        <div class="flow-content-box">
+          <div class="flow-content-label">コンテンツ B</div>
+          <img src="/assets/images/currency-diamond.svg" alt="" class="flow-content-icon">
+          <div class="flow-content-name">通貨B</div>
+          <div class="flow-content-detail">コンテンツB内の買い物に使用</div>
+          <hr class="flow-content-divider">
+          <img src="/assets/images/currency-cash.svg" alt="" class="flow-content-icon-sub">
+          <div class="flow-content-use">ポイントB</div>
+        </div>
+        <div class="flow-content-box">
+          <div class="flow-content-label">コンテンツ C</div>
+          <img src="/assets/images/currency-saphir.svg" alt="" class="flow-content-icon">
+          <div class="flow-content-name">通貨C</div>
+          <div class="flow-content-detail">コンテンツC内の買い物に使用</div>
+          <hr class="flow-content-divider">
+          <img src="/assets/images/currency-piggy-bank.svg" alt="" class="flow-content-icon-sub">
+          <div class="flow-content-use">ポイントC</div>
+        </div>
+      </div>
+      <!-- 交換不可の注意 -->
+      <div class="flow-no-exchange">
+        <span class="flow-no-exchange-x">✕</span>
+        コンテンツ間の通貨交換・ACへの返還・現金への払い戻しはできません
+      </div>
+    </div>
+
+    <!-- あそびウォレットカード -->
+    <h2>あそびウォレットカード</h2>
+    <div class="currency-section">
+      <div class="currency-header">
+        <img src="/assets/images/asobi-card.svg" alt="あそびウォレットカード" class="currency-icon">
+        <div>
+          <div class="currency-name">あそびウォレットカード</div>
+          <div class="currency-unit">単位：AC</div>
+        </div>
+      </div>
+      <p class="currency-desc">あそび全体で使える共通通貨です。プリペイドカードのようにチャージして、各コンテンツの通貨に交換できます。</p>
+      <div class="currency-note">
+        ※ あそびウォレットカード（AC）から各コンテンツの通貨への交換は一方通行です。交換後に AC へ戻すことはできません。また、AC および各通貨・ポイントは現金への払い戻しはできません。
+      </div>
+    </div>
+
+    <!-- 各コンテンツ通貨 -->
+    <h2>各コンテンツ通貨</h2>
+    <div class="currency-section">
+      <div class="currency-header">
+        <div class="currency-icons-row">
+          <img src="/assets/images/currency-rupee.svg" alt="">
+          <img src="/assets/images/currency-diamond.svg" alt="">
+          <img src="/assets/images/currency-saphir.svg" alt="">
+        </div>
+        <div>
+          <div class="currency-name">コンテンツごとの通貨</div>
+          <div class="currency-unit">名称・単位はコンテンツにより異なります</div>
+        </div>
+      </div>
+      <p class="currency-desc">各コンテンツ内で使用する通貨です。あそびウォレットカード（AC）から交換して入手でき、ゲーム内のアイテム購入などに使用します。</p>
+      <div class="currency-note">
+        ※ 各コンテンツの通貨は、そのコンテンツ内でのみ使用できます。他のコンテンツやあそびウォレットカードには交換できません。
+      </div>
+    </div>
+
+    <!-- ポイント -->
+    <h2>ポイント</h2>
+    <div class="currency-section">
+      <div class="currency-header">
+        <div class="currency-icons-row">
+          <img src="/assets/images/currency-money-stack.svg" alt="">
+          <img src="/assets/images/currency-cash.svg" alt="">
+          <img src="/assets/images/currency-piggy-bank.svg" alt="">
+        </div>
+        <div>
+          <div class="currency-name">ポイント</div>
+          <div class="currency-unit">各コンテンツごとに独立</div>
+        </div>
+      </div>
+      <p class="currency-desc">ログインボーナスやミッション達成などで無料で貯まるポイントです。各コンテンツごとに独立しており、そのコンテンツ内で利用できます。</p>
+    </div>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p style="font-size:0.72rem; margin-bottom:6px; opacity:0.6;">
+        <a href="/" style="color:inherit;">← トップへ戻る</a>
+      </p>
+      <p>&copy; 2026 あそび - ゲーム情報ポータル</p>
+    </div>
+  </footer>
+  <script src="/assets/js/common.js?v=20260327e"></script>
+</body>
+</html>

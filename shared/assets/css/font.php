@@ -4,7 +4,7 @@
  * サブドメインからのクロスオリジンリクエストに対応
  */
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowed = ['https://asobi.info', 'https://www.asobi.info', 'https://pkq.asobi.info', 'https://dbd.asobi.info', 'https://tbt.asobi.info'];
+$allowed = ['https://asobi.info', 'https://www.asobi.info', 'https://pkq.asobi.info', 'https://dbd.asobi.info', 'https://tbt.asobi.info', 'https://aic.asobi.info'];
 if (in_array($origin, $allowed)) {
     header("Access-Control-Allow-Origin: $origin");
 }

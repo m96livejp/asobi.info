@@ -77,15 +77,35 @@ const PQApp = {
     const container = document.getElementById('pokemon-list');
     let list = this.allPokemon;
 
-    // 検索フィルター
+    // 名前検索フィルター
     const searchEl = document.getElementById('search-input');
     if (searchEl && searchEl.value) {
       const q = searchEl.value.toLowerCase();
+      const qKata = q.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
+      const qHira = q.replace(/[\u30A1-\u30F6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+      list = list.filter(p => {
+        const nameLow = p.name.toLowerCase();
+        return nameLow.includes(q) || nameLow.includes(qKata) || nameLow.includes(qHira) ||
+               p.type1.toLowerCase().includes(q) || (p.type2 && p.type2.toLowerCase().includes(q));
+      });
+    }
+
+    // No.検索フィルター
+    const noEl = document.getElementById('no-search-input');
+    if (noEl && noEl.value) {
+      const rawNo = noEl.value.trim().replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[^0-9]/g, '');
+      if (rawNo) {
+        list = list.filter(p => {
+          const noStr = String(p.pokedex_no).padStart(3, '0');
+          return noStr.includes(rawNo) || String(p.pokedex_no).includes(rawNo);
+        });
+      }
+    }
+
+    // タイプフィルター
+    if (this.selectedTypes && this.selectedTypes.length > 0) {
       list = list.filter(p =>
-        p.name.toLowerCase().includes(q) ||
-        p.type1.toLowerCase().includes(q) ||
-        (p.type2 && p.type2.toLowerCase().includes(q)) ||
-        String(p.pokedex_no).includes(q)
+        this.selectedTypes.every(t => p.type1 === t || p.type2 === t)
       );
     }
 
@@ -99,6 +119,8 @@ const PQApp = {
     this.renderPokemon(list, container);
     this.updateCount(list.length);
   },
+
+  selectedTypes: [],
 
   // ポケモン一覧
   async loadPokemon(containerId) {

@@ -139,7 +139,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $move2       = mb_substr(trim($_POST['move2']       ?? ''), 0, 50);
     $pcharm      = mb_substr(trim($_POST['pcharm']      ?? ''), 0, 100);
     $recipe_name = mb_substr(trim($_POST['recipe_name'] ?? ''), 0, 60);
-    $move2_slot  = max(1, min(3, (int)($_POST['move2_slot'] ?? 2)));
+    $move2_slot  = max(0, min(3, (int)($_POST['move2_slot'] ?? 0)));
+    $slot_active = (int)($_POST['slot_active'] ?? 0) ? 1 : 0;
     $is_shiny    = isset($_POST['is_shiny']) ? 1 : 0;
 
     if (!canEditReport($rec, $isLoggedIn, $sessionUserId, getClientIp(), $isAdmin)) {
@@ -157,9 +158,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         && $hp > 0 && $atk > 0
     ) {
         $stmt2 = $db->prepare('UPDATE iv_reports
-            SET pokemon_id=?, pot_type=?, quality=?, level=?, hp=?, atk=?, memo=?, move1=?, move2=?, pcharm=?, recipe_name=?, move2_slot=?, is_shiny=?
+            SET pokemon_id=?, pot_type=?, quality=?, level=?, hp=?, atk=?, memo=?, move1=?, move2=?, pcharm=?, recipe_name=?, move2_slot=?, slot_active=?, is_shiny=?
             WHERE id=?');
-        $stmt2->execute([$pokemon_id, $pot_type, $quality, $level, $hp, $atk, $memo, $move1, $move2, $pcharm, $recipe_name, $move2_slot, $is_shiny, $editId]);
+        $stmt2->execute([$pokemon_id, $pot_type, $quality, $level, $hp, $atk, $memo, $move1, $move2, $pcharm, $recipe_name, $move2_slot, $slot_active, $is_shiny, $editId]);
         header('Location: /iv-report-list.php?updated=1');
         exit;
     } else {
@@ -226,7 +227,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $move2       = mb_substr(trim($_POST['move2']       ?? ''), 0, 50);
     $pcharm      = mb_substr(trim($_POST['pcharm']      ?? ''), 0, 100);
     $recipe_name = mb_substr(trim($_POST['recipe_name'] ?? ''), 0, 60);
-    $move2_slot  = max(1, min(3, (int)($_POST['move2_slot'] ?? 2)));
+    $move2_slot  = max(0, min(3, (int)($_POST['move2_slot'] ?? 0)));
+    $slot_active = (int)($_POST['slot_active'] ?? 0) ? 1 : 0;
     $is_shiny    = isset($_POST['is_shiny']) ? 1 : 0;
 
     $valid_pots     = ['鉄','銅','銀','金','なし'];
@@ -242,8 +244,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         && $hp > 0 && $atk > 0
     ) {
         $stmt = $db->prepare('INSERT INTO iv_reports
-            (pokemon_id, pot_type, quality, level, hp, atk, user_id, username, ip, memo, move1, move2, pcharm, recipe_name, move2_slot, is_shiny)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            (pokemon_id, pot_type, quality, level, hp, atk, user_id, username, ip, memo, move1, move2, pcharm, recipe_name, move2_slot, slot_active, is_shiny)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         $stmt->execute([
             $pokemon_id,
             $pot_type,
@@ -260,6 +262,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $pcharm,
             $recipe_name,
             $move2_slot,
+            $slot_active,
             $is_shiny,
         ]);
         header('Location: /iv-report-list.php?registered=1');
@@ -319,8 +322,8 @@ $stats = $db->query("
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>料理結果投稿 - ポケモンクエスト情報</title>
   <meta name="description" content="料理の結果（鍋・品質・Lv・HP・ATK）を投稿してデータ収集に協力しよう。">
-  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css?v=20260327e">
+  <link rel="stylesheet" href="/css/style.css?v=20260327c">
   <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
   <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
   <style>
@@ -459,7 +462,7 @@ $stats = $db->query("
     }
     #slider-section .slider-labels .tick-only .tick-line {
       top: -4px;
-      opacity: 0.4;
+      opacity: 0.65;
     }
     #slider-section .slider-labels .tick-only {
       font-size: 0;
@@ -489,8 +492,8 @@ $stats = $db->query("
     #slider-section input[type="range"]#hp-slider::-webkit-slider-thumb { background: #e74c3c; }
     #slider-section input[type="range"]#atk-slider { background: rgba(52,152,219,0.2); }
     #slider-section input[type="range"]#atk-slider::-webkit-slider-thumb { background: #3498db; }
-    #slider-section input[type="range"]#level-slider { background: rgba(225,112,85,0.2); accent-color: #e17055; }
-    #slider-section input[type="range"]#level-slider::-webkit-slider-thumb { background: #e17055; }
+    #slider-section input[type="range"]#level-slider { background: rgba(192,87,10,0.2); accent-color: #c0570a; }
+    #slider-section input[type="range"]#level-slider::-webkit-slider-thumb { background: #c0570a; }
 
     /* 品質ボタン */
     .quality-selector { display: flex; gap: 8px; }
@@ -521,7 +524,7 @@ $stats = $db->query("
     }
     @media (max-width: 480px) {
       .pot-selector     { grid-template-columns: repeat(3, 1fr); }
-      .quality-selector { grid-template-columns: repeat(2, 1fr); }
+      .quality-selector { display: grid; grid-template-columns: repeat(2, 1fr); }
     }
 
     .submit-btn {
@@ -973,8 +976,8 @@ $stats = $db->query("
           <li><a href="/recipes.html">全料理一覧</a></li>
           <li><a href="/simulator.html">料理シミュレーター</a></li>
           <li><a href="/iv-checker.html">個体値チェッカー</a></li>
-          <li><a href="/iv-report.php" class="active">料理結果投稿</a></li>
           <li><a href="/iv-report-list.php">料理結果一覧</a></li>
+          <li><a href="/iv-report.php" class="active">料理結果投稿</a></li>
         </ul>
       </nav>
     </div>
@@ -1111,8 +1114,8 @@ $stats = $db->query("
                   <?php endforeach; ?>
                 </div>
               </div>
-              <div style="display:flex; gap:6px; align-items:flex-start;">
-                <select name="pokemon_id" id="pokemon-select" class="form-control" required style="flex:1; min-width:0;" size="3">
+              <div style="display:flex; gap:6px; align-items:flex-start; flex-wrap:wrap;">
+                <select name="pokemon_id" id="pokemon-select" class="form-control" required style="flex:2; min-width:180px;" size="3">
                   <option value="">-- 選択してください --</option>
                   <?php foreach ($pokemon_list as $p): ?>
                   <option value="<?= $p['pokedex_no'] ?>"
@@ -1124,33 +1127,35 @@ $stats = $db->query("
                   </option>
                   <?php endforeach; ?>
                 </select>
-                <div style="position:relative; flex:1; min-width:0;">
-                  <input type="text" id="pokemon-search" class="form-control" lang="ja"
-                    placeholder="名前検索" oninput="onPokemonSearchInput();toggleVoiceClear('pokemon-search')"
-                    style="width:100%; padding-right:28px; color:var(--text-primary); ime-mode:active;">
-                  <button type="button" id="pokemon-search-mic" onclick="startVoice('pokemon-search', event)"
-                    style="position:absolute; right:5px; top:50%; transform:translateY(-50%);
-                           background:none; border:none; cursor:pointer; color:var(--text-secondary);
-                           font-size:0.9rem; line-height:1; padding:2px;" title="音声入力">🎤</button>
-                  <button type="button" id="pokemon-search-clear"
-                    onclick="clearPokemonSearch();toggleVoiceClear('pokemon-search')"
-                    style="display:none; position:absolute; right:5px; top:50%; transform:translateY(-50%);
-                           background:none; border:none; cursor:pointer; color:var(--text-secondary);
-                           font-size:0.9rem; line-height:1; padding:2px;">×</button>
-                </div>
-                <div style="position:relative; width:130px; flex-shrink:0;">
-                  <input type="text" id="pokemon-no-search" class="form-control"
-                    placeholder="No.検索" oninput="onPokemonSearchInput();toggleVoiceClear('pokemon-no-search')"
-                    style="width:100%; padding-right:28px; color:var(--text-primary);">
-                  <button type="button" id="pokemon-no-search-mic" onclick="startVoice('pokemon-no-search', event)"
-                    style="position:absolute; right:5px; top:50%; transform:translateY(-50%);
-                           background:none; border:none; cursor:pointer; color:var(--text-secondary);
-                           font-size:0.9rem; line-height:1; padding:2px;" title="音声入力">🎤</button>
-                  <button type="button" id="pokemon-no-search-clear"
-                    onclick="document.getElementById('pokemon-no-search').value='';onPokemonSearchInput();toggleVoiceClear('pokemon-no-search')"
-                    style="display:none; position:absolute; right:5px; top:50%; transform:translateY(-50%);
-                           background:none; border:none; cursor:pointer; color:var(--text-secondary);
-                           font-size:0.9rem; line-height:1; padding:2px;">×</button>
+                <div style="flex:1; min-width:120px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="position:relative;">
+                    <input type="text" id="pokemon-search" class="form-control" lang="ja"
+                      placeholder="名前検索" oninput="onPokemonSearchInput();toggleVoiceClear('pokemon-search')"
+                      style="width:100%; padding-right:28px; color:var(--text-primary); ime-mode:active;">
+                    <button type="button" id="pokemon-search-mic" onclick="startVoice('pokemon-search', event)"
+                      style="position:absolute; right:5px; top:50%; transform:translateY(-50%);
+                             background:none; border:none; cursor:pointer; color:var(--text-secondary);
+                             font-size:0.9rem; line-height:1; padding:2px;" title="音声入力">🎤</button>
+                    <button type="button" id="pokemon-search-clear"
+                      onclick="clearPokemonSearch();toggleVoiceClear('pokemon-search')"
+                      style="display:none; position:absolute; right:5px; top:50%; transform:translateY(-50%);
+                             background:none; border:none; cursor:pointer; color:var(--text-secondary);
+                             font-size:0.9rem; line-height:1; padding:2px;">×</button>
+                  </div>
+                  <div style="position:relative;">
+                    <input type="text" id="pokemon-no-search" class="form-control"
+                      placeholder="No.検索" oninput="onPokemonSearchInput();toggleVoiceClear('pokemon-no-search')"
+                      style="width:100%; padding-right:28px; color:var(--text-primary);">
+                    <button type="button" id="pokemon-no-search-mic" onclick="startVoice('pokemon-no-search', event)"
+                      style="position:absolute; right:5px; top:50%; transform:translateY(-50%);
+                             background:none; border:none; cursor:pointer; color:var(--text-secondary);
+                             font-size:0.9rem; line-height:1; padding:2px;" title="音声入力">🎤</button>
+                    <button type="button" id="pokemon-no-search-clear"
+                      onclick="document.getElementById('pokemon-no-search').value='';onPokemonSearchInput();toggleVoiceClear('pokemon-no-search')"
+                      style="display:none; position:absolute; right:5px; top:50%; transform:translateY(-50%);
+                             background:none; border:none; cursor:pointer; color:var(--text-secondary);
+                             font-size:0.9rem; line-height:1; padding:2px;">×</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1350,7 +1355,7 @@ $stats = $db->query("
             <div class="move-slots-wrap">
               <div class="move-slots-label">スロット（スロットをタップしてわざの位置を選択できます）</div>
               <div class="move-slots-row">
-                <div class="mslot" id="mslot-0">◇</div>
+                <div class="mslot" id="mslot-0" onclick="clickSlot0()" style="cursor:pointer;">◇</div>
                 <div class="mconn" id="mconn-01">　</div>
                 <div class="mslot" id="mslot-1" onclick="clickSlot(1)" style="cursor:pointer;">◇</div>
                 <div class="mconn" id="mconn-12">　</div>
@@ -1361,7 +1366,8 @@ $stats = $db->query("
               <div id="slot-prompt" style="display:none;font-size:0.78rem;color:var(--accent);margin-top:2px;font-weight:600;">
                 ▲ 2つ目のわざのスロット位置を選択してください
               </div>
-              <input type="hidden" name="move2_slot" id="move2_slot_hidden" value="<?= empty(fv('move2')) ? '0' : htmlspecialchars(fv('move2_slot', '0')) ?>">
+              <input type="hidden" name="move2_slot" id="move2_slot_hidden" value="<?= htmlspecialchars(fv('move2_slot', '0')) ?>">
+              <input type="hidden" name="slot_active" id="slot_active_hidden" value="<?= (fv('move1') || fv('move2_slot', '0') !== '0') ? '1' : '0' ?>">
             </div>
 
             <div class="form-group">
@@ -1565,7 +1571,7 @@ $stats = $db->query("
     </div>
   </footer>
 
-  <script src="https://asobi.info/assets/js/common.js"></script>
+  <script src="https://asobi.info/assets/js/common.js?v=20260327e"></script>
   <script>
   // 選択状態の初期化
   const initPot     = <?= json_encode(fv('pot_type')) ?>;
@@ -1766,6 +1772,33 @@ $stats = $db->query("
 
   // move2のスロット位置（0=未選択, 1/2/3）
   let move2SlotPos = parseInt(document.getElementById('move2_slot_hidden').value) || 0;
+  let slotActive = document.getElementById('slot_active_hidden').value === '1';
+
+  // スロット0クリック: ①↔②切り替え
+  function clickSlot0() {
+    const m1 = document.getElementById('move1_hidden').value;
+    if (m1) return; // 技名1が入っている場合は①に戻せない
+    if (slotActive) {
+      // ②→① (無効化)
+      const m2 = document.getElementById('move2_hidden').value;
+      if (m2) {
+        // 技名2がある場合は警告
+        document.getElementById('mslot-0').setCustomValidity('わざ2が選択されています。先にわざ2を解除してください。');
+        document.getElementById('mslot-0').reportValidity();
+        setTimeout(() => document.getElementById('mslot-0').setCustomValidity(''), 3000);
+        return;
+      }
+      slotActive = false;
+      move2SlotPos = 0;
+      document.getElementById('move2_slot_hidden').value = 0;
+      document.getElementById('slot_active_hidden').value = '0';
+    } else {
+      // ①→② (有効化)
+      slotActive = true;
+      document.getElementById('slot_active_hidden').value = '1';
+    }
+    updateSlots();
+  }
 
   function setSlotFilled(idx, color) {
     const el = document.getElementById('mslot-' + idx);
@@ -1799,8 +1832,27 @@ $stats = $db->query("
   }
 
   function clickSlot(idx) {
-    // 選択済みのスロットをクリック → 解除
+    if (!slotActive) {
+      // ①から直接③④⑤へ
+      slotActive = true;
+      document.getElementById('slot_active_hidden').value = '1';
+      move2SlotPos = idx;
+      document.getElementById('move2_slot_hidden').value = idx;
+      updateSlots();
+      return;
+    }
+
     if (move2SlotPos === idx) {
+      // 同じスロットクリック → ②に戻る（技2解除）
+      const m2 = document.getElementById('move2_hidden').value;
+      if (m2) {
+        // 技名2があるのに②に戻そうとした → 警告
+        const el = document.getElementById('mslot-' + idx);
+        el.setCustomValidity('わざ2が選択されています。先にわざ2を解除してください。');
+        el.reportValidity();
+        setTimeout(() => el.setCustomValidity(''), 3000);
+        return;
+      }
       move2SlotPos = 0;
       document.getElementById('move2_slot_hidden').value = 0;
     } else {
@@ -1815,8 +1867,8 @@ $stats = $db->query("
     const m2   = document.getElementById('move2_hidden').value;
     const has1 = m1 !== '';
     const has2 = m2 !== '';
-    const col1 = has1 ? getMoveColor(m1) : null;
-    const col2 = has2 ? getMoveColor(m2) : null;
+    const col1 = has1 ? getMoveColor(m1) : '#888';
+    const col2 = has2 ? getMoveColor(m2) : '#888';
     const p    = move2SlotPos; // 技２の位置 (1/2/3)
 
     // スロット全リセット
@@ -1825,47 +1877,48 @@ $stats = $db->query("
     setConn('mconn-12', 'hidden');
     setConn('mconn-23', 'hidden');
 
-    // スロット1〜3は常にクリック可能
-    [1,2,3].forEach(i => {
+    // スロット0〜3は常にクリック可能
+    [0,1,2,3].forEach(i => {
       document.getElementById('mslot-' + i).style.cursor = 'pointer';
     });
 
     const promptEl = document.getElementById('slot-prompt');
-    if (!has1 && !has2) { if (promptEl) promptEl.style.display = 'none'; return; }
 
-    // 技１は常にスロット0
-    if (has1) setSlotFilled(0, col1); else setSlotEmpty(0);
+    // 状態①: スロット無効（全空）
+    if (!slotActive && !has1 && !has2) {
+      if (promptEl) promptEl.style.display = 'none';
+      return;
+    }
 
-    if (!has2) {
-      // 1技のみ: ◆-◇-◇-◇
+    // 技1が入っていたらslotActiveを強制ON
+    if (has1 || has2) slotActive = true;
+
+    // 状態②: 1技のみ（技2なし、スロット位置なし）
+    if (slotActive && p === 0) {
+      setSlotFilled(0, col1);
       setSlotExt(1); setSlotExt(2); setSlotExt(3);
       setConn('mconn-01', 'dash');
       setConn('mconn-12', 'dash');
       setConn('mconn-23', 'dash');
       if (promptEl) promptEl.style.display = 'none';
-    } else if (p === 0) {
-      // 技２あるがスロット未選択: 接続線は表示しない
-      setSlotExt(1); setSlotExt(2); setSlotExt(3);
-      setConn('mconn-01', 'hidden');
-      setConn('mconn-12', 'hidden');
-      setConn('mconn-23', 'hidden');
-      if (promptEl) promptEl.style.display = 'block';
-    } else {
+      return;
+    }
+
+    // 状態③④⑤: 2技（スロット位置あり）
+    if (p > 0) {
       if (promptEl) promptEl.style.display = 'none';
-      // 2技: 技２はスロットp
-      // スロット1〜(p-1)は技１の拡張
+      // スロット0は技1
+      setSlotFilled(0, col1);
+      // スロット1〜(p-1)は技1の拡張
       for (let i = 1; i < p; i++) setSlotExt(i);
-      // スロットpは技２
+      // スロットpは技2
       setSlotFilled(p, col2);
-      // スロット(p+1)〜3は技２の拡張
+      // スロット(p+1)〜3は技2の拡張
       for (let i = p + 1; i < 4; i++) setSlotExt(i);
 
-      // コネクター: ギャップはスロット(p-1)とスロットpの間
-      // conn01: p>1ならdash、p=1ならgap
+      // コネクター
       setConn('mconn-01', p === 1 ? 'gap' : 'dash');
-      // conn12: p>2ならdash、p=2ならgap、p=1なら技２の拡張内なのでdash
       setConn('mconn-12', p === 2 ? 'gap' : 'dash');
-      // conn23: p=3ならgap、それ以外dash
       setConn('mconn-23', p === 3 ? 'gap' : 'dash');
     }
   }
@@ -1882,6 +1935,11 @@ $stats = $db->query("
     } else {
       txt.style.display = 'none';
       hid.value = sel.value;
+    }
+    // 技1が選択されたらスロット有効化
+    if (n === 1 && hid.value !== '') {
+      slotActive = true;
+      document.getElementById('slot_active_hidden').value = '1';
     }
     // 技２がクリアされたらスロット位置をリセット
     if (n === 2 && hid.value === '') {
@@ -2186,19 +2244,32 @@ $stats = $db->query("
   const voiceReplaceName = <?= json_encode($vfReplaceName, JSON_UNESCAPED_UNICODE) ?>;
   const voiceReplaceNum = <?= json_encode($vfReplaceNum, JSON_UNESCAPED_UNICODE) ?>;
   let _voiceRec = null;
+  function resetAllVoiceBtns() {
+    document.querySelectorAll('[onclick*="startVoice"]').forEach(btn => {
+      if (btn.dataset.origStyle !== undefined) {
+        btn.setAttribute('style', btn.dataset.origStyle || '');
+      }
+    });
+  }
+  // ドキュメントクリックでもリセット
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('[onclick*="startVoice"]') && !_voiceRec) {
+      resetAllVoiceBtns();
+    }
+  });
   function startVoice(targetId, event) {
-    if (event) event.preventDefault();
+    if (event) { event.preventDefault(); event.stopPropagation(); }
     const el = document.getElementById(targetId);
     if (!el) return;
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
       el.setCustomValidity('このブラウザは音声入力に対応していません');
       el.reportValidity();
       el.addEventListener('input', () => el.setCustomValidity(''), { once: true });
       return;
     }
     // 既に認識中なら停止
-    if (_voiceRec) { try { _voiceRec.abort(); } catch(e){} _voiceRec = null; }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (_voiceRec) { try { _voiceRec.abort(); } catch(e){} _voiceRec = null; resetAllVoiceBtns(); return; }
     const rec = new SR();
     rec.lang = 'ja-JP';
     rec.continuous = false;
@@ -2209,6 +2280,14 @@ $stats = $db->query("
     }
     el.value = '';
     el.placeholder = '🎤 ...';
+    // マイクボタンに赤丸を付ける
+    const voiceBtn = el.parentElement.querySelector('[onclick*="startVoice"]');
+    if (voiceBtn) {
+      voiceBtn.dataset.origStyle = voiceBtn.getAttribute('style') || '';
+      voiceBtn.style.background = '#e74c3c';
+      voiceBtn.style.borderRadius = '50%';
+      voiceBtn.style.color = '#fff';
+    }
     // 両方の入力欄をクリア＆placeholderをリセット
     const nameEl = document.getElementById('pokemon-search');
     const noEl = document.getElementById('pokemon-no-search');
@@ -2256,10 +2335,12 @@ $stats = $db->query("
     rec.onend = function() {
       el.placeholder = el.dataset.origPlaceholder || '';
       _voiceRec = null;
+      resetAllVoiceBtns();
     };
     rec.onerror = function(e) {
       el.placeholder = el.dataset.origPlaceholder || '';
       _voiceRec = null;
+      resetAllVoiceBtns();
       if (e.error !== 'no-speech' && e.error !== 'aborted') {
         el.setCustomValidity('音声認識エラー: ' + e.error);
         el.reportValidity();
@@ -2267,7 +2348,13 @@ $stats = $db->query("
       }
     };
     el.dataset.origPlaceholder = el.placeholder;
-    rec.start();
+    try {
+      rec.start();
+    } catch(e) {
+      _voiceRec = null;
+      resetAllVoiceBtns();
+      el.placeholder = el.dataset.origPlaceholder || '';
+    }
   }
 
   // ===== ステータスカード：ポケモン名更新 =====

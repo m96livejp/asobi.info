@@ -1,7 +1,9 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
 $currentUser = asobiIsLoggedIn() ? asobiGetCurrentUser() : null;
-asobiLogAccess();
+session_write_close();
+// アクセスログはレスポンス送信後に記録
+register_shutdown_function('asobiLogAccess');
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -10,7 +12,7 @@ asobiLogAccess();
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>あそび - ゲーム情報ポータル</title>
   <meta name="description" content="ゲーム攻略・情報サイト「あそび」。Dead by Daylight、ポケモンクエストなどの攻略情報をお届けします。">
-  <link rel="stylesheet" href="/assets/css/common.css">
+  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
   <style>
     body {
       background: #f5f5f7;
@@ -24,140 +26,6 @@ asobiLogAccess();
     }
 
     .site-logo { color: #1d1d1f; }
-
-    /* ヘッダー右エリア */
-    .header-right {
-      display: flex;
-      align-items: center;
-      gap: 24px;
-    }
-
-    /* ユーザーエリア */
-    .user-area {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      position: relative;
-    }
-
-    .user-area::before {
-      content: '';
-      display: block;
-      width: 1px;
-      height: 18px;
-      background: #d0d0d5;
-    }
-
-    /* 未ログイン */
-    .btn-login {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: #1d1d1f;
-      text-decoration: none;
-      transition: opacity 0.2s;
-    }
-    .btn-login:hover { opacity: 0.6; }
-
-    .btn-register {
-      font-size: 0.875rem;
-      font-weight: 600;
-      padding: 7px 16px;
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      color: #fff;
-      border-radius: 20px;
-      text-decoration: none;
-      transition: opacity 0.2s;
-    }
-    .btn-register:hover { opacity: 0.85; }
-
-    /* ログイン済み */
-    .user-menu {
-      position: relative;
-    }
-
-    .user-trigger {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-      padding: 4px 8px;
-      border-radius: 8px;
-      transition: background 0.2s;
-      text-decoration: none;
-      color: #1d1d1f;
-    }
-    .user-trigger:hover { background: rgba(0,0,0,0.05); }
-
-    .user-avatar {
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.8rem;
-      font-weight: 700;
-      color: #fff;
-      flex-shrink: 0;
-      overflow: hidden;
-    }
-    .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
-
-    .user-display-name {
-      font-size: 0.875rem;
-      font-weight: 500;
-      max-width: 100px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .user-caret {
-      font-size: 0.6rem;
-      opacity: 0.5;
-      transition: transform 0.2s;
-    }
-
-    /* ドロップダウン */
-    .user-dropdown {
-      display: none;
-      position: absolute;
-      top: calc(100% + 8px);
-      right: 0;
-      background: #fff;
-      border: 1px solid #e0e0e0;
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.12);
-      min-width: 160px;
-      overflow: hidden;
-      z-index: 200;
-    }
-    .user-menu.open .user-dropdown { display: block; }
-
-    .user-dropdown a {
-      display: block;
-      padding: 11px 16px;
-      font-size: 0.875rem;
-      color: #1d1d1f;
-      text-decoration: none;
-      transition: background 0.15s;
-    }
-    .user-dropdown a:hover { background: #f5f5f7; }
-    .user-dropdown .dropdown-divider {
-      height: 1px;
-      background: #e0e0e0;
-      margin: 4px 0;
-    }
-    .user-dropdown .dropdown-logout { color: #e74c3c; }
-
-    /* モバイル */
-    @media (max-width: 768px) {
-      .site-header .container { flex-direction: row; align-items: center; }
-      .site-nav { display: none; }
-      .user-display-name { display: none; }
-      .user-area::before { display: none; }
-    }
 
     /* ページコンテンツ */
     .hero {
@@ -278,6 +146,26 @@ asobiLogAccess();
     }
     .card-tbt .game-card-tag { color: #f7d94e; }
 
+    .card-aic { background: #0d1f0d; }
+    .card-aic .game-card-inner {
+      background: linear-gradient(135deg, rgba(13,31,13,0.88) 0%, rgba(20,80,20,0.75) 40%, rgba(40,160,80,0.55) 100%);
+      border: 1px solid rgba(40,160,80,0.4);
+    }
+    .card-aic h2 { color: #6edd8a; }
+    .card-aic .game-card-tag { color: #6edd8a; }
+    .card-aic-badge {
+      display: inline-block;
+      margin-left: 8px;
+      font-size: 0.55rem;
+      background: rgba(255,200,0,0.2);
+      color: #ffc800;
+      border: 1px solid rgba(255,200,0,0.5);
+      border-radius: 3px;
+      padding: 1px 5px;
+      vertical-align: middle;
+      letter-spacing: 0.05em;
+    }
+
     .original-badge {
       display: inline-block;
       background: linear-gradient(90deg, #f7d94e, #f0a030);
@@ -316,43 +204,7 @@ asobiLogAccess();
 <body>
   <header class="site-header">
     <div class="container">
-      <div class="site-logo">あそび</div>
-      <div class="header-right">
-        <nav class="site-nav">
-          <ul>
-            <li><a href="https://tbt.asobi.info">Tournament Battle</a></li>
-            <li><a href="https://dbd.asobi.info">DbD</a></li>
-            <li><a href="https://pkq.asobi.info">ポケモンクエスト</a></li>
-          </ul>
-        </nav>
-
-        <div class="user-area">
-          <?php if ($currentUser): ?>
-            <div class="user-menu">
-              <div class="user-trigger" tabindex="0">
-                <div class="user-avatar">
-                  <?php if ($currentUser['avatar_url']): ?>
-                    <img src="<?= htmlspecialchars($currentUser['avatar_url']) ?>" alt="">
-                  <?php else: ?>
-                    <?= htmlspecialchars(mb_substr($currentUser['display_name'], 0, 1)) ?>
-                  <?php endif; ?>
-                </div>
-                <span class="user-display-name"><?= htmlspecialchars($currentUser['display_name']) ?></span>
-                <span class="user-caret">▼</span>
-              </div>
-              <div class="user-dropdown">
-                <a href="/profile.php">プロフィール</a>
-                <?php if (asobiIsAdmin()): ?>
-                  <div class="dropdown-divider"></div>
-                  <a href="/admin/">管理画面</a>
-                <?php endif; ?>
-              </div>
-            </div>
-          <?php else: ?>
-            <a href="/login.php" class="btn-register">ログイン</a>
-          <?php endif; ?>
-        </div>
-      </div>
+      <div class="site-logo"><a href="/">あそび</a></div>
     </div>
   </header>
 
@@ -396,6 +248,17 @@ asobiLogAccess();
             <p>全ポケモン一覧、料理レシピ、素材データベース、料理シミュレーター</p>
           </div>
         </a>
+
+        <?php if (asobiIsAdmin()): ?>
+        <a href="https://aic.asobi.info" class="game-card card-aic">
+          <div class="game-card-inner">
+            <span class="game-card-arrow">&rarr;</span>
+            <div class="game-card-tag">AI Chat<span class="card-aic-badge">開発中</span></div>
+            <h2>AIC</h2>
+            <p>AIキャラクターとチャットできるオリジナルサービス。</p>
+          </div>
+        </a>
+        <?php endif; ?>
       </div>
     </section>
   </main>
@@ -405,23 +268,13 @@ asobiLogAccess();
       <p style="font-size:0.72rem; margin-bottom:6px; opacity:0.6;">
         <a href="/licenses.html" style="color:inherit;">ライセンス情報</a>
         &nbsp;·&nbsp;
+        <a href="/about/currency.html" style="color:inherit;">あそびウォレット</a>
+        &nbsp;·&nbsp;
         <a href="/contact.php" style="color:inherit;">お問い合わせ</a>
       </p>
       <p>&copy; 2026 あそび - ゲーム情報ポータル</p>
     </div>
   </footer>
-  <script src="/assets/js/common.js"></script>
-  <script>
-    const userMenu = document.querySelector('.user-menu');
-    if (userMenu) {
-      userMenu.querySelector('.user-trigger').addEventListener('click', function(e) {
-        e.stopPropagation();
-        userMenu.classList.toggle('open');
-      });
-      document.addEventListener('click', function() {
-        userMenu.classList.remove('open');
-      });
-    }
-  </script>
+  <script src="/assets/js/common.js?v=20260327e"></script>
 </body>
 </html>

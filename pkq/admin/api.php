@@ -79,7 +79,7 @@ try {
 
             $stmt = $db->prepare('
                 UPDATE pokemon
-                SET name=:name, type1=:t1, type2=:t2,
+                SET name=:name, type1=:t1, type2=:t2, color=:color,
                     base_hp=:hp, base_atk=:atk,
                     quality_normal=:qn, quality_good=:qg,
                     quality_great=:qr, quality_special=:qs,
@@ -91,13 +91,36 @@ try {
                 ':name'=> $input['name']  ?? '',
                 ':t1'  => $input['type1'] ?? '',
                 ':t2'  => $input['type2'] ?: null,
+                ':color' => $input['color'] ?: '',
                 ':hp'  => $input['base_hp']  !== '' ? (int)$input['base_hp']  : null,
                 ':atk' => $input['base_atk'] !== '' ? (int)$input['base_atk'] : null,
                 ':qn'  => max(0, min(100, (int)($input['quality_normal']  ?? 0))),
                 ':qg'  => max(0, min(100, (int)($input['quality_good']    ?? 0))),
                 ':qr'  => max(0, min(100, (int)($input['quality_great']   ?? 0))),
                 ':qs'  => max(0, min(100, (int)($input['quality_special'] ?? 0))),
+                ':memo' => trim($input['memo'] ?? ''),
             ]);
+
+            // レシピ紐付け更新
+            if (isset($input['recipes']) && is_array($input['recipes'])) {
+                $poke = $db->prepare('SELECT pokedex_no FROM pokemon WHERE id = ?');
+                $poke->execute([$id]);
+                $pokedexNo = (int)$poke->fetchColumn();
+
+                $db->prepare('DELETE FROM recipe_pokemon WHERE pokemon_id = ?')->execute([$pokedexNo]);
+
+                $ins = $db->prepare('INSERT INTO recipe_pokemon (recipe_id, pokemon_id) VALUES (?, ?)');
+                foreach ($input['recipes'] as $recipeNo) {
+                    $recipeNo = (int)$recipeNo;
+                    $rid = $db->prepare('SELECT MIN(id) FROM recipes WHERE recipe_no = ?');
+                    $rid->execute([$recipeNo]);
+                    $recipeId = (int)$rid->fetchColumn();
+                    if ($recipeId > 0) {
+                        $ins->execute([$recipeId, $pokedexNo]);
+                    }
+                }
+            }
+
             echo json_encode(['ok' => true]);
             break;
         }

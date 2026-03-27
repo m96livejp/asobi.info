@@ -251,6 +251,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <a href="/login.php<?= $redirect ? '?redirect=' . urlencode($redirect) : '' ?>">ログイン</a>
     </div>
   </div>
-<script src="/assets/js/common.js"></script>
+<script src="/assets/js/common.js?v=20260327e"></script>
 </body>
 </html>

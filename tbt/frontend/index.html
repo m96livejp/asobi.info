@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#e8f5e9">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -21,9 +21,6 @@
                 <span class="game-title">Tournament Battle</span>
             </div>
             <div class="header-right">
-                <span class="currency" id="points-display">🪙 0 PT</span>
-                <span class="currency premium" id="premium-display">💎 0 GEM</span>
-                <button class="header-settings-btn" id="settings-btn" title="設定">⚙</button>
                 <div id="asobi-user-area" style="display:flex;align-items:center;gap:6px;font-size:0.8rem;opacity:0.85;"></div>
             </div>
         </header>
@@ -107,46 +104,6 @@
     <script src="js/components/ranking.js?v=9"></script>
     <script src="js/components/ad-banner.js?v=9"></script>
     <script src="js/app.js?v=9"></script>
-    <script>
-    // asobi.info ログイン表示（ドロップダウン）
-    (function() {
-      const area = document.getElementById('asobi-user-area');
-      if (!area) return;
-      fetch('https://asobi.info/assets/php/me.php', { credentials: 'include' })
-        .then(r => r.json())
-        .then(u => {
-          if (u.loggedIn) {
-            const av = u.avatarUrl
-              ? `<img src="${u.avatarUrl}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="">`
-              : `<span style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);display:inline-flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:#fff;flex-shrink:0;">${u.initial}</span>`;
-            const adminItems = u.role === 'admin'
-              ? `<div style="height:1px;background:#e0e0e0;margin:4px 0;"></div>
-                 <a href="https://tbt.asobi.info/admin/" style="display:block;padding:9px 16px;font-size:0.82rem;color:#1d1d1f;text-decoration:none;white-space:nowrap;">サイト管理画面</a>
-                 <a href="https://asobi.info/admin/" style="display:block;padding:9px 16px;font-size:0.82rem;color:#1d1d1f;text-decoration:none;white-space:nowrap;">asobi.info 管理画面</a>`
-              : '';
-            area.style.position = 'relative';
-            area.innerHTML = `
-              <div id="asobi-trigger" style="display:flex;align-items:center;cursor:pointer;padding:3px 4px;border-radius:8px;" title="${u.displayName}">
-                ${av}
-              </div>
-              <div id="asobi-dropdown" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:#fff;border:1px solid #e0e0e0;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.14);overflow:hidden;z-index:300;">
-                <a href="https://asobi.info/" style="display:block;padding:9px 16px;font-size:0.82rem;color:#1d1d1f;text-decoration:none;white-space:nowrap;">asobi.info トップ</a>
-                <div style="height:1px;background:#e0e0e0;margin:4px 0;"></div>
-                <a href="https://asobi.info/profile.php" style="display:block;padding:9px 16px;font-size:0.82rem;color:#1d1d1f;text-decoration:none;white-space:nowrap;">プロフィール</a>
-                ${adminItems}
-              </div>`;
-            const trigger = document.getElementById('asobi-trigger');
-            const dropdown = document.getElementById('asobi-dropdown');
-            trigger.addEventListener('click', e => {
-              e.stopPropagation();
-              dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
-            });
-            document.addEventListener('click', () => { dropdown.style.display = 'none'; });
-          } else {
-            area.innerHTML = `<a href="https://asobi.info/login.php?redirect=${encodeURIComponent(location.href)}" style="font-size:0.82rem;font-weight:600;padding:6px 16px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-radius:20px;text-decoration:none;white-space:nowrap;">ログイン</a>`;
-          }
-        }).catch(() => {});
-    })();
-    </script>
+    <script src="https://asobi.info/assets/js/common.js"></script>
 </body>
 </html>

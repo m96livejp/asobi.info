@@ -118,10 +118,9 @@ function renderHeaderUser() {
   area.innerHTML = `
     <button class="hdr-user-trigger" onclick="toggleUserMenu(event)">
       <div class="hdr-user-avatar">${avatarHtml}</div>
-      <span class="hdr-user-caret">▼</span>
     </button>
     <div class="hdr-user-dropdown">
-      <div class="hdr-user-displayname">${esc(currentUser.display_name)}</div>
+      <button class="hud-item" onclick="navTo('home'); closeUserMenu()">トップ</button>
       <button class="hud-item" onclick="navTo('profile'); closeUserMenu()">プロフィール</button>
       ${adminLink}
     </div>`;

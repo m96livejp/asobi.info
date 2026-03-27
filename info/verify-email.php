@@ -70,6 +70,6 @@ $success = ($result === true);
       <a href="/profile.php" class="btn">プロフィールへ</a>
     <?php endif; ?>
   </div>
-<script src="/assets/js/common.js"></script>
+<script src="/assets/js/common.js?v=20260327e"></script>
 </body>
 </html>

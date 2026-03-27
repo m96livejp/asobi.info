@@ -3,7 +3,7 @@
  * アクセスログ記録API（サブドメインからのCORSリクエスト用）
  */
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowed = ['https://dbd.asobi.info', 'https://pkq.asobi.info', 'https://tbt.asobi.info', 'https://asobi.info'];
+$allowed = ['https://dbd.asobi.info', 'https://pkq.asobi.info', 'https://tbt.asobi.info', 'https://aic.asobi.info', 'https://asobi.info'];
 if (in_array($origin, $allowed)) {
     header("Access-Control-Allow-Origin: $origin");
     header('Access-Control-Allow-Credentials: true');
@@ -37,23 +37,24 @@ $path = '/' . ltrim(strtok($path, '?'), '/');
 try {
     require_once __DIR__ . '/auth.php';
     $userId = asobiIsLoggedIn() ? $_SESSION['asobi_user_id'] : null;
-    session_write_close(); // セッションロックを早期解放
-    $db  = asobiUsersDb();
-    $ua  = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $ref = asobiRefererDomain($_SERVER['HTTP_REFERER'] ?? '');
+    session_write_close();
+    $ua     = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $ref    = asobiRefererDomain($_SERVER['HTTP_REFERER'] ?? '');
     $parsed = asobiParseUA($ua);
-    $db->prepare("INSERT INTO access_logs (host, path, user_id, ip, referer, user_agent, browser, device, os) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-       ->execute([
-           $host,
-           $path,
-           $userId,
-           $_SERVER['REMOTE_ADDR'] ?? '',
-           $ref,
-           $ua,
-           $parsed['browser'],
-           $parsed['device'],
-           $parsed['os'],
-       ]);
+    $line   = json_encode([
+        'host'       => $host,
+        'path'       => $path,
+        'user_id'    => $userId,
+        'ip'         => $_SERVER['REMOTE_ADDR'] ?? '',
+        'referer'    => $ref,
+        'user_agent' => $ua,
+        'browser'    => $parsed['browser'],
+        'device'     => $parsed['device'],
+        'os'         => $parsed['os'],
+        'created_at' => date('Y-m-d H:i:s'),
+    ], JSON_UNESCAPED_UNICODE) . "\n";
+    $logFile = dirname(ASOBI_USERS_DB_PATH) . '/access_log_buffer.jsonl';
+    @file_put_contents($logFile, $line, FILE_APPEND | LOCK_EX);
     echo json_encode(['ok' => true]);
 } catch (Exception $e) {
     echo json_encode(['ok' => false]);

@@ -8,7 +8,7 @@ BASE_DIR="$(dirname "$SCRIPT_DIR")"
 echo "=== データベース構築 ==="
 
 # ポケモンクエストDB
-PQ_DB="$BASE_DIR/public_html/pokemon-quest/data/pokemon_quest.sqlite"
+PQ_DB="$BASE_DIR/pkq/data/pokemon_quest.sqlite"
 echo "--- ポケモンクエスト DB を構築中... ---"
 rm -f "$PQ_DB"
 sqlite3 "$PQ_DB" < "$SCRIPT_DIR/pq_schema.sql"
@@ -16,7 +16,7 @@ sqlite3 "$PQ_DB" < "$SCRIPT_DIR/pq_data.sql"
 echo "ポケモンクエスト DB 完了: $(sqlite3 "$PQ_DB" 'SELECT COUNT(*) FROM pokemon;') ポケモン"
 
 # DbD DB
-DBD_DB="$BASE_DIR/public_html/dbd/data/dbd.sqlite"
+DBD_DB="$BASE_DIR/dbd/data/dbd.sqlite"
 echo "--- DbD DB を構築中... ---"
 rm -f "$DBD_DB"
 sqlite3 "$DBD_DB" < "$SCRIPT_DIR/dbd_schema.sql"

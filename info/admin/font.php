@@ -39,7 +39,7 @@ $fonts = [
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>フォント設定 - 管理画面</title>
-  <link rel="stylesheet" href="/assets/css/common.css">
+  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
   <style>
     body { background: #f5f5f5; color: #222; font-family: sans-serif; margin: 0; padding: 0; }
     .admin-wrap { max-width: 640px; margin: 40px auto; padding: 0 16px; }

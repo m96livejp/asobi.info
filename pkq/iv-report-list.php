@@ -92,8 +92,8 @@ $recipe_stats = $db->query("
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>料理結果一覧 - ポケモンクエスト情報</title>
-  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css?v=20260327e">
+  <link rel="stylesheet" href="/css/style.css?v=20260327c">
   <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
   <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
   <style>
@@ -308,8 +308,8 @@ $recipe_stats = $db->query("
           <li><a href="/recipes.html">全料理一覧</a></li>
           <li><a href="/simulator.html">料理シミュレーター</a></li>
           <li><a href="/iv-checker.html">個体値チェッカー</a></li>
-          <li><a href="/iv-report.php">料理結果投稿</a></li>
           <li><a href="/iv-report-list.php" class="active">料理結果一覧</a></li>
+          <li><a href="/iv-report.php">料理結果投稿</a></li>
         </ul>
       </nav>
     </div>
@@ -489,7 +489,10 @@ $recipe_stats = $db->query("
               <?php
               $has1  = !empty($r['move1']);
               $has2  = !empty($r['move2']);
-              if (!$has1 && !$has2):
+              $slot2 = (int)($r['move2_slot'] ?? 0);
+              $slotActive = (int)($r['slot_active'] ?? 0);
+              $hasSlot = $has1 || $has2 || $slot2 > 0 || $slotActive;
+              if (!$hasSlot):
               ?>
                 <span style="color:var(--text-secondary);">—</span>
               <?php else:
@@ -497,13 +500,12 @@ $recipe_stats = $db->query("
                 $col1  = $c1 ? ($type_colors[$c1] ?? '#888') : '#888';
                 $c2    = $move_type_map[$r['move2']] ?? null;
                 $col2  = $c2 ? ($type_colors[$c2] ?? '#888') : '#888';
-                $slot2 = $has2 ? (int)($r['move2_slot'] ?? 0) : -1;
 
                 // スロット配列を構築
-                // index 0-3 : 'empty'|'col:xxx'
                 $slots = ['empty','empty','empty','empty'];
-                if ($has1) $slots[0] = 'col:'.$col1;
-                if ($has2 && $slot2 > 0) $slots[$slot2] = 'col:'.$col2;
+                // スロットが有効なら0番を■にする
+                if ($slotActive || $has1 || $slot2 > 0 || $has2) $slots[0] = 'col:'.$col1;
+                if ($slot2 > 0) $slots[$slot2] = 'col:'.$col2;
               ?>
                 <?php if ($has1): ?>
                 <div style="color:var(--text-secondary);margin-bottom:0;"><?= htmlspecialchars($r['move1']) ?></div>
@@ -516,13 +518,13 @@ $recipe_stats = $db->query("
                     $isFilled = str_starts_with($sv, 'col:');
                     $clr      = $isFilled ? substr($sv, 4) : null;
                     if ($si > 0):
-                      $showConn = !($has2 && $slot2 > 0 && $si === $slot2);
+                      $showConn = !($slot2 > 0 && $si === $slot2);
                       echo '<span style="color:#aaa;padding:0 1px;'.($showConn ? '' : 'visibility:hidden;').'">-</span>';
                     endif;
                     if ($isFilled):
-                      echo '<span style="font-size:0.85rem;color:'.$clr.';">◆</span>';
+                      echo '<span style="font-size:0.85rem;color:'.$clr.';">■</span>';
                     else:
-                      echo '<span style="font-size:0.85rem;color:#bbb;">◇</span>';
+                      echo '<span style="font-size:0.85rem;color:#888;">◇</span>';
                     endif;
                   endforeach; ?>
                 </div>
@@ -668,7 +670,7 @@ $recipe_stats = $db->query("
     </div>
   </footer>
 
-  <script src="https://asobi.info/assets/js/common.js"></script>
+  <script src="https://asobi.info/assets/js/common.js?v=20260327e"></script>
   <script src="/js/comments.js"></script>
   <script>
   // コメント初期化

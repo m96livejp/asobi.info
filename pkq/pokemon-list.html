@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>全ポケモン一覧 - ポケモンクエスト情報サイト</title>
   <meta name="description" content="ポケモンクエストの全151匹のポケモン一覧。タイプや名前で検索できます。">
-  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css?v=20260327e">
+  <link rel="stylesheet" href="/css/style.css?v=20260327c">
   <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
 </head>
 <body>
@@ -21,8 +21,8 @@
           <li><a href="/recipes.html">全料理一覧</a></li>
           <li><a href="/simulator.html">料理シミュレーター</a></li>
           <li><a href="/iv-checker.html">個体値チェッカー</a></li>
-          <li><a href="/iv-report.php">料理結果投稿</a></li>
           <li><a href="/iv-report-list.php">料理結果一覧</a></li>
+          <li><a href="/iv-report.php">料理結果投稿</a></li>
         </ul>
       </nav>
     </div>
@@ -35,8 +35,21 @@
       <p>全151匹のポケモンデータ</p>
     </div>
 
-    <div class="search-box">
-      <input type="text" id="search-input" placeholder="ポケモン名、タイプ、図鑑番号で検索...">
+    <div class="search-box" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+      <div style="position:relative;flex:0 1 200px;min-width:120px;">
+        <input type="text" id="search-input" placeholder="名前検索" style="width:100%;padding:6px 28px 6px 8px;font-size:16px;">
+        <button type="button" id="voice-name-btn" onclick="startVoiceSearch('search-input')"
+          style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:0.9rem;padding:2px;" title="音声入力">🎤</button>
+        <button type="button" id="clear-name-btn" onclick="clearSearch('search-input')"
+          style="display:none;position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:0.9rem;padding:2px;">×</button>
+      </div>
+      <div style="position:relative;width:140px;flex-shrink:0;">
+        <input type="text" id="no-search-input" placeholder="No.検索" style="width:100%;padding:6px 28px 6px 8px;font-size:16px;">
+        <button type="button" id="voice-no-btn" onclick="startVoiceSearch('no-search-input')"
+          style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:0.9rem;padding:2px;" title="音声入力">🎤</button>
+        <button type="button" id="clear-no-btn" onclick="clearSearch('no-search-input')"
+          style="display:none;position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:0.9rem;padding:2px;">×</button>
+      </div>
     </div>
 
     <div class="type-filter-btns" id="type-filters">
@@ -133,8 +146,8 @@
     </div>
   </footer>
 
-  <script src="https://asobi.info/assets/js/common.js"></script>
-  <script src="/js/app.js"></script>
+  <script src="https://asobi.info/assets/js/common.js?v=20260327e"></script>
+  <script src="/js/app.js?v=20260327c"></script>
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
       await PQApp.checkAuth();
@@ -145,10 +158,12 @@
         PQApp.renderPokemon(PQApp.allPokemon, document.getElementById('pokemon-list'));
       }
 
-      // 検索
-      document.getElementById('search-input').addEventListener('input', debounce((e) => {
-        PQApp.searchPokemon(e.target.value, document.getElementById('pokemon-list'));
-      }));
+      // 検索（名前＋No.）
+      function doSearch() {
+        PQApp.applyAllFilters();
+      }
+      document.getElementById('search-input').addEventListener('input', debounce(doSearch));
+      document.getElementById('no-search-input').addEventListener('input', debounce(doSearch));
 
       // タイプフィルター（2つまで複数選択）
       let selectedTypes = [];
@@ -177,9 +192,101 @@
               selectedTypes.push(type);
             }
           }
-          PQApp.filterByType(selectedTypes, listEl);
+          PQApp.selectedTypes = selectedTypes;
+          PQApp.applyAllFilters();
         });
       });
+
+      // 音声認識辞書を読み込み
+      let voiceFixes = {}, voiceReplaceName = [], voiceReplaceNum = [];
+      try {
+        const vfRes = await fetch('/api/voice-fixes.php');
+        const vfData = await vfRes.json();
+        voiceFixes = vfData.exact || {};
+        voiceReplaceName = vfData.replaceName || [];
+        voiceReplaceNum = vfData.replaceNum || [];
+      } catch(e) {}
+
+      // 音声ボタンリセット
+      function resetAllVoiceBtns() {
+        document.querySelectorAll('[onclick*="startVoice"]').forEach(btn => {
+          if (btn.dataset.origStyle !== undefined) {
+            btn.setAttribute('style', btn.dataset.origStyle || '');
+          }
+        });
+      }
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('[onclick*="startVoice"]')) resetAllVoiceBtns();
+      });
+
+      // 音声入力
+      window.startVoiceSearch = function(targetId) {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return;
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const rec = new SR();
+        rec.lang = 'ja-JP';
+        rec.continuous = false;
+        rec.interimResults = true;
+        const el = document.getElementById(targetId);
+        const isNum = targetId === 'no-search-input';
+        el.focus();
+        el.value = '';
+        toggleVoiceClear(targetId);
+        // マイクボタンに赤丸
+        const voiceBtn = el.parentElement.querySelector('[onclick*="startVoice"]');
+        if (voiceBtn) {
+          voiceBtn.dataset.origStyle = voiceBtn.getAttribute('style') || '';
+          voiceBtn.style.background = '#e74c3c';
+          voiceBtn.style.borderRadius = '50%';
+          voiceBtn.style.color = '#fff';
+        }
+
+        rec.onresult = function(e) {
+          let text = e.results[0][0].transcript.replace(/[、。，．,.！？!?・\s]/g, '');
+          if (isNum) {
+            voiceReplaceNum.forEach(r => { text = text.split(r[0]).join(r[1]); });
+            text = text.replace(/[〇一二三四五六七八九]/g, c => '〇一二三四五六七八九'.indexOf(c));
+            text = text.replace(/[^0-9]/g, '');
+          } else {
+            voiceReplaceName.forEach(r => { text = text.split(r[0]).join(r[1]); });
+            const fixKey = text.toLowerCase().replace(/[\s.-]/g, '');
+            if (voiceFixes[fixKey]) text = voiceFixes[fixKey];
+            const toKata = s => s.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
+            const toHira = s => s.replace(/[\u30A1-\u30F6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+            const candidates = (PQApp.allPokemon || []).map(p => p.name);
+            const textLow = text.toLowerCase();
+            let match = candidates.find(c => c === text || c === toKata(text) || c === toHira(text));
+            if (!match) match = candidates.find(c => {
+              const cLow = c.toLowerCase();
+              return cLow.includes(textLow) || cLow.includes(toKata(textLow)) || cLow.includes(toHira(textLow))
+                  || textLow.includes(cLow) || toKata(textLow).includes(cLow) || toHira(textLow).includes(cLow);
+            });
+            if (match) text = match;
+          }
+          el.value = text;
+          el.dispatchEvent(new Event('input'));
+          toggleVoiceClear(targetId);
+        };
+        rec.onerror = function() { resetAllVoiceBtns(); };
+        rec.onend = function() { resetAllVoiceBtns(); };
+        rec.start();
+      };
+
+      window.clearSearch = function(targetId) {
+        const el = document.getElementById(targetId);
+        el.value = '';
+        el.dispatchEvent(new Event('input'));
+        toggleVoiceClear(targetId);
+      };
+
+      window.toggleVoiceClear = function(targetId) {
+        const el = document.getElementById(targetId);
+        const hasVal = el.value.length > 0;
+        const voiceBtn = targetId === 'search-input' ? document.getElementById('voice-name-btn') : document.getElementById('voice-no-btn');
+        const clearBtn = targetId === 'search-input' ? document.getElementById('clear-name-btn') : document.getElementById('clear-no-btn');
+        if (voiceBtn) voiceBtn.style.display = hasVal ? 'none' : '';
+        if (clearBtn) clearBtn.style.display = hasVal ? '' : 'none';
+      };
     });
   </script>
 </body>

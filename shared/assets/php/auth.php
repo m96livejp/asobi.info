@@ -172,27 +172,28 @@ function asobiRefererDomain(string $referer): string {
     return $host;
 }
 
-/** GETリクエストのページビューを記録 */
+/** GETリクエストのページビューを記録（ファイル追記→定期バッチでDB投入） */
 function asobiLogAccess(): void {
     if (php_sapi_name() === 'cli') return;
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') return;
     try {
-        $db  = asobiUsersDb();
-        $ua  = $_SERVER['HTTP_USER_AGENT'] ?? '';
-        $ref = asobiRefererDomain($_SERVER['HTTP_REFERER'] ?? '');
+        $ua     = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $ref    = asobiRefererDomain($_SERVER['HTTP_REFERER'] ?? '');
         $parsed = asobiParseUA($ua);
-        $db->prepare("INSERT INTO access_logs (host, path, user_id, ip, referer, user_agent, browser, device, os) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-           ->execute([
-               $_SERVER['HTTP_HOST'] ?? '',
-               strtok($_SERVER['REQUEST_URI'] ?? '/', '?'),
-               asobiIsLoggedIn() ? $_SESSION['asobi_user_id'] : null,
-               $_SERVER['REMOTE_ADDR'] ?? '',
-               $ref,
-               $ua,
-               $parsed['browser'],
-               $parsed['device'],
-               $parsed['os'],
-           ]);
+        $line   = json_encode([
+            'host'       => $_SERVER['HTTP_HOST'] ?? '',
+            'path'       => strtok($_SERVER['REQUEST_URI'] ?? '/', '?'),
+            'user_id'    => asobiIsLoggedIn() ? $_SESSION['asobi_user_id'] : null,
+            'ip'         => $_SERVER['REMOTE_ADDR'] ?? '',
+            'referer'    => $ref,
+            'user_agent' => $ua,
+            'browser'    => $parsed['browser'],
+            'device'     => $parsed['device'],
+            'os'         => $parsed['os'],
+            'created_at' => date('Y-m-d H:i:s'),
+        ], JSON_UNESCAPED_UNICODE) . "\n";
+        $logFile = dirname(ASOBI_USERS_DB_PATH) . '/access_log_buffer.jsonl';
+        @file_put_contents($logFile, $line, FILE_APPEND | LOCK_EX);
     } catch (Exception $e) { /* ログ失敗は無視 */ }
 }
 
@@ -227,13 +228,15 @@ function asobiAttemptLogin(string $username, string $password): bool {
         return false;
     }
 
-    $db->prepare("UPDATE users SET last_login_at = datetime('now','localtime') WHERE id = ?")
-       ->execute([$user['id']]);
-
-    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $uaParsed = asobiParseUA($ua);
-    $db->prepare("INSERT INTO login_logs (user_id, username, ip, user_agent, browser, device, os) VALUES (?, ?, ?, ?, ?, ?, ?)")
-       ->execute([$user['id'], $user['username'], $_SERVER['REMOTE_ADDR'] ?? '', $ua, $uaParsed['browser'], $uaParsed['device'], $uaParsed['os']]);
+    // ログイン記録（DB locked でもログイン自体は成功させる）
+    try {
+        $db->prepare("UPDATE users SET last_login_at = datetime('now','localtime') WHERE id = ?")
+           ->execute([$user['id']]);
+        $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $uaParsed = asobiParseUA($ua);
+        $db->prepare("INSERT INTO login_logs (user_id, username, ip, user_agent, browser, device, os) VALUES (?, ?, ?, ?, ?, ?, ?)")
+           ->execute([$user['id'], $user['username'], $_SERVER['REMOTE_ADDR'] ?? '', $ua, $uaParsed['browser'], $uaParsed['device'], $uaParsed['os']]);
+    } catch (Exception $e) { /* DB locked時もログインは続行 */ }
 
     session_regenerate_id(true);
     $_SESSION['asobi_user_id']       = $user['id'];
@@ -549,14 +552,15 @@ function asobiVerifyEmail(string $token, int $userId): bool|string {
 
 /** セッションからユーザーを設定（ソーシャルログイン用） */
 function asobiLoginFromUserRow(array $user): void {
-    $db = asobiUsersDb();
-    $db->prepare("UPDATE users SET last_login_at = datetime('now','localtime') WHERE id = ?")
-       ->execute([$user['id']]);
-
-    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $uaParsed = asobiParseUA($ua);
-    $db->prepare("INSERT INTO login_logs (user_id, username, ip, user_agent, browser, device, os) VALUES (?, ?, ?, ?, ?, ?, ?)")
-       ->execute([$user['id'], $user['username'], $_SERVER['REMOTE_ADDR'] ?? '', $ua, $uaParsed['browser'], $uaParsed['device'], $uaParsed['os']]);
+    try {
+        $db = asobiUsersDb();
+        $db->prepare("UPDATE users SET last_login_at = datetime('now','localtime') WHERE id = ?")
+           ->execute([$user['id']]);
+        $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $uaParsed = asobiParseUA($ua);
+        $db->prepare("INSERT INTO login_logs (user_id, username, ip, user_agent, browser, device, os) VALUES (?, ?, ?, ?, ?, ?, ?)")
+           ->execute([$user['id'], $user['username'], $_SERVER['REMOTE_ADDR'] ?? '', $ua, $uaParsed['browser'], $uaParsed['device'], $uaParsed['os']]);
+    } catch (Exception $e) { /* DB locked時もログインは続行 */ }
 
     session_regenerate_id(true);
     $_SESSION['asobi_user_id']       = $user['id'];
@@ -597,5 +601,40 @@ function asobiIssueTbtToken(): string {
         'exp'     => time() + 300,
     ]);
     $sig = $b64url(hash_hmac('sha256', "$header.$payload", TBT_SHARED_SECRET, true));
+    return "$header.$payload.$sig";
+}
+
+// ─────────────────── aic.asobi.info 連携 ───────────────────
+
+/**
+ * ログイン中ユーザーの情報を含む短期JWT（5分）を発行する
+ * aic.asobi.info のクロスサイトログインに使用
+ */
+function asobiIssueAicToken(): string {
+    require_once __DIR__ . '/aic_config.php';
+
+    $user = asobiGetCurrentUser();
+    $db   = asobiUsersDb();
+    $stmt = $db->prepare("SELECT email FROM users WHERE id = ?");
+    $stmt->execute([$user['id']]);
+    $row = $stmt->fetch();
+
+    $b64url = function($v): string {
+        $str = is_array($v) ? json_encode($v, JSON_UNESCAPED_UNICODE) : $v;
+        return rtrim(strtr(base64_encode($str), '+/', '-_'), '=');
+    };
+
+    $header  = $b64url(['alg' => 'HS256', 'typ' => 'JWT']);
+    $payload = $b64url([
+        'sub'     => (string)$user['id'],
+        'email'   => $row['email'] ?? null,
+        'name'    => $user['display_name'] ?: $user['username'],
+        'avatar'  => $user['avatar_url'] ?? null,
+        'role'    => $user['role'] ?? 'user',
+        'purpose' => 'aic_login',
+        'iat'     => time(),
+        'exp'     => time() + 300,
+    ]);
+    $sig = $b64url(hash_hmac('sha256', "$header.$payload", AIC_SHARED_SECRET, true));
     return "$header.$payload.$sig";
 }

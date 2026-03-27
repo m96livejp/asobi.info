@@ -86,31 +86,36 @@ async def send_message(
             yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
             return
 
-        # AIレスポンス保存 & ポイント消費
-        async with db.begin():
-            ai_msg = Message(conversation_id=conversation_id, role="assistant", content=full_response)
-            db.add(ai_msg)
+        # AIレスポンス保存 & ポイント消費（リトライ付き）
+        currency = "points"
+        for _retry in range(3):
+            try:
+                async with db.begin():
+                    ai_msg = Message(conversation_id=conversation_id, role="assistant", content=full_response)
+                    db.add(ai_msg)
 
-            # ポイント消費（無料ポイント優先）
-            result2 = await db.execute(select(UserBalance).where(UserBalance.user_id == user.id))
-            bal = result2.scalar_one()
-            if bal.points >= cost:
-                bal.points -= cost
-                currency = "points"
-            else:
-                bal.crystals -= cost
-                currency = "crystals"
+                    result2 = await db.execute(select(UserBalance).where(UserBalance.user_id == user.id))
+                    bal = result2.scalar_one()
+                    if bal.points >= cost:
+                        bal.points -= cost
+                        currency = "points"
+                    else:
+                        bal.crystals -= cost
+                        currency = "crystals"
 
-            tx = BalanceTransaction(
-                user_id=user.id, currency=currency, amount=-cost,
-                type="chat", memo=f"{char.name} ({provider}:{ai_settings.model if ai_settings else char.ai_model})"
-            )
-            db.add(tx)
+                    tx = BalanceTransaction(
+                        user_id=user.id, currency=currency, amount=-cost,
+                        type="chat", memo=f"{char.name} ({provider}:{ai_settings.model if ai_settings else char.ai_model})"
+                    )
+                    db.add(tx)
 
-            # 使用回数更新
-            result3 = await db.execute(select(Character).where(Character.id == char.id))
-            c = result3.scalar_one()
-            c.use_count += 1
+                    result3 = await db.execute(select(Character).where(Character.id == char.id))
+                    c = result3.scalar_one()
+                    c.use_count += 1
+                break
+            except Exception:
+                import asyncio
+                await asyncio.sleep(0.5)
 
         yield f"data: {json.dumps({'done': True, 'cost': cost, 'currency': currency}, ensure_ascii=False)}\n\n"
 

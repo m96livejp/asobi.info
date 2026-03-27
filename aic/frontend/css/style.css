@@ -464,9 +464,19 @@ body.chat-active #main { max-height: 100vh; max-height: 100dvh; }
   background: none;
   border: none;
   color: var(--text);
+  text-decoration: none;
   transition: background 0.15s;
 }
 .hdr-user-trigger:hover { background: rgba(0,0,0,0.06); }
+.hdr-user-name {
+  font-size: 0.82rem;
+  font-weight: 500;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hdr-user-caret { font-size: 0.55rem; opacity: 0.5; }
 
 .hdr-user-avatar {
   width: 28px; height: 28px;
@@ -495,11 +505,23 @@ body.chat-active #main { max-height: 100vh; max-height: 100dvh; }
 }
 .hdr-user-area.open .hdr-user-dropdown { display: block; }
 .hdr-user-displayname {
+  display: block;
+  width: 100%;
   padding: 10px 14px;
   font-size: 0.88rem;
-  color: var(--text-secondary);
+  font-weight: 600;
+  color: var(--text);
   border-bottom: 1px solid var(--border);
+  text-align: left;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
 }
+.hdr-user-displayname:hover { background: rgba(0,0,0,0.05); }
 .hud-item {
   display: block;
   width: 100%;

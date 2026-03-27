@@ -47,20 +47,33 @@ if [ -z "$SITE" ]; then
     echo "  bash deploy.sh dbd          # dbd全体をデプロイ"
     echo "  bash deploy.sh info         # メインサイト全体をデプロイ"
     echo "  bash deploy.sh shared       # 共通assets全体をデプロイ"
+    echo "  bash deploy.sh aic          # aic全体をデプロイ"
     echo "  bash deploy.sh all          # 全サイトをデプロイ"
     exit 1
 fi
+
+deploy_aic() {
+    check_old_paths "$LOCAL_BASE/aic"
+    echo "=== aic → /opt/asobi/aic ==="
+    scp -r -i "$KEY" "$LOCAL_BASE/aic/app/"* "$HOST:/opt/asobi/aic/app/"
+    scp -r -i "$KEY" "$LOCAL_BASE/aic/frontend/"* "$HOST:/opt/asobi/aic/frontend/"
+    scp -i "$KEY" "$LOCAL_BASE/aic/requirements.txt" "$HOST:/opt/asobi/aic/"
+    ssh -i "$KEY" "$HOST" "chown -R root:root /opt/asobi/aic/ && systemctl restart aic-api.service"
+    echo "✅ aic デプロイ完了"
+}
 
 case "$SITE" in
     pkq)    deploy "pkq" "/opt/asobi/pkq" ;;
     dbd)    deploy "dbd" "/opt/asobi/dbd" ;;
     info)   deploy "info" "/opt/asobi/info" ;;
     shared) deploy "shared" "/opt/asobi/shared" ;;
+    aic)    deploy_aic ;;
     all)
         deploy "shared" "/opt/asobi/shared"
         deploy "info" "/opt/asobi/info"
         deploy "pkq" "/opt/asobi/pkq"
         deploy "dbd" "/opt/asobi/dbd"
+        deploy_aic
         ;;
     *)  echo "不明なサイト: $SITE" && exit 1 ;;
 esac
@@ -71,3 +84,4 @@ echo "  https://asobi.info"
 echo "  https://pkq.asobi.info"
 echo "  https://dbd.asobi.info"
 echo "  https://tbt.asobi.info"
+echo "  https://aic.asobi.info"

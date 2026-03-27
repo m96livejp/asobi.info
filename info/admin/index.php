@@ -37,7 +37,7 @@ $siteStats = $db->query("SELECT host, COUNT(*) as pv, COUNT(DISTINCT ip) as uv F
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>管理画面 - asobi.info</title>
-  <link rel="stylesheet" href="/assets/css/common.css">
+  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -67,39 +67,9 @@ $siteStats = $db->query("SELECT host, COUNT(*) as pv, COUNT(DISTINCT ip) as uv F
       margin-left: 6px;
       vertical-align: middle;
     }
-    .user-area { display: flex; align-items: center; gap: 10px; position: relative; }
-    .user-area::before { content: ''; display: block; width: 1px; height: 18px; background: #d0d0d5; }
-    .user-menu { position: relative; }
-    .user-trigger {
-      display: flex; align-items: center; gap: 8px;
-      cursor: pointer; padding: 4px 8px; border-radius: 8px;
-      transition: background 0.2s; color: #1d1d1f;
-    }
-    .user-trigger:hover { background: rgba(0,0,0,0.05); }
-    .user-avatar {
-      width: 30px; height: 30px; border-radius: 50%;
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.8rem; font-weight: 700; color: #fff; flex-shrink: 0; overflow: hidden;
-    }
-    .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .user-display-name { font-size: 0.875rem; font-weight: 500; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .user-caret { font-size: 0.6rem; opacity: 0.5; }
-    .user-dropdown {
-      display: none; position: absolute; top: calc(100% + 8px); right: 0;
-      background: #fff; border: 1px solid #e0e0e0; border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.12); min-width: 160px; overflow: hidden; z-index: 200;
-    }
-    .user-menu.open .user-dropdown { display: block; }
-    .user-dropdown a { display: block; padding: 11px 16px; font-size: 0.875rem; color: #1d1d1f; text-decoration: none; transition: background 0.15s; }
-    .user-dropdown a:hover { background: #f5f5f7; }
-    .user-dropdown .dropdown-divider { height: 1px; background: #e0e0e0; margin: 4px 0; }
-    .user-dropdown .dropdown-logout { color: #e74c3c; }
     @media (max-width: 768px) {
       .site-header .container { flex-direction: row; align-items: center; }
       .site-nav { display: none; }
-      .user-display-name { display: none; }
-      .user-area::before { display: none; }
     }
 
     .admin-body {
@@ -287,28 +257,6 @@ $siteStats = $db->query("SELECT host, COUNT(*) as pv, COUNT(DISTINCT ip) as uv F
             <li><a href="/admin/settings.php">サイト設定</a></li>
           </ul>
         </nav>
-        <div class="user-area">
-          <div class="user-menu">
-            <div class="user-trigger" tabindex="0">
-              <div class="user-avatar">
-                <?php if ($currentUser['avatar_url']): ?>
-                  <img src="<?= htmlspecialchars($currentUser['avatar_url']) ?>" alt="">
-                <?php else: ?>
-                  <?= htmlspecialchars(mb_substr($currentUser['display_name'], 0, 1)) ?>
-                <?php endif; ?>
-              </div>
-              <span class="user-display-name"><?= htmlspecialchars($currentUser['display_name']) ?></span>
-              <span class="user-caret">▼</span>
-            </div>
-            <div class="user-dropdown">
-              <a href="/">あそびトップ</a>
-              <div class="dropdown-divider"></div>
-              <a href="/profile.php">プロフィール</a>
-              <div class="dropdown-divider"></div>
-              <a href="/logout.php" class="dropdown-logout">ログアウト</a>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   </header>
@@ -414,10 +362,11 @@ $siteStats = $db->query("SELECT host, COUNT(*) as pv, COUNT(DISTINCT ip) as uv F
         <?php
         $maxSitePv = max(array_column($siteStats, 'pv')) ?: 1;
         $siteLabels = [
-            'asobi.info'                  => ['label' => 'asobi.info',          'color' => '#667eea'],
-            'dbd.asobi.info'              => ['label' => 'DbD',                 'color' => '#e74c3c'],
-            'pkq.asobi.info'    => ['label' => 'ポケモンクエスト',   'color' => '#f093fb'],
-            'tbt.asobi.info'              => ['label' => 'Tournament Battle',   'color' => '#f7d94e'],
+            'asobi.info'     => ['label' => 'あそび（メイン）',   'host' => 'asobi.info',     'color' => '#667eea'],
+            'dbd.asobi.info' => ['label' => 'Dead by Daylight',  'host' => 'dbd.asobi.info', 'color' => '#e74c3c'],
+            'pkq.asobi.info' => ['label' => 'ポケモンクエスト',  'host' => 'pkq.asobi.info', 'color' => '#f093fb'],
+            'tbt.asobi.info' => ['label' => 'Tournament Battle', 'host' => 'tbt.asobi.info', 'color' => '#f7d94e'],
+            'aic.asobi.info' => ['label' => 'AIC',               'host' => 'aic.asobi.info', 'color' => '#6edd8a'],
         ];
         ?>
         <div style="display:flex;flex-direction:column;gap:8px;">
@@ -427,7 +376,10 @@ $siteStats = $db->query("SELECT host, COUNT(*) as pv, COUNT(DISTINCT ip) as uv F
             $pct   = round($s['pv'] / $maxSitePv * 100);
         ?>
         <div style="display:flex;align-items:center;gap:10px;">
-          <span style="width:150px;font-size:0.82rem;color:#1d2d3a;flex-shrink:0;"><?= $info['label'] ?></span>
+          <span style="width:180px;flex-shrink:0;line-height:1.3;">
+            <span style="font-size:0.82rem;color:#1d2d3a;display:block;"><?= $info['label'] ?></span>
+            <span style="font-size:0.72rem;color:#8a9bb0;"><?= htmlspecialchars($info['host'] ?? $s['host']) ?></span>
+          </span>
           <div style="flex:1;height:12px;background:#e8eef4;border-radius:6px;overflow:hidden;">
             <div style="height:100%;width:<?= $pct ?>%;background:<?= $info['color'] ?>;border-radius:6px;"></div>
           </div>
@@ -610,16 +562,7 @@ $siteStats = $db->query("SELECT host, COUNT(*) as pv, COUNT(DISTINCT ip) as uv F
       return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    const userMenu = document.querySelector('.user-menu');
-    if (userMenu) {
-      userMenu.querySelector('.user-trigger').addEventListener('click', function(e) {
-        e.stopPropagation();
-        userMenu.classList.toggle('open');
-      });
-      document.addEventListener('click', function() {
-        userMenu.classList.remove('open');
-      });
-    }
   </script>
+  <script src="/assets/js/common.js?v=20260327e"></script>
 </body>
 </html>

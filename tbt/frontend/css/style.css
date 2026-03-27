@@ -34,7 +34,6 @@ body {
     color: var(--text-primary);
     min-height: 100vh;
     overflow-x: hidden;
-    overflow-y: scroll; /* スクロールバー常時確保してヘッダ/フッタのズレを防止 */
     -webkit-font-smoothing: antialiased;
 }
 
@@ -42,8 +41,6 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
-    max-width: 480px;
-    margin: 0 auto;
 }
 
 /* ===== ヘッダー ===== */
@@ -107,10 +104,8 @@ body {
     border-top: 1px solid rgba(0,0,0,0.08);
     position: fixed;
     bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 100%;
-    max-width: 480px;
+    left: 0;
+    right: 0;
     z-index: 100;
 }
 
@@ -1383,10 +1378,8 @@ body {
 #ad-banner {
     position: fixed;
     bottom: var(--nav-height);
-    left: 50%;
-    transform: translateX(-50%);
-    width: 100%;
-    max-width: 480px;
+    left: 0;
+    right: 0;
     height: var(--ad-banner-height);
     background: var(--bg-secondary);
     border-top: 1px solid rgba(0,0,0,0.08);

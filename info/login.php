@@ -1,6 +1,8 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
-asobiLogAccess();
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    session_write_close();
+}
 
 $redirect = '';
 if (!empty($_GET['redirect'])) {
@@ -265,6 +267,6 @@ $oauthBase = '/oauth/start.php?mode=login&redirect=' . urlencode($redirect);
       </a>
     </div>
   </div>
-<script src="/assets/js/common.js"></script>
+<script src="/assets/js/common.js?v=20260327e"></script>
 </body>
 </html>

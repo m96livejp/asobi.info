@@ -19,7 +19,20 @@ function asobiUsersDb(): PDO {
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     $db->exec('PRAGMA journal_mode=WAL');
+    $db->exec('PRAGMA busy_timeout=5000');
 
+    // スキーマ初期化は初回のみ（マーカーファイルで判定）
+    $markerFile = dirname(ASOBI_USERS_DB_PATH) . '/.schema_v3';
+    if (!file_exists($markerFile)) {
+        _asobiInitSchema($db);
+        @file_put_contents($markerFile, date('Y-m-d H:i:s'));
+    }
+
+    return $db;
+}
+
+/** テーブル作成・マイグレーション（初回のみ） */
+function _asobiInitSchema(PDO $db): void {
     $db->exec("
         CREATE TABLE IF NOT EXISTS users (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,7 +113,6 @@ function asobiUsersDb(): PDO {
         )
     ");
 
-    // デフォルト設定の初期投入（存在しない場合のみ）
     $defaults = [
         'email_verify_cooldown_minutes' => '10',
         'email_verify_daily_limit'      => '5',
@@ -124,7 +136,6 @@ function asobiUsersDb(): PDO {
     ");
     $db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_banned_norm_cat ON banned_words(normalized, category)");
 
-    // 既存テーブルへのカラム追加（既存DBのマイグレーション）
     $migrate = [
         "ALTER TABLE access_logs ADD COLUMN referer TEXT",
         "ALTER TABLE access_logs ADD COLUMN user_agent TEXT",
@@ -142,6 +153,4 @@ function asobiUsersDb(): PDO {
     foreach ($migrate as $sql) {
         try { $db->exec($sql); } catch (Exception $e) { /* already exists */ }
     }
-
-    return $db;
 }

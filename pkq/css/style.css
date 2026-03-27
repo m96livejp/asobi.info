@@ -904,46 +904,22 @@ body {
     gap: 8px;
   }
 
-  /* ヘッダーを横並びに維持 */
-  .site-header .container {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    padding-right: 52px; /* ハンバーガーボタン分の余白 */
-  }
+  /* ヘッダー：common.cssのorder制御に従う */
 
-  /* ハンバーガーボタンを右上に固定 */
-  .menu-toggle {
-    position: fixed;
-    top: 12px;
-    right: 16px;
-    z-index: 300;
-  }
-
-  /* モバイルでは名前・カレットを非表示 */
-  .auth-name,
-  .auth-caret {
-    display: none;
-  }
-
-  /* 開いたナビを右寄せドロップダウン */
+  /* 開いたナビをドロップダウン */
   .site-nav.open {
-    position: fixed;
-    top: 50px;
+    position: absolute;
+    top: 100%;
+    left: 0;
     right: 0;
-    left: auto;
-    min-width: 180px;
     z-index: 250;
     background: rgba(255,255,255,0.97);
-    box-shadow: -4px 4px 16px rgba(0,0,0,0.12);
-    border: 1px solid var(--border);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
     border-top: 2px solid var(--accent);
-    border-radius: 0 0 0 10px;
   }
 
   .site-nav.open ul {
     padding: 8px 0;
-    text-align: right;
   }
 
   .site-nav.open ul li a {

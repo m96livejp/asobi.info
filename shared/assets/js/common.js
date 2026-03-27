@@ -8,67 +8,121 @@
   document.head.appendChild(link);
 })();
 
-// モバイルメニュートグル + ヘッダーユーザーエリア
+// モバイルメニュートグル（全サイト共通）
 document.addEventListener('DOMContentLoaded', () => {
   const toggle = document.querySelector('.menu-toggle');
   const nav = document.querySelector('.site-nav');
   if (toggle && nav) {
-    toggle.addEventListener('click', () => {
-      nav.classList.toggle('open');
-    });
-  }
-
-  // ヘッダーユーザーエリア自動挿入（既に存在する場合はスキップ）
-  const headerContainer = document.querySelector('.site-header .container');
-  if (headerContainer && !headerContainer.querySelector('.header-user-area, .user-area')) {
-    fetch('https://asobi.info/assets/php/me.php', { credentials: 'include' })
-      .then(r => r.json())
-      .then(user => {
-        const area = document.createElement('div');
-        area.className = 'header-user-area';
-        if (user.loggedIn) {
-          const avatarHtml = user.avatarUrl
-            ? `<img src="${escapeHtml(user.avatarUrl)}" alt="">`
-            : escapeHtml(user.initial);
-          let adminLink = '';
-          if (user.role === 'admin') {
-            const h = location.hostname;
-            const subAdminUrls = {
-              'dbd.asobi.info':           'https://dbd.asobi.info/admin/',
-              'pkq.asobi.info':           'https://pkq.asobi.info/admin/',
-              'tbt.asobi.info':           'https://tbt.asobi.info/admin/',
-            };
-            const subAdminUrl = subAdminUrls[h];
-            adminLink = subAdminUrl
-              ? `<a href="${subAdminUrl}">サイト管理画面</a><div class="hud-divider"></div><a href="https://asobi.info/admin/">asobi.info 管理画面</a><div class="hud-divider"></div>`
-              : `<a href="https://asobi.info/admin/">管理画面</a><div class="hud-divider"></div>`;
-          }
-          area.innerHTML = `
-            <div class="header-user-menu">
-              <div class="header-user-trigger" tabindex="0">
-                <div class="header-user-avatar">${avatarHtml}</div>
-                <span class="header-user-name">${escapeHtml(user.displayName)}</span>
-                <span class="header-user-caret">▼</span>
-              </div>
-              <div class="header-user-dropdown">
-                <a href="https://asobi.info/">asobi.info トップ</a>
-                <div class="hud-divider"></div>
-                <a href="https://asobi.info/profile.php">プロフィール</a>
-                ${adminLink}
-              </div>
-            </div>`;
-          const trigger = area.querySelector('.header-user-trigger');
-          const menu = area.querySelector('.header-user-menu');
-          trigger.addEventListener('click', e => { e.stopPropagation(); menu.classList.toggle('open'); });
-          document.addEventListener('click', () => menu.classList.remove('open'));
-        } else {
-          area.innerHTML = `<a href="https://asobi.info/login.php?redirect=${encodeURIComponent(location.href)}" class="header-btn-login">ログイン</a>`;
-        }
-        headerContainer.appendChild(area);
-      })
-      .catch(() => {});
+    toggle.addEventListener('click', () => nav.classList.toggle('open'));
   }
 });
+
+// ─── ヘッダーユーザーエリア（全サイト統一・即時実行） ───
+// common.js はページ末尾で読み込まれるため DOMContentLoaded を待たずに即時実行できる
+// 挿入先: .site-header .container（pkq/dbd等）または #asobi-user-area（tbt等）
+(function() {
+  // CSS インジェクト（common.css 未読込サイト向け）
+  if (!document.getElementById('asobi-user-css')) {
+    const s = document.createElement('style');
+    s.id = 'asobi-user-css';
+    s.textContent = [
+      '.header-user-area{display:flex;align-items:center;gap:8px;flex-shrink:0;margin-left:12px}',
+      '.header-btn-login{font-size:.82rem;font-weight:600;padding:6px 16px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff!important;border-radius:20px;text-decoration:none;white-space:nowrap;transition:opacity .2s}',
+      '.header-btn-login:hover{opacity:.85}',
+      '.header-user-menu{position:relative}',
+      '.header-user-trigger{display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 6px;border-radius:8px;transition:background .2s;color:inherit;background:none;border:none}',
+      '.header-user-trigger:hover{background:rgba(128,128,128,.15)}',
+      '.header-user-avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden}',
+      '.header-user-avatar img{width:100%;height:100%;object-fit:cover}',
+      '.header-user-dropdown{display:none;position:absolute;top:calc(100% + 8px);right:0;background:#fff;border:1px solid #e0e0e0;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.14);min-width:150px;overflow:hidden;z-index:9999;color:#1d1d1f}',
+      '.header-user-menu.open .header-user-dropdown{display:block}',
+      '.header-user-dropdown a{display:block;padding:10px 16px;font-size:.85rem;color:#1d1d1f;text-decoration:none;transition:background .15s;white-space:nowrap}',
+      '.header-user-dropdown a:hover{background:#f5f5f7}',
+      '.header-user-dropdown .hud-divider{height:1px;background:#e0e0e0;margin:4px 0}',
+    ].join('');
+    document.head.appendChild(s);
+  }
+
+  const headerContainer = document.querySelector('.site-header .container');
+  const fixedArea = document.getElementById('asobi-user-area');
+  if (!headerContainer && !fixedArea) return;
+  if (headerContainer && headerContainer.querySelector('.header-user-area')) return;
+
+  const h = location.hostname;
+
+  function buildLoggedInHtml(user) {
+    const avatarHtml = user.avatarUrl
+      ? `<img src="${escapeHtml(user.avatarUrl)}" alt="">`
+      : escapeHtml(user.initial);
+
+    let menuItems = `<a href="/">トップ</a>`;
+    const profileUrl = 'https://asobi.info/profile.php' + (h !== 'asobi.info' ? '?back=' + encodeURIComponent(location.origin) : '');
+    menuItems += `<a href="${profileUrl}">プロフィール</a>`;
+
+    const siteMenus = {
+      'tbt.asobi.info': [
+        { label: 'キャラクター', href: '/?page=character' },
+        { label: 'ガチャ',       href: '/?page=gacha' },
+        { label: 'ランキング',   href: '/?page=ranking' },
+      ],
+    };
+    const siteMenu = siteMenus[h];
+    if (siteMenu && siteMenu.length) {
+      menuItems += `<div class="hud-divider"></div>`;
+      siteMenu.forEach(item => { menuItems += `<a href="${item.href}">${escapeHtml(item.label)}</a>`; });
+    }
+
+    if (user.role === 'admin') {
+      const siteAdminUrls = {
+        'asobi.info':     '/admin/',
+        'dbd.asobi.info': 'https://dbd.asobi.info/admin/',
+        'pkq.asobi.info': 'https://pkq.asobi.info/admin/',
+        'tbt.asobi.info': 'https://tbt.asobi.info/admin/',
+        'aic.asobi.info': 'https://aic.asobi.info/admin.html',
+      };
+      const siteAdmin = siteAdminUrls[h];
+      menuItems += `<div class="hud-divider"></div>`;
+      if (siteAdmin) menuItems += `<a href="${siteAdmin}">コンテンツ管理</a>`;
+      if (h !== 'asobi.info') menuItems += `<a href="https://asobi.info/admin/">asobi.info 全体管理</a>`;
+    }
+
+    return `
+      <div class="header-user-menu">
+        <div class="header-user-trigger" tabindex="0">
+          <div class="header-user-avatar">${avatarHtml}</div>
+        </div>
+        <div class="header-user-dropdown">${menuItems}</div>
+      </div>`;
+  }
+
+  function attachMenu(root) {
+    const menu = root.querySelector('.header-user-menu');
+    if (!menu) return;
+    root.querySelector('.header-user-trigger').addEventListener('click', e => { e.stopPropagation(); menu.classList.toggle('open'); });
+    document.addEventListener('click', () => menu.classList.remove('open'));
+  }
+
+  fetch('https://asobi.info/assets/php/me.php', { credentials: 'include' })
+    .then(r => r.json())
+    .then(user => {
+      const loginHtml = `<a href="https://asobi.info/login.php?redirect=${encodeURIComponent(location.href)}" class="header-btn-login">ログイン</a>`;
+
+      if (headerContainer) {
+        const area = document.createElement('div');
+        area.className = 'header-user-area';
+        area.innerHTML = user.loggedIn ? buildLoggedInHtml(user) : loginHtml;
+        headerContainer.appendChild(area);
+        if (user.loggedIn) attachMenu(area);
+      }
+
+      if (fixedArea) {
+        fixedArea.style.position = 'relative';
+        fixedArea.innerHTML = user.loggedIn ? buildLoggedInHtml(user) : loginHtml;
+        if (user.loggedIn) attachMenu(fixedArea);
+      }
+    })
+    .catch(() => {});
+})();
 
 // サブドメインアクセスログ（asobi.info メインは PHP で記録済みのためスキップ）
 (function() {
@@ -83,18 +137,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 })();
 
-// APIヘルパー
-const API = {
-  async get(url, params = {}) {
-    const query = new URLSearchParams(params).toString();
-    const fullUrl = query ? `${url}?${query}` : url;
-    const res = await fetch(fullUrl);
-    if (!res.ok) throw new Error(`API Error: ${res.status}`);
-    return res.json();
-  }
-};
+// APIヘルパー（各サイト独自の API が未定義の場合のみ提供）
+if (typeof API === 'undefined') {
+  window.API = {
+    async get(url, params = {}) {
+      const query = new URLSearchParams(params).toString();
+      const fullUrl = query ? `${url}?${query}` : url;
+      const res = await fetch(fullUrl);
+      if (!res.ok) throw new Error(`API Error: ${res.status}`);
+      return res.json();
+    }
+  };
+}
 
-// スクロールトップボタン
+// スクロールトップボタン（site-headerがあるページのみ）
 (function() {
   const btn = document.createElement('button');
   btn.className = 'scroll-top-btn';
@@ -102,6 +158,7 @@ const API = {
   btn.title = 'トップへ戻る';
   btn.setAttribute('aria-label', 'トップへ戻る');
   document.addEventListener('DOMContentLoaded', () => {
+    if (!document.querySelector('.site-header')) return;
     document.body.appendChild(btn);
   });
   window.addEventListener('scroll', () => {

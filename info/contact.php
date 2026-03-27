@@ -101,7 +101,7 @@ $selType = $p['type'] ?? '個人';
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>お問い合わせ - あそび</title>
-  <link rel="stylesheet" href="/assets/css/common.css">
+  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
   <style>
     main { max-width: 600px; margin: 0 auto; padding: 40px 16px 60px; }
     h1 { font-size: 1.4rem; margin-bottom: 8px; }
@@ -238,7 +238,7 @@ $selType = $p['type'] ?? '個人';
       <p>&copy; 2026 あそび - ゲーム情報ポータル</p>
     </div>
   </footer>
-  <script src="/assets/js/common.js"></script>
+  <script src="/assets/js/common.js?v=20260327e"></script>
   <script>
     function setType(type) {
       document.getElementById('type-input').value = type;

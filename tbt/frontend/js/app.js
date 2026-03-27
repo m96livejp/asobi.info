@@ -57,23 +57,24 @@ const App = {
             btn.addEventListener('click', () => this.navigate(btn.dataset.page));
         });
 
-        // 設定ボタン
-        document.getElementById('settings-btn')?.addEventListener('click', () => this.navigate('settings'));
-
         // バナー広告初期化
         AdBanner.init();
 
-        // ゲームタイトルクリックで大会ページへ
-        document.querySelector('.game-title')?.addEventListener('click', () => this.navigate('tournament'));
+        // ゲームタイトルクリックでトップへ
+        document.querySelector('.game-title')?.addEventListener('click', () => this.navigate('home'));
 
-        // 初期画面
-        this.navigate('home');
+        // 初期画面（URLハッシュがあればそのページを表示）
+        const initialPage = location.hash.replace('#', '');
+        this.navigate(this.pages[initialPage] ? initialPage : 'home');
     },
 
     navigate(page) {
         if (!this.pages[page]) return;
 
         this.currentPage = page;
+
+        // URLハッシュを更新（リロード時に同じページに戻れるよう）
+        history.replaceState(null, '', page === 'home' ? location.pathname : '#' + page);
 
         // ナビのアクティブ状態更新
         document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -89,11 +90,9 @@ const App = {
     updateCurrency(points, premium) {
         if (points !== null && points !== undefined) {
             this.user.points = points;
-            document.getElementById('points-display').textContent = `🪙 ${points.toLocaleString()} PT`;
         }
         if (premium !== null && premium !== undefined) {
             this.user.premium_currency = premium;
-            document.getElementById('premium-display').textContent = `💎 ${premium.toLocaleString()} GEM`;
         }
     },
 };
