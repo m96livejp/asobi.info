@@ -10,6 +10,7 @@ let _chatVisMode = 0; // 0=全表示, 1=フェード, 2=非表示
 let _longPressTimer = null;
 
 // TTS（VOICEVOX音声読み上げ）
+let _ttsAvailable = false; // 現在の会話でTTSが利用可能か（tts_mode + ユーザーロール考慮）
 let _ttsAudio = null;
 let _ttsPlayingBtn = null;
 let _ttsQueue = [];        // 再生キュー [{type:'se'|'voice', name?, style?, text?, styleId?}]
@@ -20,6 +21,11 @@ let _vvStyleMap = {};      // スタイル名→IDマップ（現在の会話の
 
 // キャラクター編集モード
 let _editingCharId = null;
+let _editReturnScreen = null; // 'char-detail' | 'chat' | null（編集後の戻り先）
+let _editReturnCharId = null;
+
+// キャラID → 会話IDマップ（カードから直接チャットへ飛ぶため）
+let _charConvMap = {};
 
 // コミュニティ用キャッシュ
 let communityChars = [];
@@ -380,6 +386,7 @@ async function loadChatList() {
     const convRes = await api('/conversations');
     if (convRes.ok) {
       const convs = await convRes.json();
+      convs.forEach(c => { if (c.character_id) _charConvMap[c.character_id] = c.id; });
       if (convs.length === 0) {
         convsEl.innerHTML = '<p class="chatlist-empty">まだ会話がありません</p>';
       } else {
@@ -410,20 +417,48 @@ async function loadChatList() {
     }
   }
 
-  // お気に入り
+  // お気に入り + コミュニティキャラ
   if (!isGuest) {
     const likedRes = await api('/characters/liked');
+    let liked = [];
     if (likedRes.ok) {
-      const liked = await likedRes.json();
+      liked = await likedRes.json();
       if (liked.length > 0) {
         document.getElementById('chatlist-liked-section').style.display = 'block';
         renderCharCards('chatlist-liked', liked);
       }
     }
+
+    // コミュニティキャラクター（キャッシュ読み込み）
+    if (communityChars.length === 0) {
+      const pubRes = await api('/characters/public');
+      if (pubRes.ok) communityChars = await pubRes.json();
+    }
+    const alreadyChatting = new Set(Object.values(_charConvMap).length > 0
+      ? Object.keys(_charConvMap).map(Number) : []);
+    const likedIds = new Set(liked.map(c => c.id));
+    const filtered = communityChars.filter(c => !alreadyChatting.has(c.id) && !likedIds.has(c.id));
+    for (let i = filtered.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [filtered[i], filtered[j]] = [filtered[j], filtered[i]];
+    }
+    const toShow = filtered.slice(0, 6);
+    const commSec = document.getElementById('chatlist-community-section');
+    if (commSec && toShow.length > 0) {
+      commSec.style.display = 'block';
+      renderCharCards('chatlist-community', toShow);
+    }
   } else {
     // サンプルキャラを表示
     const sampleRes = await api('/characters/sample');
-    if (sampleRes.ok) renderCharCards('chatlist-mine', await sampleRes.json());
+    if (sampleRes.ok) {
+      const commSec = document.getElementById('chatlist-community-section');
+      if (commSec) {
+        commSec.style.display = 'block';
+        document.querySelector('#chatlist-community-section h3').textContent = 'サンプルキャラクター';
+        renderCharCards('chatlist-community', await sampleRes.json());
+      }
+    }
   }
 }
 
@@ -437,7 +472,7 @@ function _attachConvListDeleteHandlers(container) {
         const r = await api(`/conversations/${convId}`, { method: 'DELETE' });
         if (r.ok) { showToast('削除しました', 'success'); loadChatList(); loadConversations(); }
         else showToast('削除に失敗しました', 'error');
-      }, '削除する');
+      }, '会話の削除');
     };
     el.addEventListener('contextmenu', e => { e.preventDefault(); trigger(); });
     el.addEventListener('touchstart', () => { _longTimer = setTimeout(trigger, 600); }, { passive: true });
@@ -647,14 +682,16 @@ async function showCharDetail(charId) {
         ${profileHtml}
         <div class="cd-actions">
           <button class="btn cd-btn-chat" onclick="startChat(${c.id})">💬 このキャラクターとチャット</button>
-          ${isLoggedIn ? `
+          ${isLoggedIn
+            ? ((!c.is_owner || c.is_admin) ? `
             <div class="cd-action-row">
               <button class="btn cd-btn-like${likedClass}" id="cd-like-btn" onclick="toggleCharLike(${c.id})">
                 ${likedText}
               </button>
             </div>
             <button class="btn cd-btn-report" onclick="reportChar(${c.id})">⚠ 不正報告</button>
-          ` : `
+          ` : '')
+            : `
             <a class="btn cd-btn-like" onclick="location.href=LOGIN_URL">ログインしていいね・報告</a>
           `}
         </div>
@@ -717,8 +754,9 @@ function reportChar(charId) {
 }
 
 function editCharFromDetail(charId) {
-  // TODO: キャラクター編集画面への遷移
-  showToast('編集機能は準備中です', 'info');
+  _editReturnScreen = 'char-detail';
+  _editReturnCharId = charId;
+  editCharacter(charId);
 }
 
 function renderCharCards(containerId, chars) {
@@ -730,7 +768,10 @@ function renderCharCards(containerId, chars) {
       ? '<img src="' + esc(c.avatar_url) + '" alt="">'
       : esc(c.char_name ? c.char_name[0] : c.name[0]);
     const tags = (c.genre_personality || []).slice(0, 2).map(t => '<span class="char-card-tag">' + t + '</span>').join('');
-    return '<div class="char-card" onclick="showCharDetail(' + c.id + ')">' +
+    const clickAction = _charConvMap[c.id]
+      ? 'openConversation(' + _charConvMap[c.id] + ')'
+      : 'showCharDetail(' + c.id + ')';
+    return '<div class="char-card" onclick="' + clickAction + '">' +
       '<div class="char-card-avatar">' + avatarInner + '</div>' +
       '<div class="char-card-name">' + esc(c.name) + '</div>' +
       '<div class="char-card-desc">' + esc(c.profile || '') + '</div>' +
@@ -770,6 +811,7 @@ async function loadConversations() {
   const res = await api('/conversations');
   if (!res.ok) return;
   const convs = (await res.json()).slice(0, 5);
+  convs.forEach(c => { if (c.character_id) _charConvMap[c.character_id] = c.id; });
   el.innerHTML = convs.map(c => {
     const isDel = c.character_is_deleted || 0;
     const avInner = c.character_avatar
@@ -806,6 +848,8 @@ async function openConversation(convId) {
   if (myLoadId !== _convLoadId) return;
 
   currentCharacter = data.character;
+  // TTS利用可否（サーバー判定結果 + キャラに音声設定があること）
+  _ttsAvailable = !!(data.tts_available && currentCharacter?.voice_model);
   // スタイルマップ構築
   _vvStyleMap = {};
   if (currentCharacter?.tts_styles) {
@@ -814,7 +858,7 @@ async function openConversation(convId) {
   }
   // チャットメニューのTTSボタン表示切替
   const avBtn = document.getElementById('auto-voice-btn');
-  if (avBtn) avBtn.style.display = currentCharacter?.voice_model ? '' : 'none';
+  if (avBtn) avBtn.style.display = _ttsAvailable ? '' : 'none';
 
   document.getElementById('header-title').textContent = currentCharacter ? currentCharacter.name : 'チャット';
   document.getElementById('chat-header-name').textContent = currentCharacter ? currentCharacter.name : 'チャット';
@@ -853,7 +897,7 @@ async function openConversation(convId) {
     el.innerHTML = _renderMessages(data.messages);
     inputArea.style.display = '';
     // 自動読み上げ（最後のAIメッセージ）
-    if (_ttsAutoPlay && currentCharacter?.voice_model) {
+    if (_ttsAutoPlay && _ttsAvailable) {
       setTimeout(ttsAutoPlayLast, 200);
     }
     // 最後がuserメッセージ（AIが未返答 or 失敗）なら再送UIを表示
@@ -1095,7 +1139,7 @@ function getDisplayText(text) {
 
 // === メッセージ長押し削除 ===
 function _renderMessages(messages) {
-  const hasTts = currentCharacter && currentCharacter.voice_model;
+  const hasTts = _ttsAvailable;
   return messages.map(m => {
     const deleted = m.is_deleted ? ' msg-soft-deleted' : '';
     if (m.role === 'user')
@@ -1282,7 +1326,7 @@ async function _sendRequest(msg, aiMsg, chatEl) {
             const rawText = aiText.replace(/<<<STATE>>>[\s\S]*?<<\/STATE>>>/g, '').replace(/<<<STATE>>>[\s\S]*$/g, '').trim();
             aiMsg.dataset.raw = rawText;
             // 読み上げボタン追加（TTS設定がある場合）
-            if (currentCharacter && currentCharacter.voice_model) {
+            if (_ttsAvailable) {
               const ttsBtn = document.createElement('button');
               ttsBtn.className = 'tts-btn';
               ttsBtn.textContent = '▶';
@@ -1298,7 +1342,10 @@ async function _sendRequest(msg, aiMsg, chatEl) {
             if (balRes.ok) updateBalance(await balRes.json());
           }
           if (data.error) {
-            aiMsg.innerHTML += '<br><span style="color:var(--accent);">' + esc(data.error) + '</span>';
+            const errSpan = document.createElement('span');
+            errSpan.style.cssText = 'display:inline-flex;align-items:center;gap:6px;color:var(--accent);margin-top:6px';
+            errSpan.innerHTML = '<br>' + esc(data.error) + ' <button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--sub);cursor:pointer;font-size:1rem;padding:0;line-height:1" title="閉じる">×</button>';
+            aiMsg.appendChild(errSpan);
           }
         } catch (e) {}
       }
@@ -1411,9 +1458,19 @@ async function saveCharacter() {
   }
   if (res.ok) {
     communityChars = []; // キャッシュクリア
-    showToast(_editingCharId ? 'キャラクターを更新しました' : 'キャラクターを作成しました', 'success');
+    const updatedId = _editingCharId;
+    showToast(updatedId ? 'キャラクターを更新しました' : 'キャラクターを作成しました', 'success');
     _editingCharId = null;
-    navTo('profile');
+    if (_editReturnScreen === 'char-detail' && updatedId) {
+      _editReturnScreen = null;
+      _editReturnCharId = null;
+      showCharDetail(updatedId);
+    } else if (_editReturnScreen === 'chat') {
+      _editReturnScreen = null;
+      showScreen('chat');
+    } else {
+      navTo('profile');
+    }
   } else {
     const err = await res.json().catch(() => ({}));
     showInlineError('cr-save-error', err.detail || (_editingCharId ? '更新に失敗しました' : '作成に失敗しました'));
@@ -2329,7 +2386,7 @@ async function _playSe(name) {
 
 // 自動読み上げ: 会話の最後のAIメッセージを再生
 function ttsAutoPlayLast() {
-  if (!_ttsAutoPlay || !currentCharacter?.voice_model) return;
+  if (!_ttsAutoPlay || !_ttsAvailable) return;
   const chatEl = document.getElementById('chat-messages');
   if (!chatEl) return;
   const lastAiEl = [...chatEl.querySelectorAll('.msg-ai[data-msg-id]')].filter(el => !el.classList.contains('msg-soft-deleted')).pop();
@@ -2365,7 +2422,10 @@ function _closeChatMenuOutside(e) {
 function editCurrentChar() {
   _chatMenuOpen = false;
   document.getElementById('chat-menu-panel')?.classList.remove('open');
-  if (currentCharacter) editCharacter(currentCharacter.id);
+  if (currentCharacter) {
+    _editReturnScreen = 'chat';
+    editCharacter(currentCharacter.id);
+  }
 }
 
 function toggleAutoVoice() {

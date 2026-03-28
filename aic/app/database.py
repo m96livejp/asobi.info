@@ -17,3 +17,12 @@ async def get_db():
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # カラム追加マイグレーション（SQLiteはADD COLUMNのみ対応）
+        migrations = [
+            "ALTER TABLE characters ADD COLUMN is_recommended INTEGER DEFAULT 0",
+        ]
+        for sql in migrations:
+            try:
+                await conn.execute(__import__("sqlalchemy").text(sql))
+            except Exception:
+                pass  # カラムが既に存在する場合は無視

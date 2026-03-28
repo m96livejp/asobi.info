@@ -10,7 +10,7 @@ import httpx
 
 from ..database import async_session
 from ..models.image import GenerationQueue, UserImage
-from ..models.settings import SdSettings
+from ..models.settings import SdSettings, SdSelectableModel
 
 IMAGE_DIR = "/opt/asobi/aic/frontend/images/avatars"
 IMAGE_URL_BASE = "/images/avatars"
@@ -159,7 +159,19 @@ async def _process_job(job: GenerationQueue, db: AsyncSession):
     try:
         async with httpx.AsyncClient(timeout=180) as client:
             r = await client.post(f"{endpoint}/sdapi/v1/txt2img", json=payload)
-            r.raise_for_status()
+            if r.status_code != 200:
+                # SD WebUIのエラー詳細を取得
+                try:
+                    body = r.text[:500]
+                except Exception:
+                    body = "(レスポンス読取不可)"
+                _worker_stopped = True
+                _worker_stop_reason = f"SD API {r.status_code}: {body}"
+                job.status = "failed"
+                job.error_message = _worker_stop_reason
+                job.completed_at = datetime.now()
+                await db.commit()
+                return
             data = r.json()
     except httpx.TimeoutException:
         _worker_stopped = True
@@ -194,27 +206,53 @@ async def _process_job(job: GenerationQueue, db: AsyncSession):
         await db.commit()
         return
 
+    # シード値を取得（SD WebUIは info に JSON文字列で all_seeds を返す）
+    all_seeds = []
+    try:
+        import json as _json
+        info_str = data.get("info", "")
+        if isinstance(info_str, str):
+            info_obj = _json.loads(info_str)
+        else:
+            info_obj = info_str
+        all_seeds = info_obj.get("all_seeds", [])
+    except Exception:
+        pass
+
     # ファイル保存 & DB登録（status=pending）
     os.makedirs(IMAGE_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
 
-    for img_b64 in images[:job.batch_size or BATCH_SIZE]:
+    for idx, img_b64 in enumerate(images[:job.batch_size or BATCH_SIZE]):
         uid = uuid_mod.uuid4().hex[:8]
         filename = f"gen_{ts}_{uid}.png"
         save_path = os.path.join(IMAGE_DIR, filename)
         with open(save_path, "wb") as f:
             f.write(base64.b64decode(img_b64))
         url = f"{IMAGE_URL_BASE}/{filename}"
+        seed_val = all_seeds[idx] if idx < len(all_seeds) else None
         db.add(UserImage(
             user_id=job.user_id,
             url=url,
             prompt=job.prompt,
             template_id=job.template_id,
+            model=job.model,
+            seed=seed_val,
             status="pending",
         ))
 
     job.status = "completed"
     job.completed_at = datetime.now()
+
+    # 選択可能モデルの利用回数をカウントアップ
+    if job.model:
+        sel_result = await db.execute(
+            select(SdSelectableModel).where(SdSelectableModel.model_id == job.model)
+        )
+        sel_model = sel_result.scalar_one_or_none()
+        if sel_model:
+            sel_model.use_count = (sel_model.use_count or 0) + 1
+
     await db.commit()
 
 

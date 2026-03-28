@@ -49,12 +49,29 @@ class SdSelectableModel(Base):
     created_at   = Column(DateTime, server_default=func.now())
 
 
+# ビルトインキー（DBカラムに直接マップ、プレフィックスなし）
+STATE_BUILTIN_KEYS = {"relationship", "mood", "environment", "situation", "inventory", "goals"}
+
+# カスタムフィールドのプレフィックス
+STATE_CUSTOM_PREFIX = "s_"
+
+DEFAULT_STATE_FIELDS = [
+    {"key": "relationship", "label": "関係性",   "default": "初対面",   "enabled": True},
+    {"key": "mood",         "label": "気分",      "default": "普通",     "enabled": True},
+    {"key": "environment",  "label": "環境と場所", "default": "不明",     "enabled": True},
+    {"key": "situation",    "label": "状況",      "default": "特になし", "enabled": True},
+    {"key": "inventory",    "label": "所持品",    "default": "なし",     "enabled": True},
+    {"key": "goals",        "label": "目標",      "default": "特になし", "enabled": True},
+]
+
+
 class ChatStateConfig(Base):
-    """チャットステータス機能のON/OFF（id=1 の1行のみ使用）"""
+    """チャットステータス機能のON/OFF + フィールド定義（id=1 の1行のみ使用）"""
     __tablename__ = "chat_state_config"
 
     id = Column(Integer, primary_key=True)
-    enabled = Column(Integer, nullable=False, default=0)  # 0=OFF, 1=ON
+    enabled = Column(Integer, nullable=False, default=0)      # 0=OFF, 1=ON
+    fields_json = Column(Text, nullable=True)                  # JSON: [{key, label, default, enabled}]
 
 
 class AiSettings(Base):
@@ -69,6 +86,10 @@ class AiSettings(Base):
     cost = Column(Integer, nullable=False, default=1)                 # 1メッセージあたりのポイントコスト
     response_guideline = Column(Text, nullable=True)                  # レスポンス文字数・スタイルの指示文
     voicevox_endpoint = Column(String, nullable=True)                 # VOICEVOX APIエンドポイント
+    tts_mode = Column(String, nullable=False, default="disabled")     # disabled / all / admin_only
+    tts_emotion = Column(Integer, nullable=False, default=0)          # 感情システム適用
+    tts_se = Column(Integer, nullable=False, default=0)               # 効果音システム適用
+    tts_autoplay = Column(Integer, nullable=False, default=0)         # 自動再生表示（ユーザー毎に個別設定）
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ..config import get_settings
 from ..database import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, require_user
 from ..models.user import User
 from ..models.balance import UserBalance, BalanceTransaction
 from pydantic import BaseModel
@@ -34,6 +34,7 @@ def user_dict(user: User) -> dict:
         "avatar_url": user.avatar_url,
         "role": user.role,
         "is_guest": user.asobi_user_id is None,
+        "is_suspended": bool(user.is_suspended),
     }
 
 
@@ -54,10 +55,13 @@ async def guest_login(req: GuestRequest, db: AsyncSession = Depends(get_db)):
         user = User(device_id=device_id, display_name=req.display_name)
         db.add(user)
         await db.flush()
-        balance = UserBalance(user_id=user.id, points=100, crystals=0)
-        db.add(balance)
-        tx = BalanceTransaction(user_id=user.id, currency="points", amount=100, type="signup", memo="初回登録ボーナス")
-        db.add(tx)
+        # 残高レコードが既に存在する場合はスキップ（孤児レコード対策）
+        existing_bal = await db.execute(select(UserBalance).where(UserBalance.user_id == user.id))
+        if not existing_bal.scalar_one_or_none():
+            balance = UserBalance(user_id=user.id, points=100, crystals=0)
+            db.add(balance)
+            tx = BalanceTransaction(user_id=user.id, currency="points", amount=100, type="signup", memo="初回登録ボーナス")
+            db.add(tx)
         await db.commit()
         await db.refresh(user)
 
@@ -95,10 +99,13 @@ async def _process_asobi_token(token_str: str, db: AsyncSession) -> User:
         user = User(asobi_user_id=asobi_id, display_name=name, avatar_url=avatar or None, role=role)
         db.add(user)
         await db.flush()
-        balance = UserBalance(user_id=user.id, points=100, crystals=0)
-        db.add(balance)
-        tx = BalanceTransaction(user_id=user.id, currency="points", amount=100, type="signup", memo="初回登録ボーナス")
-        db.add(tx)
+        # 残高レコードが既に存在する場合はスキップ（孤児レコード対策）
+        existing_bal = await db.execute(select(UserBalance).where(UserBalance.user_id == user.id))
+        if not existing_bal.scalar_one_or_none():
+            balance = UserBalance(user_id=user.id, points=100, crystals=0)
+            db.add(balance)
+            tx = BalanceTransaction(user_id=user.id, currency="points", amount=100, type="signup", memo="初回登録ボーナス")
+            db.add(tx)
     else:
         user.display_name = name
         user.avatar_url = avatar or None
@@ -131,12 +138,29 @@ async def asobi_callback_redirect(token: str, db: AsyncSession = Depends(get_db)
 <html><head><meta charset="UTF-8"><title>ログイン中...</title></head>
 <body><script>
 localStorage.setItem('aic_token', {token_json});
+document.cookie = 'aic_token=' + encodeURIComponent({token_json}) + ';path=/;max-age=2592000;SameSite=Lax;Secure';
 window.location.replace('/');
 </script></body></html>""")
     except (jwt.InvalidTokenError, ValueError, Exception):
         return HTMLResponse(content="""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
-<body><script>
-alert('認証エラーが発生しました');
-window.location.replace('/');
-</script></body></html>""")
+<body><p style="text-align:center;margin-top:40px;color:#e74c3c">認証エラーが発生しました</p>
+<script>setTimeout(function(){window.location.replace('/');},2000);</script>
+</body></html>""")
+
+
+class ProfileUpdate(BaseModel):
+    display_name: str | None = None
+
+
+@router.put("/profile")
+async def update_profile(req: ProfileUpdate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+    """ユーザープロフィール更新"""
+    if req.display_name is not None:
+        name = req.display_name.strip()
+        if not name or len(name) > 30:
+            raise HTTPException(status_code=400, detail="名前は1〜30文字で入力してください")
+        user.display_name = name
+    await db.commit()
+    await db.refresh(user)
+    return user_dict(user)

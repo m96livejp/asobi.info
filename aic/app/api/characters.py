@@ -60,6 +60,7 @@ def char_to_dict(c: Character, hide_private: bool = False) -> dict:
         "genre_era": json.loads(c.genre_era or "[]"),
         "genre_base": json.loads(c.genre_base or "[]"),
         "keywords": json.loads(c.keywords or "[]"),
+        "is_recommended": c.is_recommended,
         "like_count": c.like_count,
         "use_count": c.use_count,
         "voice_model": c.voice_model,
@@ -85,7 +86,7 @@ async def list_public(db: AsyncSession = Depends(get_db)):
             Character.is_public == 1,
             Character.is_deleted == 0,
             Character.review_status == "approved",
-        ).order_by(Character.like_count.desc(), Character.id.desc())
+        ).order_by(Character.is_recommended.desc(), Character.like_count.desc(), Character.id.desc())
     )
     return [char_to_dict(c, hide_private=True) for c in result.scalars()]
 

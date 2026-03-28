@@ -18,7 +18,7 @@ async def get_ai_settings(db: AsyncSession) -> AiSettings | None:
 DEFAULT_RESPONSE_GUIDELINE = "キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。"
 
 
-def build_system_prompt(character, conv_state=None, state_enabled: bool = False, response_guideline: str | None = None) -> str:
+def build_system_prompt(character, conv_state=None, state_enabled: bool = False, response_guideline: str | None = None, state_fields: list | None = None) -> str:
     """キャラクター設定からシステムプロンプトを組み立てる
 
     Args:
@@ -26,6 +26,7 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False,
         conv_state: ConversationState モデル（ステータス機能ON時）
         state_enabled: ステータス機能が有効かどうか
         response_guideline: レスポンス指示文（Noneの場合はデフォルト使用）
+        state_fields: ステータスフィールド定義リスト [{key, label, default, enabled}]
     """
     parts = []
     if character.char_name:
@@ -73,16 +74,32 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False,
 
     # ステータス機能が有効な場合
     if state_enabled and conv_state:
-        status_section = (
-            "\n\n## 現在のステータス\n"
-            f"- キャラクターとの関係性: {conv_state.relationship or '初対面'}\n"
-            f"- キャラクターの気分: {conv_state.mood or '普通'}\n"
-            f"- 環境と場所: {conv_state.environment or '不明'}\n"
-            f"- 状況: {conv_state.situation or '特になし'}\n"
-            f"- 所持品: {conv_state.inventory or 'なし'}\n"
-            f"- 目標: {conv_state.goals or '特になし'}"
-        )
-        parts.append(status_section)
+        from ..models.settings import DEFAULT_STATE_FIELDS
+        fields = state_fields if state_fields is not None else DEFAULT_STATE_FIELDS
+        active_fields = [f for f in fields if f.get("enabled", True)]
+
+        # 固定キーのカラムマップ
+        fixed_keys = {"relationship", "mood", "environment", "situation", "inventory", "goals"}
+
+        # カスタムフィールド値を取得
+        try:
+            extra = json.loads(conv_state.extra_fields or "{}") if hasattr(conv_state, 'extra_fields') else {}
+        except:
+            extra = {}
+
+        # ステータス現在値を構築
+        status_lines = []
+        for f in active_fields:
+            key = f["key"]
+            label = f["label"]
+            default = f.get("default", "")
+            if key in fixed_keys:
+                val = getattr(conv_state, key, None) or default
+            else:
+                val = extra.get(key) or default
+            status_lines.append(f"- {label}: {val}")
+
+        parts.append("\n\n## 現在のステータス\n" + "\n".join(status_lines))
 
         # 記憶
         try:
@@ -93,16 +110,18 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False,
             mem_lines = "\n".join(f"- {m}" for m in memories)
             parts.append(f"## 記憶\n{mem_lines}")
 
-        # 応答ルール
+        # STATE JSONテンプレートを動的生成
+        state_template_keys = {f["key"]: "..." for f in active_fields}
+        state_template_keys["memories"] = ["..."]
+        state_template_str = json.dumps(state_template_keys, ensure_ascii=False)
+
         parts.append(
             "## 応答ルール\n"
             "通常の会話テキストを返した後、必ず以下の形式でステータスを返してください。\n"
             "ステータスはキャラクターの性格に基づき、会話の流れに応じて自然に変化させてください。\n"
             "記憶には会話の中で覚えておくべき重要事項を追加・削除してください。\n"
             "各ステータスは短く簡潔に記述してください。\n\n"
-            "<<<STATE>>>\n"
-            '{"relationship":"...","mood":"...","environment":"...","situation":"...","inventory":"...","goals":"...","memories":["..."]}\n'
-            "<<</STATE>>>"
+            f"<<<STATE>>>\n{state_template_str}\n<<</STATE>>>"
         )
 
     # TTS音声スタイル指示（キャラクターに音声設定がある場合）

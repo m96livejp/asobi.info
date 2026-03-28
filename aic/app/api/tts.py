@@ -150,6 +150,39 @@ class VoiceModelPatch(BaseModel):
     sort_order: int | None = None
 
 
+class TestSynthRequest(BaseModel):
+    style_id: int
+    text: str = "こんにちは、よろしくお願いします。"
+
+
+@router.post("/admin/test-synthesis")
+async def admin_test_synthesis(
+    req: TestSynthRequest,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """管理者用：音声モデル試聴（任意のstyle_idでテスト合成）"""
+    vv_url = await _get_vv_url(db)
+    text = req.text.strip()[:100] or "こんにちは"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            q_res = await client.post(
+                f"{vv_url}/audio_query",
+                params={"text": text, "speaker": req.style_id},
+            )
+            q_res.raise_for_status()
+            s_res = await client.post(
+                f"{vv_url}/synthesis",
+                params={"speaker": req.style_id},
+                json=q_res.json(),
+                headers={"Content-Type": "application/json"},
+            )
+            s_res.raise_for_status()
+            return Response(content=s_res.content, media_type="audio/wav")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"VOICEVOX error: {str(e)}")
+
+
 @router.get("/admin/speakers")
 async def admin_get_speakers(user: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     """VOICEVOX スピーカー一覧取得（管理者のみ）"""
@@ -201,8 +234,8 @@ async def admin_sync_speakers(user: User = Depends(require_admin), db: AsyncSess
                 show_female=0,
                 show_male=0,
                 show_other=0,
-                is_active=1,
-                sort_order=0,
+                is_active=0,
+                sort_order=99,
             ))
             added += 1
 

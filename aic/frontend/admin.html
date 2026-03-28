@@ -284,45 +284,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         <textarea id="response-guideline" rows="4" placeholder="例: キャラクターとして自然に会話してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。"></textarea>
         <div class="hint">空欄の場合はデフォルト指示文が使用されます。全キャラクター共通のシステムプロンプト末尾に追加されます。</div>
       </div>
-      <div class="form-group">
-        <label>VOICEVOX エンドポイント</label>
-        <input type="text" id="voicevox-endpoint" placeholder="http://127.0.0.1:50021">
-        <div class="hint">VOICEVOX Engine のURL（空欄=http://127.0.0.1:50021）</div>
-      </div>
       <button class="btn btn-primary" id="btn-save" onclick="saveAiSettings()">保存</button>
-    </div>
-
-    <div class="card" style="margin-top:20px">
-      <div class="card-title">チャット用システムプロンプト</div>
-      <div style="font-size:0.78rem;color:var(--sub);margin-bottom:6px">全キャラクター共通</div>
-      <pre id="chat-prompt-common" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:0.82rem;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-all;margin-bottom:16px">読み込み中...</pre>
-      <div style="font-size:0.78rem;color:var(--sub);margin-bottom:6px">キャラクター固有部分のプレビュー（選択任意）</div>
-      <div class="form-group" style="margin-bottom:8px">
-        <select id="prompt-preview-char" onchange="previewChatPrompt()">
-          <option value="">-- キャラクターを選択 --</option>
-        </select>
-      </div>
-      <pre id="chat-prompt-preview" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:0.82rem;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;display:none"></pre>
-    </div>
-
-    <div class="card" style="margin-top:20px">
-      <div class="card-title">送信内容確認</div>
-      <div style="font-size:0.85rem;color:var(--sub);margin-bottom:12px">会話を選択すると、AIに実際に送られる内容を順番どおりに表示します。</div>
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <select id="payload-user-select" style="flex:1" onchange="loadPayloadConvs()">
-          <option value="">-- ユーザーを選択 --</option>
-        </select>
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <select id="payload-conv-select" style="flex:1">
-          <option value="">-- 会話を選択 --</option>
-        </select>
-        <button class="btn" onclick="loadPayloadPreview()">確認</button>
-      </div>
-      <div id="payload-preview" style="display:none">
-        <div id="payload-meta" style="font-size:0.8rem;color:var(--sub);margin-bottom:10px"></div>
-        <div id="payload-list"></div>
-      </div>
     </div>
 
     <div class="card" style="margin-top:20px">
@@ -332,7 +294,21 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           <input type="checkbox" id="chat-state-enabled" onchange="saveChatStateConfig()" style="width:auto">
           ステータス・記憶システムを有効にする
         </label>
-        <div class="hint">有効時、AIがキャラクターの状態（関係性・気分・場所・状況・所持品・目標）と記憶を会話ごとに管理します。</div>
+        <div class="hint">有効時、AIがキャラクターの状態と記憶を会話ごとに管理します。</div>
+      </div>
+      <div style="margin-top:14px">
+        <div style="font-size:0.88rem;font-weight:600;margin-bottom:8px">ステータス項目</div>
+        <div id="state-fields-list" style="margin-bottom:10px;overflow-x:auto"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+          <input type="text" id="new-field-key" placeholder="変数名（a-z 0-9）" style="width:140px" oninput="this.value=this.value.replace(/[^a-z0-9]/g,'')">
+          <input type="text" id="new-field-label" placeholder="表示名" style="width:110px">
+          <input type="text" id="new-field-default" placeholder="初期値" style="width:110px">
+          <button class="btn btn-secondary btn-sm" onclick="addStateField()">＋ 追加</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn btn-primary btn-sm" onclick="saveStateFields()">保存</button>
+          <span id="state-fields-result" style="font-size:0.83rem"></span>
+        </div>
       </div>
     </div>
   </div>
@@ -366,9 +342,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       <div style="overflow-x:auto">
         <table class="tbl" id="char-table">
           <thead><tr>
-            <th>ID</th><th>名前</th><th>作成者</th><th>❤</th><th>💬</th><th>作成日</th><th>操作</th>
+            <th>ID</th><th>名前</th><th>作成者</th><th>❤</th><th title="ユニークユーザー数">👤</th><th title="AIメッセージ総数">💬</th><th>作成日</th><th>操作</th>
           </tr></thead>
-          <tbody id="char-tbody"><tr><td colspan="7" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
+          <tbody id="char-tbody"><tr><td colspan="8" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -377,6 +353,54 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
   <!-- VOICEVOX音声モデル管理 -->
   <div id="sec-tts" class="section">
     <div class="section-title">🔊 音声設定（VOICEVOX）</div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">VOICEVOX 接続設定</div>
+      <div class="form-group">
+        <label>エンドポイント</label>
+        <input type="text" id="voicevox-endpoint" placeholder="http://127.0.0.1:50021">
+        <div class="hint">VOICEVOX Engine のURL（空欄=http://127.0.0.1:50021）</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="saveVoicevoxEndpoint()">保存</button>
+        <button class="btn btn-info btn-sm" onclick="testVoicevoxConnection()">疎通テスト</button>
+        <span id="vv-test-result" style="font-size:0.83rem"></span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">音声機能設定</div>
+      <div class="form-group">
+        <label>音声モード</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+            <input type="radio" name="tts-mode" value="disabled" onchange="saveTtsSettings()"> 無効
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+            <input type="radio" name="tts-mode" value="all" onchange="saveTtsSettings()"> 全体適用
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+            <input type="radio" name="tts-mode" value="admin_only" onchange="saveTtsSettings()"> 管理者適用
+          </label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>追加オプション</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+            <input type="checkbox" id="tts-emotion" onchange="saveTtsSettings()"> 感情システム適用
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+            <input type="checkbox" id="tts-se" onchange="saveTtsSettings()"> 効果音システム適用
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+            <input type="checkbox" id="tts-autoplay" onchange="saveTtsSettings()"> 自動再生表示
+            <span style="font-size:0.78rem;color:var(--sub)">（有効でもユーザーがキャラクター毎に設定が必要）</span>
+          </label>
+        </div>
+      </div>
+      <span id="tts-settings-result" style="font-size:0.83rem"></span>
+    </div>
 
     <!-- 音声モデル一覧 -->
     <div class="card">
@@ -393,14 +417,18 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         <button class="btn btn-secondary btn-sm" onclick="loadTtsVoiceModels()">更新</button>
         <button class="btn btn-info btn-sm" onclick="loadVvSpeakersForAdmin()">VOICEVOXから同期</button>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font-size:0.83rem;color:var(--sub);white-space:nowrap">試聴テキスト：</span>
+        <input type="text" id="tts-preview-text" value="こんにちは、よろしくお願いします。" style="flex:1;max-width:400px" placeholder="試聴するテキストを入力">
+      </div>
       <div id="tts-vm-list" style="overflow-x:auto">
         <table class="tbl" style="min-width:860px">
           <thead><tr>
             <th style="width:52px">表示順</th>
+            <th style="width:160px">試聴</th>
             <th>モデル名（VOICEVOX）</th>
             <th>表示名</th>
             <th>ジャンル</th>
-            <th>スタイル</th>
             <th style="width:110px">表示設定</th>
             <th style="width:60px">有効</th>
             <th style="width:40px">削除</th>
@@ -885,37 +913,11 @@ async function loadAiSettings() {
   document.getElementById('voicevox-endpoint').value = d.voicevox_endpoint || '';
   onProviderChange();
 
-  // 共通プロンプト表示
-  const guideline = d.response_guideline || 'キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。';
-  document.getElementById('chat-prompt-common').textContent = guideline;
-
-  // キャラクター一覧ロード（固有プレビュー用）
-  const r2 = await api('/admin/chat-prompt-info');
-  if (r2.ok) {
-    const info = await r2.json();
-    const sel = document.getElementById('prompt-preview-char');
-    sel.innerHTML = '<option value="">-- キャラクターを選択 --</option>';
-    for (const c of info.characters) {
-      sel.innerHTML += `<option value="${c.id}">${esc(c.name)}${c.char_name ? ' (' + esc(c.char_name) + ')' : ''}</option>`;
-    }
-  }
-
   // チャットステータス設定ロード
-  const r3 = await api('/admin/chat-state-config');
-  if (r3.ok) {
-    const cfg = await r3.json();
+  const r2 = await api('/admin/chat-state-config');
+  if (r2.ok) {
+    const cfg = await r2.json();
     document.getElementById('chat-state-enabled').checked = !!cfg.enabled;
-  }
-
-  // 送信内容確認：ユーザー一覧ロード
-  const r4 = await api('/admin/users');
-  if (r4.ok) {
-    const users = await r4.json();
-    const sel = document.getElementById('payload-user-select');
-    sel.innerHTML = '<option value="">-- ユーザーを選択 --</option>';
-    users.forEach(u => {
-      sel.innerHTML += `<option value="${u.id}">${esc(u.display_name)} (ID:${u.id})</option>`;
-    });
   }
 }
 
@@ -965,8 +967,76 @@ async function loadPayloadPreview() {
 
 async function saveChatStateConfig() {
   const enabled = document.getElementById('chat-state-enabled').checked ? 1 : 0;
-  const r = await api('/admin/chat-state-config', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({enabled})});
-  if (r.ok) showToast('ステータス設定を保存しました');
+  const r = await api('/admin/chat-state-config', { method: 'PUT', body: JSON.stringify({ enabled }) });
+  if (r.ok) toast('ステータス設定を保存しました');
+}
+
+let _stateFields = [];
+
+async function loadStateFields() {
+  const r = await api('/admin/state-fields');
+  if (!r.ok) return;
+  _stateFields = await r.json();
+  renderStateFields();
+}
+
+const STATE_BUILTIN_KEYS = new Set(['relationship','mood','environment','situation','inventory','goals']);
+const STATE_CUSTOM_PREFIX = 's_';
+
+function renderStateFields() {
+  const el = document.getElementById('state-fields-list');
+  if (!el) return;
+  const inpStyle = 'width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:0.83rem;font-family:inherit';
+  el.innerHTML = `
+    <table class="tbl" style="width:100%">
+      <thead><tr>
+        <th style="width:36px;text-align:center">有効</th>
+        <th>変数名</th>
+        <th>表示名</th>
+        <th>初期値</th>
+        <th style="width:36px"></th>
+      </tr></thead>
+      <tbody>${_stateFields.map((f, i) => {
+        const isBuiltin = STATE_BUILTIN_KEYS.has(f.key);
+        const displayKey = isBuiltin ? f.key : (f.key.startsWith(STATE_CUSTOM_PREFIX) ? f.key.slice(STATE_CUSTOM_PREFIX.length) : f.key);
+        const keyCell = isBuiltin
+          ? `<td><span style="font-size:0.83rem;color:var(--sub);padding:4px 8px">${esc(f.key)}</span></td>`
+          : `<td><div style="display:flex;align-items:center;gap:2px"><span style="font-size:0.78rem;color:var(--sub);white-space:nowrap">${STATE_CUSTOM_PREFIX}</span><input type="text" value="${esc(displayKey)}" style="${inpStyle}" placeholder="例: hp" onchange="_stateFields[${i}].key=this.value.trim()?'${STATE_CUSTOM_PREFIX}'+this.value.trim().replace(/[^a-z0-9]/g,''):_stateFields[${i}].key"></div></td>`;
+        return `<tr>
+          <td style="text-align:center"><input type="checkbox" ${f.enabled ? 'checked' : ''} onchange="_stateFields[${i}].enabled=this.checked" style="width:auto"></td>
+          ${keyCell}
+          <td><input type="text" value="${esc(f.label)}" style="${inpStyle}" placeholder="例: 気分" onchange="_stateFields[${i}].label=this.value.trim()"></td>
+          <td><input type="text" value="${esc(f.default||'')}" style="${inpStyle}" placeholder="例: 普通" onchange="_stateFields[${i}].default=this.value"></td>
+          <td>${isBuiltin ? '' : `<button class="btn btn-sm btn-danger" onclick="_stateFields.splice(${i},1);renderStateFields()" style="padding:2px 8px">✕</button>`}</td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table>`;
+}
+
+function addStateField() {
+  const rawKey = document.getElementById('new-field-key')?.value.trim().replace(/[^a-z0-9]/g, '');
+  const label = document.getElementById('new-field-label')?.value.trim();
+  const def = document.getElementById('new-field-default')?.value.trim() || '';
+  if (!rawKey || !label) { toast('変数名と表示名は必須です', 'err'); return; }
+  const key = STATE_CUSTOM_PREFIX + rawKey;
+  if (_stateFields.find(f => f.key === key)) { toast('同じ変数名が既にあります', 'err'); return; }
+  _stateFields.push({ key, label, default: def, enabled: true });
+  renderStateFields();
+  document.getElementById('new-field-key').value = '';
+  document.getElementById('new-field-label').value = '';
+  document.getElementById('new-field-default').value = '';
+}
+
+async function saveStateFields() {
+  const r = await api('/admin/state-fields', { method: 'PUT', body: JSON.stringify(_stateFields) });
+  const el = document.getElementById('state-fields-result');
+  if (r.ok) {
+    el.textContent = '✅ 保存しました'; el.style.color = 'var(--ok)';
+    setTimeout(() => el.textContent = '', 2000);
+  } else {
+    el.textContent = '❌ 保存失敗'; el.style.color = 'var(--accent)';
+  }
 }
 
 async function previewChatPrompt() {
@@ -1285,7 +1355,8 @@ async function loadCharacters() {
       <td>${esc(c.name)}</td>
       <td style="color:var(--sub)">${c.creator_id}</td>
       <td>${c.like_count}</td>
-      <td>${c.use_count}</td>
+      <td title="ユニークユーザー数">${c.use_count}</td>
+      <td title="AIメッセージ総数">${c.msg_count}</td>
       <td style="color:var(--sub);font-size:0.78rem">${c.created_at.slice(0,10)}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem">
@@ -1293,6 +1364,12 @@ async function loadCharacters() {
         </label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem">
           <input type="checkbox" ${c.is_sample ? 'checked' : ''} onchange="setCharFlag(${c.id},{is_sample:this.checked?1:0})"> サンプル
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem;color:${c.review_status==='approved'?'var(--ok)':'var(--sub)'}">
+          <input type="checkbox" ${c.review_status === 'approved' ? 'checked' : ''} onchange="setCharFlag(${c.id},{review_status:this.checked?'approved':'pending'})"> 審査
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem;color:${c.is_recommended?'var(--accent)':'var(--sub)'}">
+          <input type="checkbox" ${c.is_recommended ? 'checked' : ''} onchange="setCharFlag(${c.id},{is_recommended:this.checked?1:0})"> おすすめ
         </label>
         <button class="btn btn-sm btn-info" onclick="openCharConversations(${c.id},'${esc(c.name)}')">💬 会話</button>
         <button class="btn btn-sm btn-danger" onclick="deleteChar(${c.id},'${esc(c.name)}')">削除</button>
@@ -1969,6 +2046,7 @@ async function clearQueueStatus(status) {
 // ─── TTS音声モデル管理（インライン編集） ───
 let _ttsVmAll = [];
 let _vvSpeakersCache = [];
+const _ttsStylesMap = {}; // vmId → styles[]
 
 async function loadTtsVoiceModels() {
   const r = await api('/tts/admin/voice-models');
@@ -1998,12 +2076,18 @@ function filterTtsModels() {
   }
   if (empty) empty.style.display = 'none';
   const inpStyle = 'width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 7px;color:var(--text);font-family:inherit;font-size:0.85rem;';
+  rows.forEach(m => { _ttsStylesMap[m.id] = m.styles || []; });
   tbody.innerHTML = rows.map(m => `<tr data-vmid="${m.id}">
     <td><input type="number" min="0" max="999" value="${m.sort_order}" style="${inpStyle}width:50px;text-align:center" onchange="patchTtsVm(${m.id},{sort_order:parseInt(this.value)||0})"></td>
+    <td style="white-space:nowrap">
+      ${(m.styles||[]).length > 1
+        ? `<select id="tts-style-sel-${m.id}" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.78rem;padding:2px 4px;max-width:100px" title="スタイル選択">${(m.styles||[]).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>`
+        : ''}
+      <button class="btn btn-sm btn-secondary" id="tts-play-btn-${m.id}" onclick="previewTtsVm(${m.id})" title="試聴" style="padding:3px 7px">▶</button>
+    </td>
     <td style="font-size:0.82rem;color:var(--sub)">${esc(m.speaker_name||'')}</td>
     <td><input type="text" value="${esc(m.display_name)}" style="${inpStyle}" placeholder="表示名" onblur="if(this.value.trim())patchTtsVm(${m.id},{display_name:this.value.trim()})"></td>
     <td><input type="text" value="${esc(m.genre||'')}" style="${inpStyle}" placeholder="例: 少女、大人女性" onblur="patchTtsVm(${m.id},{genre:this.value.trim()||''})"></td>
-    <td style="font-size:0.78rem;color:var(--sub)">${(m.styles||[]).map(s=>esc(s.name)).join(', ')}</td>
     <td style="white-space:nowrap">
       <label title="女性"><input type="checkbox" ${m.show_female?'checked':''} onchange="patchTtsVm(${m.id},{show_female:this.checked?1:0})"> 女</label>
       <label title="男性" style="margin-left:4px"><input type="checkbox" ${m.show_male?'checked':''} onchange="patchTtsVm(${m.id},{show_male:this.checked?1:0})"> 男</label>
@@ -2030,6 +2114,123 @@ async function patchTtsVm(id, patch, btn) {
     // キャッシュ更新
     const m = _ttsVmAll.find(x => x.id === id);
     if (m) m.is_active = patch.is_active;
+  }
+}
+
+let _ttsPreviewAudio = null;
+const _ttsAudioCache = {}; // "vmId_styleId_text" → blob URL
+
+async function previewTtsVm(vmId) {
+  const btn = document.getElementById(`tts-play-btn-${vmId}`);
+  // 再生中なら停止
+  if (_ttsPreviewAudio && !_ttsPreviewAudio.ended && !_ttsPreviewAudio.paused) {
+    _ttsPreviewAudio.pause();
+    _ttsPreviewAudio = null;
+    if (btn) btn.textContent = '▶';
+    return;
+  }
+  // スタイルIDを取得（_ttsStylesMapから、複数ある場合はselectの値、1つなら先頭）
+  const styles = _ttsStylesMap[vmId] || [];
+  let styleId = styles.length > 0 ? styles[0].id : 0;
+  const sel = document.getElementById(`tts-style-sel-${vmId}`);
+  if (sel) styleId = parseInt(sel.value) || styleId;
+
+  if (btn) { btn.textContent = '…'; btn.disabled = true; }
+  try {
+    const previewText = document.getElementById('tts-preview-text')?.value.trim() || 'こんにちは、よろしくお願いします。';
+    const cacheKey = `${vmId}_${styleId}_${previewText}`;
+    let url = _ttsAudioCache[cacheKey];
+    if (!url) {
+      const r = await api('/tts/admin/test-synthesis', {
+        method: 'POST',
+        body: JSON.stringify({ style_id: styleId, text: previewText })
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        toast('試聴失敗: ' + (d.detail || r.status), 'err');
+        return;
+      }
+      const blob = await r.blob();
+      url = URL.createObjectURL(blob);
+      _ttsAudioCache[cacheKey] = url;
+    }
+    _ttsPreviewAudio = new Audio(url);
+    _ttsPreviewAudio.onended = () => {
+      if (btn) { btn.textContent = '▶'; btn.disabled = false; }
+      // URLはキャッシュで管理するためrevokeしない
+    };
+    _ttsPreviewAudio.onerror = () => {
+      if (btn) { btn.textContent = '▶'; btn.disabled = false; }
+      toast('音声再生エラー', 'err');
+    };
+    if (btn) { btn.textContent = '■'; btn.disabled = false; }
+    _ttsPreviewAudio.play();
+  } catch(e) {
+    toast('試聴エラー: ' + e.message, 'err');
+  } finally {
+    if (btn && btn.disabled) { btn.textContent = '▶'; btn.disabled = false; }
+  }
+}
+
+async function loadTtsSettings() {
+  const r = await api('/admin/ai-settings');
+  if (!r.ok) return;
+  const d = await r.json();
+  const mode = d.tts_mode || 'disabled';
+  document.querySelectorAll('input[name="tts-mode"]').forEach(el => {
+    el.checked = el.value === mode;
+  });
+  const emotion = document.getElementById('tts-emotion');
+  const se = document.getElementById('tts-se');
+  const autoplay = document.getElementById('tts-autoplay');
+  if (emotion) emotion.checked = !!d.tts_emotion;
+  if (se) se.checked = !!d.tts_se;
+  if (autoplay) autoplay.checked = !!d.tts_autoplay;
+  // VOICEVOXエンドポイントも同時に読み込む
+  const vvEl = document.getElementById('voicevox-endpoint');
+  if (vvEl) vvEl.value = d.voicevox_endpoint || '';
+}
+
+async function saveTtsSettings() {
+  const modeEl = document.querySelector('input[name="tts-mode"]:checked');
+  const patch = {
+    tts_mode: modeEl ? modeEl.value : 'disabled',
+    tts_emotion: document.getElementById('tts-emotion')?.checked ? 1 : 0,
+    tts_se: document.getElementById('tts-se')?.checked ? 1 : 0,
+    tts_autoplay: document.getElementById('tts-autoplay')?.checked ? 1 : 0,
+  };
+  const r = await api('/admin/ai-settings', { method: 'PATCH', body: JSON.stringify(patch) });
+  const el = document.getElementById('tts-settings-result');
+  if (r.ok) {
+    if (el) { el.textContent = '✅ 保存しました'; el.style.color = 'var(--ok)'; setTimeout(() => el.textContent = '', 2000); }
+  } else {
+    if (el) { el.textContent = '❌ 保存失敗'; el.style.color = 'var(--accent)'; }
+  }
+}
+
+async function saveVoicevoxEndpoint() {
+  const endpoint = document.getElementById('voicevox-endpoint')?.value || '';
+  const r = await api('/admin/ai-settings', {
+    method: 'PATCH',
+    body: JSON.stringify({ voicevox_endpoint: endpoint || null })
+  });
+  if (r.ok) toast('保存しました');
+  else toast('保存に失敗しました', 'err');
+}
+
+async function testVoicevoxConnection() {
+  const el = document.getElementById('vv-test-result');
+  el.textContent = '接続中...';
+  el.style.color = 'var(--sub)';
+  const r = await api('/tts/admin/speakers');
+  if (r.ok) {
+    const speakers = await r.json();
+    el.textContent = `✅ 接続OK（スピーカー ${speakers.length} 件）`;
+    el.style.color = 'var(--ok)';
+  } else {
+    const d = await r.json().catch(() => ({}));
+    el.textContent = `❌ 接続失敗: ${d.detail || r.status}`;
+    el.style.color = 'var(--accent)';
   }
 }
 
@@ -2063,10 +2264,10 @@ async function loadSeMissLogs() {
 // showSection の拡張（ハッシュ連動）
 const _sectionLoaders = {
   dashboard: () => loadStats(),
-  ai: () => loadAiSettings(),
+  ai: () => { loadAiSettings(); loadStateFields(); },
   users: () => loadUsers(),
   characters: () => loadCharacters(),
-  tts: () => { loadTtsVoiceModels(); loadSeMissLogs(); },
+  tts: () => { loadTtsSettings(); loadTtsVoiceModels(); loadSeMissLogs(); },
   sd: () => { loadSdSettings(); loadTemplates(); loadSelectableModels(); },
   queue: () => loadQueue(),
   images: () => loadImages(),

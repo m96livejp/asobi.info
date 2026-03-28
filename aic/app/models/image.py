@@ -56,4 +56,6 @@ class UserImage(Base):
     is_deleted  = Column(Integer, nullable=False, default=0)           # saved画像のソフトデリート
     is_favorite = Column(Integer, nullable=False, default=0)           # お気に入りフラグ
     rating      = Column(Integer, nullable=True)                         # 評価: -1=悪い, 1=まあ良い, 2=良い, 3=凄く良い
+    model       = Column(String, nullable=True)                          # 使用モデル名
+    seed        = Column(Integer, nullable=True)                           # 生成時のシード値
     created_at  = Column(DateTime, server_default=func.now())

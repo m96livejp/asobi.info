@@ -1,6 +1,6 @@
 """管理者API"""
 import os
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete, update
 from ..database import get_db
@@ -13,6 +13,7 @@ from ..models.image import UserImage, ImageFeedback, GenerationQueue
 from ..services import queue_worker
 from pydantic import BaseModel
 import httpx
+import json
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -75,7 +76,11 @@ async def get_ai_settings(admin: User = Depends(require_admin), db: AsyncSession
     return {"provider": s.provider, "endpoint": s.endpoint, "api_key": s.api_key,
             "model": s.model, "max_tokens": s.max_tokens, "cost": s.cost,
             "response_guideline": s.response_guideline or "",
-            "voicevox_endpoint": s.voicevox_endpoint or ""}
+            "voicevox_endpoint": s.voicevox_endpoint or "",
+            "tts_mode": s.tts_mode or "disabled",
+            "tts_emotion": s.tts_emotion or 0,
+            "tts_se": s.tts_se or 0,
+            "tts_autoplay": s.tts_autoplay or 0}
 
 
 @router.put("/ai-settings")
@@ -85,6 +90,69 @@ async def update_ai_settings(req: AiSettingsUpdate, admin: User = Depends(requir
     s.model = req.model; s.max_tokens = req.max_tokens; s.cost = req.cost
     s.response_guideline = req.response_guideline or None
     s.voicevox_endpoint = req.voicevox_endpoint or None
+    await db.commit()
+    return {"ok": True}
+
+
+class AiSettingsPatch(BaseModel):
+    voicevox_endpoint: str | None = None
+    tts_mode: str | None = None          # disabled / all / admin_only
+    tts_emotion: int | None = None
+    tts_se: int | None = None
+    tts_autoplay: int | None = None
+
+
+@router.patch("/ai-settings")
+async def patch_ai_settings(req: AiSettingsPatch, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """部分更新"""
+    s = await _get_or_create_settings(db)
+    if req.voicevox_endpoint is not None:
+        s.voicevox_endpoint = req.voicevox_endpoint or None
+    if req.tts_mode is not None and req.tts_mode in ("disabled", "all", "admin_only"):
+        s.tts_mode = req.tts_mode
+    if req.tts_emotion is not None:
+        s.tts_emotion = req.tts_emotion
+    if req.tts_se is not None:
+        s.tts_se = req.tts_se
+    if req.tts_autoplay is not None:
+        s.tts_autoplay = req.tts_autoplay
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/state-fields")
+async def get_state_fields(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    from ..models.settings import DEFAULT_STATE_FIELDS
+    cfg_r = await db.execute(select(ChatStateConfig).where(ChatStateConfig.id == 1))
+    cfg = cfg_r.scalar_one_or_none()
+    if cfg and cfg.fields_json:
+        return json.loads(cfg.fields_json)
+    return DEFAULT_STATE_FIELDS
+
+
+@router.put("/state-fields")
+async def update_state_fields(fields: list = Body(...), admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    from ..models.settings import STATE_BUILTIN_KEYS, STATE_CUSTOM_PREFIX
+    import re as _re
+    # カスタムフィールドにプレフィックスを付与 + 変数名を a-z0-9 のみに制限
+    normalized = []
+    for f in fields:
+        key = f.get("key", "")
+        if key and key not in STATE_BUILTIN_KEYS:
+            # プレフィックス部分を除いた生キーを取得
+            raw = key[len(STATE_CUSTOM_PREFIX):] if key.startswith(STATE_CUSTOM_PREFIX) else key
+            raw = _re.sub(r'[^a-z0-9]', '', raw)
+            if not raw:
+                continue  # 無効なキーはスキップ
+            f = dict(f)
+            f["key"] = STATE_CUSTOM_PREFIX + raw
+        normalized.append(f)
+    cfg_r = await db.execute(select(ChatStateConfig).where(ChatStateConfig.id == 1))
+    cfg = cfg_r.scalar_one_or_none()
+    if not cfg:
+        cfg = ChatStateConfig(id=1, enabled=0)
+        db.add(cfg)
+    cfg.fields_json = json.dumps(normalized, ensure_ascii=False)
     await db.commit()
     return {"ok": True}
 
@@ -319,14 +387,25 @@ async def get_conversation_messages(conv_id: int, admin: User = Depends(require_
 async def list_all_characters(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Character).order_by(Character.id.desc()))
     chars = result.scalars().all()
+    # キャラIDごとのAIメッセージ数（role=assistant, 非削除）を一括取得
+    msg_q = await db.execute(
+        select(Conversation.character_id, func.count(Message.id).label("cnt"))
+        .join(Message, Message.conversation_id == Conversation.id)
+        .where(Message.role == "assistant", Message.is_deleted == 0)
+        .group_by(Conversation.character_id)
+    )
+    msg_map = {row.character_id: row.cnt for row in msg_q}
     return [{
         "id": c.id,
         "name": c.name,
         "creator_id": c.creator_id,
         "is_public": c.is_public,
         "is_sample": c.is_sample,
+        "review_status": c.review_status,
+        "is_recommended": c.is_recommended,
         "like_count": c.like_count,
         "use_count": c.use_count,
+        "msg_count": msg_map.get(c.id, 0),
         "created_at": str(c.created_at),
     } for c in chars]
 
@@ -334,6 +413,8 @@ async def list_all_characters(admin: User = Depends(require_admin), db: AsyncSes
 class CharacterUpdate(BaseModel):
     is_public: int | None = None
     is_sample: int | None = None
+    review_status: str | None = None
+    is_recommended: int | None = None
 
 
 @router.get("/characters/{char_id}/conversations")
@@ -347,7 +428,7 @@ async def list_character_conversations(char_id: int, include_deleted: bool = Que
     convs = result.scalars().all()
     out = []
     for c in convs:
-        ur = await db.execute(select(User.username, User.display_name, User.avatar_url).where(User.id == c.user_id))
+        ur = await db.execute(select(User.display_name, User.avatar_url).where(User.id == c.user_id))
         user_row = ur.first()
         mr = await db.execute(
             select(func.count()).select_from(Message).where(Message.conversation_id == c.id)
@@ -356,8 +437,8 @@ async def list_character_conversations(char_id: int, include_deleted: bool = Que
         out.append({
             "id": c.id,
             "user_id": c.user_id,
-            "user_name": (user_row[1] or user_row[0]) if user_row else f"user#{c.user_id}",
-            "user_avatar": user_row[2] if user_row else None,
+            "user_name": user_row[0] if user_row else f"user#{c.user_id}",
+            "user_avatar": user_row[1] if user_row else None,
             "title": c.title,
             "message_count": msg_count,
             "is_deleted": c.is_deleted,
@@ -375,6 +456,9 @@ async def update_character(char_id: int, req: CharacterUpdate,
     if not c: raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
     if req.is_public is not None: c.is_public = req.is_public
     if req.is_sample is not None: c.is_sample = req.is_sample
+    if req.review_status is not None and req.review_status in ("pending", "approved", "rejected"):
+        c.review_status = req.review_status
+    if req.is_recommended is not None: c.is_recommended = req.is_recommended
     await db.commit()
     return {"ok": True}
 

@@ -80,13 +80,19 @@ async def send_message(
     past_messages = list(reversed(result.scalars().all()))
     messages = [{"role": m.role, "content": m.content} for m in past_messages]
 
-    # ステータス機能の有効/無効チェック
+    # ステータス機能の有効/無効チェック + フィールド設定読み込み
     state_enabled = False
     conv_state = None
+    state_fields = None
     try:
+        from ..models.settings import DEFAULT_STATE_FIELDS
         cfg_result = await db.execute(select(ChatStateConfig).where(ChatStateConfig.id == 1))
         cfg = cfg_result.scalar_one_or_none()
         state_enabled = bool(cfg and cfg.enabled)
+        if cfg and cfg.fields_json:
+            state_fields = json.loads(cfg.fields_json)
+        else:
+            state_fields = DEFAULT_STATE_FIELDS
     except Exception:
         pass
 
@@ -98,7 +104,7 @@ async def send_message(
 
     # システムプロンプト
     rg = (ai_settings.response_guideline if ai_settings and ai_settings.response_guideline is not None else None)
-    system_prompt = build_system_prompt(char, conv_state=conv_state, state_enabled=state_enabled, response_guideline=rg)
+    system_prompt = build_system_prompt(char, conv_state=conv_state, state_enabled=state_enabled, response_guideline=rg, state_fields=state_fields)
     provider = ai_settings.provider if ai_settings else char.ai_model
     stream_func = get_stream_func(provider)
 
@@ -134,7 +140,10 @@ async def send_message(
                     yield f"data: {json.dumps({'text': chunk}, ensure_ascii=False)}\n\n"
 
         except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            import logging
+            logging.getLogger("aic").error(f"Chat stream error: {e}")
+            err_msg = str(e) if user.role == 'admin' else "エラーが発生しました。しばらくしてから再試行してください。"
+            yield f"data: {json.dumps({'error': err_msg}, ensure_ascii=False)}\n\n"
             return
 
         # バッファに残りがあればフラッシュ（STATEタグが来なかった場合）
@@ -151,11 +160,22 @@ async def send_message(
                     state_json = json.loads(match.group(1).strip())
                     # conversation_state を更新
                     if conv_state:
-                        for key in ("relationship", "mood", "environment", "situation", "inventory", "goals"):
-                            if key in state_json:
-                                setattr(conv_state, key, str(state_json[key]))
-                        if "memories" in state_json and isinstance(state_json["memories"], list):
-                            conv_state.memories = json.dumps(state_json["memories"], ensure_ascii=False)
+                        fixed_keys = {"relationship", "mood", "environment", "situation", "inventory", "goals"}
+                        active_keys = {f["key"] for f in (state_fields or []) if f.get("enabled", True)}
+                        try:
+                            extra = json.loads(conv_state.extra_fields or "{}") if hasattr(conv_state, 'extra_fields') else {}
+                        except:
+                            extra = {}
+                        for key, val in state_json.items():
+                            if key == "memories":
+                                if isinstance(val, list):
+                                    conv_state.memories = json.dumps(val, ensure_ascii=False)
+                            elif key in fixed_keys and key in active_keys:
+                                setattr(conv_state, key, str(val))
+                            elif key not in fixed_keys and key in active_keys:
+                                extra[key] = str(val)
+                        if hasattr(conv_state, 'extra_fields'):
+                            conv_state.extra_fields = json.dumps(extra, ensure_ascii=False)
                         # ログに記録
                         log = ConversationStateLog(
                             conversation_id=conversation_id,
@@ -166,6 +186,7 @@ async def send_message(
                             inventory=conv_state.inventory,
                             goals=conv_state.goals,
                             memories=conv_state.memories,
+                            extra_fields=conv_state.extra_fields if hasattr(conv_state, 'extra_fields') else None,
                         )
                         db.add(log)
                 except (json.JSONDecodeError, Exception) as e:

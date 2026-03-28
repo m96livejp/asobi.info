@@ -434,6 +434,18 @@ body.kb-open .chat-header { padding: 6px 12px; }
   gap: 10px;
   margin-bottom: 28px;
 }
+.home-menu-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 2px 0;
+  margin-bottom: -2px;
+}
+.home-menu-primary {
+  border-color: var(--accent) !important;
+}
 .home-menu-card {
   display: flex;
   align-items: center;

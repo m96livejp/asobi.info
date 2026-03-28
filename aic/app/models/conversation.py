@@ -27,7 +27,8 @@ class ConversationState(Base):
     situation = Column(Text, default="")
     inventory = Column(Text, default="")
     goals = Column(Text, default="")
-    memories = Column(Text, default="[]")  # JSON配列
+    memories = Column(Text, default="[]")    # JSON配列
+    extra_fields = Column(Text, nullable=True)  # JSON: {key: value} カスタムフィールド
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
@@ -44,6 +45,7 @@ class ConversationStateLog(Base):
     inventory = Column(Text, default="")
     goals = Column(Text, default="")
     memories = Column(Text, default="[]")
+    extra_fields = Column(Text, nullable=True)  # JSON: {key: value} カスタムフィールド
     created_at = Column(DateTime, server_default=func.now())
 
 

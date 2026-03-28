@@ -47,6 +47,9 @@ class Character(Base):
     init_inventory = Column(Text, default="")
     init_goals = Column(Text, default="")
 
+    # 管理者フラグ
+    is_recommended = Column(Integer, default=0)  # おすすめ表示
+
     # 評価
     like_count = Column(Integer, default=0)
     use_count = Column(Integer, default=0)

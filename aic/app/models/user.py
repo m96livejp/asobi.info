@@ -12,5 +12,6 @@ class User(Base):
     display_name = Column(String, nullable=False, default="ゲスト")
     avatar_url = Column(Text, nullable=True)
     role = Column(String, nullable=False, default="user")
+    is_suspended = Column(Integer, nullable=False, default=0)  # 1=利用停止
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

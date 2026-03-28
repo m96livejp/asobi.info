@@ -43,30 +43,32 @@
       <div class="home-content">
         <div class="home-hero">
           <h2 class="home-title">AI Chat</h2>
-          <p class="home-subtitle">AIキャラクターとリアルタイムで会話しよう</p>
+          <p class="home-subtitle">コミュニティからキャラクターを選ぶか、<br>自分で作成してチャットを始めよう</p>
         </div>
         <div class="home-menu">
-          <button class="home-menu-card" onclick="navTo('chat-list')">
-            <div class="hmc-icon">💬</div>
-            <div class="hmc-body">
-              <div class="hmc-title">チャットを始める</div>
-              <div class="hmc-desc">キャラクターとの会話を楽しもう</div>
-            </div>
-            <div class="hmc-arrow">›</div>
-          </button>
-          <button class="home-menu-card" onclick="navTo('community')">
+          <p class="home-menu-label">チャットを始める</p>
+          <button class="home-menu-card home-menu-primary" onclick="navTo('community')">
             <div class="hmc-icon">👥</div>
             <div class="hmc-body">
-              <div class="hmc-title">コミュニティ</div>
-              <div class="hmc-desc">公開キャラクターを探して会話する</div>
+              <div class="hmc-title">コミュニティから選ぶ</div>
+              <div class="hmc-desc">公開キャラクターをすぐに会話できます</div>
             </div>
             <div class="hmc-arrow">›</div>
           </button>
-          <button class="home-menu-card" onclick="navTo('create')">
+          <button class="home-menu-card home-menu-primary" onclick="navTo('create')">
             <div class="hmc-icon">✨</div>
             <div class="hmc-body">
               <div class="hmc-title">キャラクターを作る</div>
-              <div class="hmc-desc">オリジナルAIキャラクターを作成</div>
+              <div class="hmc-desc">オリジナルAIキャラクターを作成して会話</div>
+            </div>
+            <div class="hmc-arrow">›</div>
+          </button>
+          <p class="home-menu-label">その他</p>
+          <button class="home-menu-card" onclick="navTo('chat-list')">
+            <div class="hmc-icon">💬</div>
+            <div class="hmc-body">
+              <div class="hmc-title">チャット</div>
+              <div class="hmc-desc">進行中の会話を続ける</div>
             </div>
             <div class="hmc-arrow">›</div>
           </button>
@@ -240,6 +242,11 @@
         <div class="chat-list-section" id="chatlist-liked-section" style="display:none">
           <h3>お気に入りキャラクター</h3>
           <div id="chatlist-liked" class="char-grid"></div>
+        </div>
+        <div class="chat-list-section" id="chatlist-community-section" style="display:none">
+          <h3>コミュニティキャラクター</h3>
+          <div id="chatlist-community" class="char-grid"></div>
+          <button class="btn btn-outline btn-more" onclick="navTo('community')">もっと見る →</button>
         </div>
       </div>
     </div>
