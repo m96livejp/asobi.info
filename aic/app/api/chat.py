@@ -210,11 +210,14 @@ async def send_message(
 
         currency = "points"
         save_ok = False
+        ai_msg_id = None
         for _retry in range(3):
             try:
                 ai_msg = Message(conversation_id=conversation_id, role="assistant", content=visible_text,
                                  state_snapshot=state_snapshot_text)
                 db.add(ai_msg)
+                await db.flush()  # IDを確定させる
+                ai_msg_id = ai_msg.id
 
                 result2 = await db.execute(select(UserBalance).where(UserBalance.user_id == user.id))
                 bal = result2.scalar_one()
@@ -245,6 +248,8 @@ async def send_message(
         done_payload: dict = {'done': True, 'cost': cost, 'currency': currency}
         if state_snapshot_text:
             done_payload['state_snapshot'] = state_snapshot_text
+        if ai_msg_id:
+            done_payload['ai_msg_id'] = ai_msg_id
         yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

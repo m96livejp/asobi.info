@@ -1415,7 +1415,7 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let aiText = '';
-    aiMsg.innerHTML = '';
+    let _firstText = false; // 最初のテキスト受信前は ・・・ を維持
 
     // === ストリーミング早期TTS再生 ===
     let _sBuf = '';       // セグメント抽出用バッファ
@@ -1520,8 +1520,12 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
               .replace(/<<<STATE>>>[\s\S]*?<<\/STATE>>>/g, '')  // 完結したSTATEブロック
               .replace(/<<<STATE>>>[\s\S]*$/g, '')               // 未完成のSTATEブロック
               .replace(/<<<[A-Z]*$/g, '');                       // <<< 途中のタグ
-            aiMsg.innerHTML = esc(getDisplayText(stripped));
-            chatEl.scrollTop = chatEl.scrollHeight;
+            const displayHtml = esc(getDisplayText(stripped));
+            if (displayHtml) {
+              aiMsg.innerHTML = displayHtml;
+              _firstText = true;
+              chatEl.scrollTop = chatEl.scrollHeight;
+            }
 
             // ストリーミング早期再生（自動再生ONの場合）
             if (_ttsAutoPlay && _ttsAvailable) {
@@ -1545,6 +1549,12 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
               .replace(/<<<STATE>>>[\s\S]*?<<\/STATE>>>/g, '').replace(/<<<STATE>>>[\s\S]*$/g, '')
               .trim();
             aiMsg.dataset.raw = rawText;
+
+            // メッセージIDをセット（右クリックメニュー等で使用）
+            if (data.ai_msg_id) {
+              aiMsg.dataset.msgId = String(data.ai_msg_id);
+              aiMsg.dataset.deleted = '0';
+            }
 
             // STATEブロックの内容をSSEペイロードから取得・保存（管理者の感情表示用）
             if (data.state_snapshot) {
