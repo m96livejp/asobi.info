@@ -17,6 +17,7 @@ let _ttsQueue = [];        // 再生キュー [{type:'se'|'voice', name?, style?
 let _ttsPlaying = false;   // キュー再生中フラグ
 let _ttsStopFlag = false;  // 停止リクエスト
 let _ttsAutoPlay = false;  // 自動読み上げON/OFF
+let _showState = false;    // 感情STATE表示ON/OFF（管理者のみ）
 let _vvStyleMap = {};      // スタイル名→IDマップ（現在の会話のキャラから構築）
 let _ttsCache = new Map(); // テキスト+styleId → Blob キャッシュ（会話ごとにリセット）
 
@@ -173,6 +174,10 @@ function renderHeaderUser() {
     <div class="hdr-user-dropdown">
       ${menuItems}
     </div>`;
+
+  // 管理者専用メニュー項目の表示切替
+  const stateBtn = document.getElementById('state-display-btn');
+  if (stateBtn) stateBtn.style.display = currentUser.role === 'admin' ? '' : 'none';
 
   // チャットヘッダーにもドロップダウン付きユーザーアイコン表示（メインと同じ構造）
   if (chatArea) {
@@ -1533,6 +1538,13 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
               .trim();
             aiMsg.dataset.raw = rawText;
 
+            // STATEブロックの内容を抽出・保存（管理者の感情表示用）
+            const stateMatch = aiText.match(/<<<STATE>>>([\s\S]*?)<<\/STATE>>>/);
+            if (stateMatch) {
+              aiMsg.dataset.state = stateMatch[1].trim();
+              if (_showState) _applyStateDisplay(aiMsg);
+            }
+
             if (_ttsAvailable) {
               if (_ttsAutoPlay) {
                 // 残りバッファを処理してループを終了
@@ -2699,6 +2711,32 @@ function editCurrentChar() {
   if (currentCharacter) {
     _editReturnScreen = 'chat';
     editCharacter(currentCharacter.id);
+  }
+}
+
+// 感情STATE表示トグル（管理者のみ）
+function toggleStateDisplay() {
+  _chatMenuOpen = false;
+  document.getElementById('chat-menu-panel')?.classList.remove('open');
+  _showState = !_showState;
+  const btn = document.getElementById('state-display-btn');
+  if (btn) btn.textContent = _showState ? '🧠 感情表示オフ' : '🧠 感情表示オン';
+  // 既存の全AIメッセージに適用
+  document.querySelectorAll('#chat-messages .msg-ai').forEach(_applyStateDisplay);
+  showToast(_showState ? '感情表示をオンにしました' : '感情表示をオフにしました', 'info', 1500);
+}
+
+function _applyStateDisplay(el) {
+  let badge = el.querySelector('.msg-state-badge');
+  if (_showState && el.dataset.state) {
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.className = 'msg-state-badge';
+      el.appendChild(badge);
+    }
+    badge.textContent = el.dataset.state;
+  } else if (badge) {
+    badge.remove();
   }
 }
 
