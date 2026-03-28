@@ -7,6 +7,20 @@ const Auth = {
         if (token) {
             try {
                 const user = await API.getProfile();
+                const me = await this._checkAsobiSession();
+                if (user.asobi_user_id) {
+                    // asobi連携済み: セッションが別ユーザーならクリア
+                    if (me && me.userId && me.userId !== user.asobi_user_id) {
+                        Storage.clear();
+                        return null;
+                    }
+                } else {
+                    // ゲスト: asobiにログイン中なら別ユーザーの可能性があるのでクリア
+                    if (me && me.userId) {
+                        Storage.clear();
+                        return null;
+                    }
+                }
                 return user;
             } catch {
                 // トークン無効 → トークン削除
@@ -21,7 +35,20 @@ const Auth = {
                 const result = await API.login(deviceId);
                 Storage.setToken(result.access_token);
                 Storage.setUserId(result.user_id);
-                return await API.getProfile();
+                const user = await API.getProfile();
+                const me = await this._checkAsobiSession();
+                if (user.asobi_user_id) {
+                    if (me && me.userId && me.userId !== user.asobi_user_id) {
+                        Storage.clear();
+                        return null;
+                    }
+                } else {
+                    if (me && me.userId) {
+                        Storage.clear();
+                        return null;
+                    }
+                }
+                return user;
             } catch {
                 // device_idでのログイン失敗 → ログイン画面へ
             }
@@ -29,6 +56,20 @@ const Auth = {
 
         // ログイン画面を表示（nullを返す）
         return null;
+    },
+
+    async _checkAsobiSession() {
+        try {
+            const res = await fetch('https://asobi.info/shared/assets/php/me.php', {
+                credentials: 'include',
+                cache: 'no-store',
+            });
+            if (!res.ok) return null;
+            const data = await res.json();
+            return data.loggedIn ? data : null;
+        } catch {
+            return null;
+        }
     },
 
     async autoLogin() {

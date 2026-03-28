@@ -41,8 +41,7 @@ $fonts = [
   <title>フォント設定 - 管理画面</title>
   <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
   <style>
-    body { background: #f5f5f5; color: #222; font-family: sans-serif; margin: 0; padding: 0; }
-    .admin-wrap { max-width: 640px; margin: 40px auto; padding: 0 16px; }
+    body { background: #f5f5f5; color: #222; font-family: sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; min-height: 100vh; }
     h1 { font-size: 1.4rem; margin-bottom: 24px; }
     .card { background: #fff; border-radius: 10px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
     .card h2 { font-size: 1rem; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
@@ -66,13 +65,13 @@ $fonts = [
     .preview-box { background: #f9f9f9; border: 1px solid #eee; border-radius: 8px; padding: 16px; margin-top: 16px; }
     .preview-box p { margin: 0 0 6px; font-size: 1rem; }
     .preview-box small { color: #888; font-size: 0.75rem; }
-    .back-link { display: inline-block; margin-bottom: 20px; color: #3498db; text-decoration: none; font-size: 0.9rem; }
-    .back-link:hover { text-decoration: underline; }
+    .font-wrap { max-width: 640px; }
   </style>
 </head>
 <body>
-<div class="admin-wrap">
-  <a href="/admin/" class="back-link">← 管理ダッシュボード</a>
+  <?php $adminActivePage = 'font'; require __DIR__ . '/_sidebar.php'; ?>
+
+  <div class="font-wrap">
   <h1>フォント設定</h1>
 
   <?php if ($message): ?>
@@ -126,11 +125,52 @@ $fonts = [
         <p>ポケモンクエスト・レシピ・個体値チェッカー</p>
         <small>※ 現在のフォント設定でプレビューしています</small>
       </div>
+      <div style="margin-top:12px;">
+        <a href="/sample/" target="_blank" style="font-size:0.85rem;color:#3498db;text-decoration:none;font-weight:600;">
+          フォントサンプルページで詳細確認 &rarr;
+        </a>
+        <span style="font-size:0.75rem;color:#999;margin-left:6px;">（全フォント・全サイズの比較）</span>
+      </div>
     </div>
 
     <button type="submit" class="btn-save">保存する</button>
   </form>
-</div>
+
+  <div class="card" style="margin-top:20px;">
+    <h2>新規ページへの実装方法</h2>
+    <p style="font-size:0.82rem;color:#555;margin-bottom:14px;line-height:1.7;">
+      フォント読み込みの遅延を最小化するための実装ルールです。<br>
+      新しいページ・コンテンツを追加する際はこの方式を守ってください。
+    </p>
+
+    <div style="margin-bottom:16px;">
+      <div style="font-size:0.8rem;font-weight:700;color:#e05050;margin-bottom:6px;">NG（bodyに直接適用しない）</div>
+      <pre style="background:#fff8f8;border:1px solid #f5c6c6;border-radius:6px;padding:12px;font-size:0.8rem;overflow-x:auto;color:#c00;">body { font-family: 'Migu 1C', sans-serif; }</pre>
+    </div>
+
+    <div style="margin-bottom:16px;">
+      <div style="font-size:0.8rem;font-weight:700;color:#27ae60;margin-bottom:6px;">OK（mainにのみ適用）</div>
+      <pre style="background:#f0fff4;border:1px solid #b2dfdb;border-radius:6px;padding:12px;font-size:0.8rem;overflow-x:auto;color:#155724;">body { font-family: system-ui, -apple-system, sans-serif; }
+main { font-family: 'Migu 1C', system-ui, sans-serif; }</pre>
+    </div>
+
+    <div style="margin-bottom:16px;">
+      <div style="font-size:0.8rem;font-weight:700;color:#2980b9;margin-bottom:6px;">@font-face 定義（shared/css/font.php が自動適用）</div>
+      <pre style="background:#f0f8ff;border:1px solid #bee3f8;border-radius:6px;padding:12px;font-size:0.8rem;overflow-x:auto;color:#1a5276;">/* HTMLの &lt;head&gt; に追加 */
+&lt;link rel="stylesheet" href="https://asobi.info/assets/css/font.php"&gt;</pre>
+    </div>
+
+    <div style="background:#fffde7;border:1px solid #ffe082;border-radius:6px;padding:12px;font-size:0.8rem;color:#5d4037;line-height:1.7;">
+      <strong>ポイント</strong><br>
+      · <code>font-display: swap</code> は font.php 側で設定済み（手動設定不要）<br>
+      · h1タイトルはシステムフォントのままでOK（bodyに適用しない理由）<br>
+      · WOFF2形式を優先使用（TTFより約60%小さい）<br>
+      · 既存サイト（dbd/pkq/tbt/aic）はすべて上記方式で実装済み
+    </div>
+  </div>
+  </div>
+  </main>
+  </div>
 
 <script>
 // フォント選択でプレビューを更新
