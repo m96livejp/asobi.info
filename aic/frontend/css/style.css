@@ -1472,6 +1472,8 @@ body.kb-open .chat-header { padding: 6px 12px; }
 }
 .chat-menu-item:hover { background: rgba(255,255,255,0.06); }
 .chat-menu-item.active { color: var(--accent-light); }
+.chat-menu-item.chat-menu-danger { color: var(--accent); }
+.chat-menu-item.chat-menu-danger:hover { background: rgba(216,27,96,0.12); }
 
 .auto-voice-icon { font-size: 1rem; line-height: 1; }
 .auto-voice-arrow { color: var(--text-secondary); font-size: 0.75rem; }

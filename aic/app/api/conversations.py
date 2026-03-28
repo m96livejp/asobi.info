@@ -155,6 +155,52 @@ async def get_conversation(conv_id: int, user: User = Depends(require_user), db:
     }
 
 
+@router.post("/{conv_id}/reset")
+async def reset_conversation(conv_id: int, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conv_id, Conversation.user_id == user.id)
+    )
+    conv = result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=404, detail="会話が見つかりません")
+
+    # メッセージを全てソフト削除
+    msgs_result = await db.execute(
+        select(Message).where(Message.conversation_id == conv_id)
+    )
+    for m in msgs_result.scalars().all():
+        m.is_deleted = 1
+
+    # キャラクター取得
+    char_result = await db.execute(select(Character).where(Character.id == conv.character_id))
+    char = char_result.scalar_one_or_none()
+
+    # ConversationStateをキャラクターの初期値にリセット
+    try:
+        state_result = await db.execute(
+            select(ConversationState).where(ConversationState.conversation_id == conv_id)
+        )
+        state = state_result.scalar_one_or_none()
+        if state and char:
+            state.relationship = char.init_relationship or ""
+            state.mood = char.init_mood or ""
+            state.environment = char.init_environment or ""
+            state.situation = char.init_situation or ""
+            state.inventory = char.init_inventory or ""
+            state.goals = char.init_goals or ""
+            state.memories = "[]"
+    except Exception:
+        pass
+
+    # 最初のメッセージを再追加
+    if char and char.first_message:
+        first_msg = Message(conversation_id=conv_id, role="assistant", content=char.first_message)
+        db.add(first_msg)
+
+    await db.commit()
+    return {"reset": True}
+
+
 @router.delete("/{conv_id}")
 async def delete_conversation(conv_id: int, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(

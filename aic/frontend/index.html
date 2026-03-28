@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>AIチャット - asobi.info</title>
-<link rel="stylesheet" href="/css/style.css?v=20260328b">
+<link rel="stylesheet" href="/css/style.css?v=20260328c">
 </head>
 <body>
 <div id="app">
@@ -263,13 +263,14 @@
       </div>
       <!-- チャットメニューパネル -->
       <div id="chat-menu-panel" class="chat-menu-panel">
-        <button class="chat-menu-item" onclick="editCurrentChar()">✏ キャラクター編集</button>
+        <button class="chat-menu-item" onclick="viewCurrentCharProfile()">👤 キャラクタープロフィール</button>
         <button class="chat-menu-item" id="auto-voice-btn" onclick="toggleAutoVoice()">
           <span id="auto-voice-icon-off" class="auto-voice-icon">🔇</span>
           <span class="auto-voice-arrow">→</span>
           <span id="auto-voice-icon-on" class="auto-voice-icon">🔊</span>
           <span id="auto-voice-label">自動音声オン</span>
         </button>
+        <button class="chat-menu-item chat-menu-danger" onclick="resetConversation()">🔄 全会話リセット</button>
       </div>
       <div class="chat-input-area">
         <button class="chat-menu-btn" id="chat-menu-btn" onclick="toggleChatMenu(event)">☰</button>
@@ -435,6 +436,6 @@
   </div>
 </div>
 
-<script src="/js/app.js?v=20260328b"></script>
+<script src="/js/app.js?v=20260328c"></script>
 </body>
 </html>

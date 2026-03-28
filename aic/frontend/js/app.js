@@ -2499,6 +2499,41 @@ function _updateAutoVoiceIcon() {
   }
 }
 
+// キャラクタープロフィール確認（チャットメニューから）
+function viewCurrentCharProfile() {
+  _chatMenuOpen = false;
+  document.getElementById('chat-menu-panel')?.classList.remove('open');
+  if (currentCharacter) {
+    showCharDetail(currentCharacter.id);
+  }
+}
+
+// 全会話リセット（チャットメニューから）
+function resetConversation() {
+  _chatMenuOpen = false;
+  document.getElementById('chat-menu-panel')?.classList.remove('open');
+  if (!currentConversationId) return;
+  showConfirm(
+    'すべての会話履歴を削除し、最初の状態に戻します。\nこの操作は取り消せません。',
+    async () => {
+      try {
+        const r = await api(`/conversations/${currentConversationId}/reset`, { method: 'POST' });
+        if (r.ok) {
+          _ttsCache.clear();
+          await openConversation(currentConversationId);
+          showToast('会話をリセットしました', 'info', 2000);
+        } else {
+          showToast('リセットに失敗しました', 'error');
+        }
+      } catch (e) {
+        showToast('リセットに失敗しました', 'error');
+      }
+    },
+    'リセット',
+    'btn-danger'
+  );
+}
+
 // 右下トースト通知（alert代替）
 function showToast(msg, type = 'info', duration = 3000) {
   const container = document.getElementById('toast-container');
