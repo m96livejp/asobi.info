@@ -895,6 +895,7 @@ async function openConversation(convId) {
   } else if (isDeleted === 1) {
     // 作成者削除: 履歴は見える、入力不可
     el.innerHTML = _renderMessages(data.messages);
+    el.querySelectorAll('.msg-ai[data-state]').forEach(_applyStateDisplay);
     el.innerHTML += '<div class="chat-deleted-banner" style="padding:16px 20px;text-align:center;color:var(--sub);border-top:1px solid rgba(255,255,255,0.1)">'
       + 'このキャラクターは作成者により削除されました。新しいメッセージは送れません。'
       + '</div>';
@@ -902,6 +903,7 @@ async function openConversation(convId) {
   } else {
     // 通常
     el.innerHTML = _renderMessages(data.messages);
+    el.querySelectorAll('.msg-ai[data-state]').forEach(_applyStateDisplay);
     inputArea.style.display = '';
     // 自動読み上げ（最後のAIメッセージ）
     if (_ttsAutoPlay && _ttsAvailable) {
@@ -1222,7 +1224,8 @@ function _renderMessages(messages) {
       return '<div class="msg msg-user' + deleted + '" data-msg-id="' + m.id + '" data-deleted="' + (m.is_deleted||0) + '" data-raw="' + esc(m.content) + '">' + esc(m.content) + '</div>';
     const display = esc(getDisplayText(m.content));
     const ttsBtn = hasTts ? '<button class="tts-btn" onclick="ttsPlayFromBtn(this)" title="読み上げ">▶</button>' : '';
-    return '<div class="msg msg-ai' + deleted + '" data-msg-id="' + m.id + '" data-deleted="' + (m.is_deleted||0) + '" data-raw="' + esc(m.content) + '">' + display + ttsBtn + '</div>';
+    const stateAttr = m.state_snapshot ? ' data-state="' + esc(m.state_snapshot) + '"' : '';
+    return '<div class="msg msg-ai' + deleted + '" data-msg-id="' + m.id + '" data-deleted="' + (m.is_deleted||0) + '" data-raw="' + esc(m.content) + '"' + stateAttr + '>' + display + ttsBtn + '</div>';
   }).join('');
 }
 
@@ -1538,10 +1541,9 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
               .trim();
             aiMsg.dataset.raw = rawText;
 
-            // STATEブロックの内容を抽出・保存（管理者の感情表示用）
-            const stateMatch = aiText.match(/<<<STATE>>>([\s\S]*?)<<\/STATE>>>/);
-            if (stateMatch) {
-              aiMsg.dataset.state = stateMatch[1].trim();
+            // STATEブロックの内容をSSEペイロードから取得・保存（管理者の感情表示用）
+            if (data.state_snapshot) {
+              aiMsg.dataset.state = data.state_snapshot;
               if (_showState) _applyStateDisplay(aiMsg);
             }
 

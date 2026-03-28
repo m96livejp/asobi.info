@@ -202,11 +202,18 @@ async def send_message(
                     logging.getLogger("aic").warning(f"STATE parse error: {e}")
 
         # AIレスポンス保存 & ポイント消費（リトライ付き）
+        state_snapshot_text = None
+        if state_enabled:
+            match2 = _STATE_TAG_RE.search(full_response)
+            if match2:
+                state_snapshot_text = match2.group(1).strip()
+
         currency = "points"
         save_ok = False
         for _retry in range(3):
             try:
-                ai_msg = Message(conversation_id=conversation_id, role="assistant", content=visible_text)
+                ai_msg = Message(conversation_id=conversation_id, role="assistant", content=visible_text,
+                                 state_snapshot=state_snapshot_text)
                 db.add(ai_msg)
 
                 result2 = await db.execute(select(UserBalance).where(UserBalance.user_id == user.id))
@@ -235,7 +242,10 @@ async def send_message(
             import logging
             logging.getLogger("aic").error(f"Chat save FAILED after 3 retries: conv={conversation_id}")
 
-        yield f"data: {json.dumps({'done': True, 'cost': cost, 'currency': currency}, ensure_ascii=False)}\n\n"
+        done_payload: dict = {'done': True, 'cost': cost, 'currency': currency}
+        if state_snapshot_text:
+            done_payload['state_snapshot'] = state_snapshot_text
+        yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

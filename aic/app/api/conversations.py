@@ -118,6 +118,7 @@ async def get_conversation(conv_id: int, user: User = Depends(require_user), db:
     )
     all_messages = result.scalars().all()
     messages = [{"id": m.id, "role": m.role, "content": m.content,
+                 "state_snapshot": m.state_snapshot,
                  "is_deleted": m.is_deleted, "created_at": str(m.created_at)} for m in all_messages]
 
     # 最後のアクティブ（非削除）メッセージがuserかどうか

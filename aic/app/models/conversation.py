@@ -66,6 +66,7 @@ class Message(Base):
     conversation_id = Column(Integer, nullable=False)
     role = Column(String, nullable=False)  # 'user' / 'assistant'
     content = Column(Text, nullable=False)
+    state_snapshot = Column(Text, nullable=True)  # STATEブロックの生JSON（管理者の感情表示用）
     token_count = Column(Integer, default=0)
     is_deleted = Column(Integer, nullable=False, default=0)  # 0=通常 1=ソフトデリート
     created_at = Column(DateTime, server_default=func.now())
