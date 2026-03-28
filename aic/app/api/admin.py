@@ -80,7 +80,8 @@ async def get_ai_settings(admin: User = Depends(require_admin), db: AsyncSession
             "tts_mode": s.tts_mode or "disabled",
             "tts_emotion": s.tts_emotion or 0,
             "tts_se": s.tts_se or 0,
-            "tts_autoplay": s.tts_autoplay or 0}
+            "tts_autoplay": s.tts_autoplay or 0,
+            "tts_voice_params": s.tts_voice_params or None}
 
 
 @router.put("/ai-settings")
@@ -100,6 +101,7 @@ class AiSettingsPatch(BaseModel):
     tts_emotion: int | None = None
     tts_se: int | None = None
     tts_autoplay: int | None = None
+    tts_voice_params: str | None = None  # JSON文字列 or "" で削除
 
 
 @router.patch("/ai-settings")
@@ -116,6 +118,8 @@ async def patch_ai_settings(req: AiSettingsPatch, admin: User = Depends(require_
         s.tts_se = req.tts_se
     if req.tts_autoplay is not None:
         s.tts_autoplay = req.tts_autoplay
+    if req.tts_voice_params is not None:
+        s.tts_voice_params = req.tts_voice_params or None
     await db.commit()
     return {"ok": True}
 

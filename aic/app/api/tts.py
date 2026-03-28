@@ -19,6 +19,30 @@ router = APIRouter(prefix="/api/tts", tags=["tts"])
 class TTSRequest(BaseModel):
     text: str
     style_id: int
+    speed: int | None = None       # 0〜100（50=普通）
+    pitch: int | None = None       # 0〜100
+    intonation: int | None = None  # 0〜100
+    volume: int | None = None      # 0〜100
+
+
+def _apply_voice_params(query: dict, req: TTSRequest, params_config: dict | None) -> dict:
+    """0〜100 の値を min/max レンジに変換して audio_query に適用"""
+    if not params_config:
+        return query
+    mapping = [
+        ("speed",      "speedScale",      req.speed),
+        ("pitch",      "pitchScale",      req.pitch),
+        ("intonation", "intonationScale", req.intonation),
+        ("volume",     "volumeScale",     req.volume),
+    ]
+    for field, query_key, val in mapping:
+        if val is not None and field in params_config:
+            cfg = params_config[field]
+            min_v = float(cfg.get("min", 1.0))
+            max_v = float(cfg.get("max", 1.0))
+            actual = min_v + (max_v - min_v) * (val / 100.0)
+            query[query_key] = round(actual, 4)
+    return query
 
 
 class SEMissRequest(BaseModel):
@@ -81,6 +105,17 @@ async def synthesize(
     if not text:
         raise HTTPException(status_code=400, detail="テキストが空です")
 
+    # tts_voice_params 取得
+    vp_config = None
+    if req.speed is not None or req.pitch is not None or req.intonation is not None or req.volume is not None:
+        try:
+            ai_res = await db.execute(select(AiSettings).where(AiSettings.id == 1))
+            ai = ai_res.scalar_one_or_none()
+            if ai and ai.tts_voice_params:
+                vp_config = json.loads(ai.tts_voice_params)
+        except Exception:
+            pass
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             q_res = await client.post(
@@ -88,10 +123,11 @@ async def synthesize(
                 params={"text": text, "speaker": req.style_id},
             )
             q_res.raise_for_status()
+            query = _apply_voice_params(q_res.json(), req, vp_config)
             s_res = await client.post(
                 f"{vv_url}/synthesis",
                 params={"speaker": req.style_id},
-                json=q_res.json(),
+                json=query,
                 headers={"Content-Type": "application/json"},
             )
             s_res.raise_for_status()

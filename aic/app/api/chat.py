@@ -15,8 +15,9 @@ from ..services.chat_service import build_system_prompt, get_stream_func, get_ai
 from pydantic import BaseModel
 import json
 
-# STATEタグのパターン
+# STATEタグ・VOICEタグのパターン
 _STATE_TAG_RE = re.compile(r'<<<STATE>>>(.*?)<<</STATE>>>', re.DOTALL)
+_VOICE_TAG_RE = re.compile(r'<<<VOICE>>>(.*?)<<</VOICE>>>', re.DOTALL)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -104,9 +105,13 @@ async def send_message(
 
     # システムプロンプト
     rg = (ai_settings.response_guideline if ai_settings and ai_settings.response_guideline is not None else None)
-    system_prompt = build_system_prompt(char, conv_state=conv_state, state_enabled=state_enabled, response_guideline=rg, state_fields=state_fields)
+    tts_vp = ai_settings.tts_voice_params if ai_settings else None
+    system_prompt = build_system_prompt(char, conv_state=conv_state, state_enabled=state_enabled, response_guideline=rg, state_fields=state_fields, tts_voice_params=tts_vp)
+    tts_voice_configured = bool(tts_vp)
     provider = ai_settings.provider if ai_settings else char.ai_model
     stream_func = get_stream_func(provider)
+
+    should_buffer = state_enabled or tts_voice_configured
 
     async def event_stream():
         full_response = ""
@@ -116,14 +121,19 @@ async def send_message(
             async for chunk in stream_func(system_prompt, messages, ai_settings):
                 full_response += chunk
 
-                if state_enabled:
-                    # STATEタグのフィルタリング
+                if should_buffer:
+                    # STATE/VOICEタグのフィルタリング
                     buffer += chunk
                     if not state_tag_started:
-                        # <<<STATE>>> の開始を監視
-                        if "<<<STATE>>>" in buffer:
-                            # タグ前のテキストだけ送信
-                            before_tag = buffer.split("<<<STATE>>>")[0]
+                        # どちらかのタグの最初の出現位置を探す
+                        found_pos = None
+                        for marker in ("<<<STATE>>>", "<<<VOICE>>>"):
+                            if marker in buffer:
+                                pos = buffer.index(marker)
+                                if found_pos is None or pos < found_pos:
+                                    found_pos = pos
+                        if found_pos is not None:
+                            before_tag = buffer[:found_pos]
                             if before_tag:
                                 yield f"data: {json.dumps({'text': before_tag}, ensure_ascii=False)}\n\n"
                             state_tag_started = True
@@ -146,12 +156,23 @@ async def send_message(
             yield f"data: {json.dumps({'error': err_msg}, ensure_ascii=False)}\n\n"
             return
 
-        # バッファに残りがあればフラッシュ（STATEタグが来なかった場合）
-        if state_enabled and buffer and not state_tag_started:
+        # バッファに残りがあればフラッシュ（どちらのタグも来なかった場合）
+        if should_buffer and buffer and not state_tag_started:
             yield f"data: {json.dumps({'text': buffer}, ensure_ascii=False)}\n\n"
 
-        # STATEタグからステータスJSONを抽出
+        # VOICEタグからパラメータを抽出
+        voice_params_out = None
         visible_text = full_response
+        if tts_voice_configured:
+            voice_match = _VOICE_TAG_RE.search(full_response)
+            if voice_match:
+                try:
+                    voice_params_out = json.loads(voice_match.group(1).strip())
+                except Exception:
+                    pass
+            visible_text = _VOICE_TAG_RE.sub("", visible_text).strip()
+
+        # STATEタグからステータスJSONを抽出
         if state_enabled:
             match = _STATE_TAG_RE.search(full_response)
             if match:
@@ -227,7 +248,7 @@ async def send_message(
             import logging
             logging.getLogger("aic").error(f"Chat save FAILED after 3 retries: conv={conversation_id}")
 
-        yield f"data: {json.dumps({'done': True, 'cost': cost, 'currency': currency}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'done': True, 'cost': cost, 'currency': currency, 'voice_params': voice_params_out}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

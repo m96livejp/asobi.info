@@ -18,7 +18,7 @@ async def get_ai_settings(db: AsyncSession) -> AiSettings | None:
 DEFAULT_RESPONSE_GUIDELINE = "キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。"
 
 
-def build_system_prompt(character, conv_state=None, state_enabled: bool = False, response_guideline: str | None = None, state_fields: list | None = None) -> str:
+def build_system_prompt(character, conv_state=None, state_enabled: bool = False, response_guideline: str | None = None, state_fields: list | None = None, tts_voice_params: str | None = None) -> str:
     """キャラクター設定からシステムプロンプトを組み立てる
 
     Args:
@@ -142,6 +142,15 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False,
                 "例：[ドアをノックする]{元気}失礼します。{ノーマル}初めまして。\n"
                 "スタイルは全てのセグメントに必ず付けてください。"
             )
+
+    # AI音声パラメータ指示（tts_voice_paramsが設定されている場合）
+    if tts_voice_params and character.voice_model:
+        parts.append(
+            "## 音声パラメータ指示\n"
+            "返答テキストの最後に、会話の感情・状況に合わせた音声パラメータを0〜100の整数で出力してください。\n"
+            "0=最も穏やか/低い、50=普通の状態、100=最も激しい/高い\n"
+            "<<<VOICE>>>{\"speed\":50,\"pitch\":50,\"intonation\":50,\"volume\":50}<<</VOICE>>>"
+        )
 
     return "\n\n".join(parts)
 

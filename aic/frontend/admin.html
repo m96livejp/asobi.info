@@ -402,6 +402,40 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       <span id="tts-settings-result" style="font-size:0.83rem"></span>
     </div>
 
+    <!-- AI音声パラメータ設定 -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">AI音声パラメータ</div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+          <input type="checkbox" id="tts-vp-enabled" onchange="onTtsVpEnabledChange()"> AIが会話の感情に合わせて音声パラメータを自動調整する
+        </label>
+        <div class="hint">有効にするとAIが0〜100%で指示し、設定した最低〜最高の範囲に変換して適用します（50%=普通）</div>
+      </div>
+      <div id="tts-vp-table" style="display:none;margin-top:12px">
+        <table class="tbl" style="max-width:360px">
+          <thead><tr><th>パラメータ</th><th>最低値</th><th>最高値</th></tr></thead>
+          <tbody>
+            <tr><td>速度</td>
+              <td><input type="number" id="vp-speed-min" step="0.05" min="0.5" max="2.0" value="0.80" style="width:72px"></td>
+              <td><input type="number" id="vp-speed-max" step="0.05" min="0.5" max="2.0" value="1.40" style="width:72px"></td></tr>
+            <tr><td>ピッチ</td>
+              <td><input type="number" id="vp-pitch-min" step="0.01" min="-0.15" max="0.15" value="-0.10" style="width:72px"></td>
+              <td><input type="number" id="vp-pitch-max" step="0.01" min="-0.15" max="0.15" value="0.10" style="width:72px"></td></tr>
+            <tr><td>抑揚</td>
+              <td><input type="number" id="vp-intonation-min" step="0.1" min="0" max="2.0" value="0.70" style="width:72px"></td>
+              <td><input type="number" id="vp-intonation-max" step="0.1" min="0" max="2.0" value="1.50" style="width:72px"></td></tr>
+            <tr><td>音量</td>
+              <td><input type="number" id="vp-volume-min" step="0.05" min="0" max="2.0" value="0.90" style="width:72px"></td>
+              <td><input type="number" id="vp-volume-max" step="0.05" min="0" max="2.0" value="1.10" style="width:72px"></td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:10px">
+          <button class="btn btn-primary btn-sm" onclick="saveTtsVoiceParams()">保存</button>
+          <span id="tts-vp-result" style="font-size:0.83rem"></span>
+        </div>
+      </div>
+    </div>
+
     <!-- 音声モデル一覧 -->
     <div class="card">
       <div class="card-title">音声モデル管理</div>
@@ -2189,6 +2223,22 @@ async function loadTtsSettings() {
   // VOICEVOXエンドポイントも同時に読み込む
   const vvEl = document.getElementById('voicevox-endpoint');
   if (vvEl) vvEl.value = d.voicevox_endpoint || '';
+  // AI音声パラメータ
+  let vp = null;
+  try { vp = d.tts_voice_params ? JSON.parse(d.tts_voice_params) : null; } catch(_) {}
+  const vpEnabled = document.getElementById('tts-vp-enabled');
+  const vpTable = document.getElementById('tts-vp-table');
+  if (vpEnabled) vpEnabled.checked = !!vp;
+  if (vpTable) vpTable.style.display = vp ? '' : 'none';
+  if (vp) {
+    const fields = { speed: 'speed', pitch: 'pitch', intonation: 'intonation', volume: 'volume' };
+    for (const [f] of Object.entries(fields)) {
+      const minEl = document.getElementById(`vp-${f}-min`);
+      const maxEl = document.getElementById(`vp-${f}-max`);
+      if (minEl && vp[f]?.min != null) minEl.value = vp[f].min;
+      if (maxEl && vp[f]?.max != null) maxEl.value = vp[f].max;
+    }
+  }
 }
 
 async function saveTtsSettings() {
@@ -2201,6 +2251,36 @@ async function saveTtsSettings() {
   };
   const r = await api('/admin/ai-settings', { method: 'PATCH', body: JSON.stringify(patch) });
   const el = document.getElementById('tts-settings-result');
+  if (r.ok) {
+    if (el) { el.textContent = '✅ 保存しました'; el.style.color = 'var(--ok)'; setTimeout(() => el.textContent = '', 2000); }
+  } else {
+    if (el) { el.textContent = '❌ 保存失敗'; el.style.color = 'var(--accent)'; }
+  }
+}
+
+function onTtsVpEnabledChange() {
+  const enabled = document.getElementById('tts-vp-enabled')?.checked;
+  const vpTable = document.getElementById('tts-vp-table');
+  if (vpTable) vpTable.style.display = enabled ? '' : 'none';
+  if (!enabled) saveTtsVoiceParams();
+}
+
+async function saveTtsVoiceParams() {
+  const enabled = document.getElementById('tts-vp-enabled')?.checked;
+  let vp = null;
+  if (enabled) {
+    vp = {
+      speed:      { min: parseFloat(document.getElementById('vp-speed-min').value),      max: parseFloat(document.getElementById('vp-speed-max').value) },
+      pitch:      { min: parseFloat(document.getElementById('vp-pitch-min').value),      max: parseFloat(document.getElementById('vp-pitch-max').value) },
+      intonation: { min: parseFloat(document.getElementById('vp-intonation-min').value), max: parseFloat(document.getElementById('vp-intonation-max').value) },
+      volume:     { min: parseFloat(document.getElementById('vp-volume-min').value),      max: parseFloat(document.getElementById('vp-volume-max').value) },
+    };
+  }
+  const r = await api('/admin/ai-settings', {
+    method: 'PATCH',
+    body: JSON.stringify({ tts_voice_params: vp ? JSON.stringify(vp) : '' })
+  });
+  const el = document.getElementById('tts-vp-result');
   if (r.ok) {
     if (el) { el.textContent = '✅ 保存しました'; el.style.color = 'var(--ok)'; setTimeout(() => el.textContent = '', 2000); }
   } else {

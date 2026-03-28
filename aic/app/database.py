@@ -20,6 +20,7 @@ async def init_db():
         # カラム追加マイグレーション（SQLiteはADD COLUMNのみ対応）
         migrations = [
             "ALTER TABLE characters ADD COLUMN is_recommended INTEGER DEFAULT 0",
+            "ALTER TABLE ai_settings ADD COLUMN tts_voice_params TEXT DEFAULT NULL",
         ]
         for sql in migrations:
             try:
