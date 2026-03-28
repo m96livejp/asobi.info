@@ -1146,39 +1146,18 @@ function getDisplayText(text) {
 
 // === メッセージ長押し削除 ===
 function _createAiRow(aiMsgEl) {
-  const avatarDiv = document.createElement('div');
-  avatarDiv.className = 'msg-avatar';
-  if (currentCharacter?.avatar_url) {
-    const img = document.createElement('img');
-    img.src = currentCharacter.avatar_url;
-    img.alt = '';
-    avatarDiv.appendChild(img);
-  } else {
-    avatarDiv.textContent = (currentCharacter?.char_name || currentCharacter?.name || '?')[0] || '?';
-  }
-  const rowDiv = document.createElement('div');
-  rowDiv.className = 'msg-row-ai';
-  rowDiv.appendChild(avatarDiv);
-  rowDiv.appendChild(aiMsgEl);
-  return rowDiv;
+  return aiMsgEl;
 }
 
 function _renderMessages(messages) {
   const hasTts = _ttsAvailable;
-  const avatarHtml = currentCharacter?.avatar_url
-    ? '<img src="' + esc(currentCharacter.avatar_url) + '" alt="">'
-    : esc((currentCharacter?.char_name || currentCharacter?.name || '?')[0]);
   return messages.map(m => {
     const deleted = m.is_deleted ? ' msg-soft-deleted' : '';
     if (m.role === 'user')
       return '<div class="msg msg-user' + deleted + '" data-msg-id="' + m.id + '" data-deleted="' + (m.is_deleted||0) + '" data-raw="' + esc(m.content) + '">' + esc(m.content) + '</div>';
     const display = esc(getDisplayText(m.content));
     const ttsBtn = hasTts ? '<button class="tts-btn" onclick="ttsPlayFromBtn(this)" title="読み上げ">▶</button>' : '';
-    const bubble = '<div class="msg msg-ai' + deleted + '" data-msg-id="' + m.id + '" data-deleted="' + (m.is_deleted||0) + '" data-raw="' + esc(m.content) + '">' + display + ttsBtn + '</div>';
-    return '<div class="msg-row-ai">' +
-      '<div class="msg-avatar">' + avatarHtml + '</div>' +
-      bubble +
-      '</div>';
+    return '<div class="msg msg-ai' + deleted + '" data-msg-id="' + m.id + '" data-deleted="' + (m.is_deleted||0) + '" data-raw="' + esc(m.content) + '">' + display + ttsBtn + '</div>';
   }).join('');
 }
 
