@@ -68,18 +68,26 @@ if ($mode === 'link') {
 }
 
 // ── ログインモード ───────────────────────────────────────────────
-$stmt = $db->prepare("SELECT u.* FROM social_accounts sa JOIN users u ON u.id = sa.user_id WHERE sa.provider = ? AND sa.provider_id = ?");
-$stmt->execute([$provider, $info['provider_id']]);
-$user = $stmt->fetch();
+// social_accounts を直接検索（JOINなし：孤立エントリも検出）
+$stmtSa = $db->prepare("SELECT user_id FROM social_accounts WHERE provider = ? AND provider_id = ?");
+$stmtSa->execute([$provider, $info['provider_id']]);
+$saRow = $stmtSa->fetch();
 
-if ($user) {
-    // 既存ソーシャルアカウント → ログイン
-    if ($user['status'] !== 'active') {
-        _oauthRedirectError('このアカウントは停止されています');
+if ($saRow) {
+    $stmtU = $db->prepare("SELECT * FROM users WHERE id = ?");
+    $stmtU->execute([$saRow['user_id']]);
+    $user = $stmtU->fetch();
+    if ($user) {
+        // 既存ソーシャルアカウント → ログイン
+        if ($user['status'] !== 'active') {
+            _oauthRedirectError('このアカウントは停止されています');
+        }
+        asobiLoginFromUserRow($user);
+        header('Location: ' . $redirectTo);
+        exit;
     }
-    asobiLoginFromUserRow($user);
-    header('Location: ' . $redirectTo);
-    exit;
+    // ユーザーが存在しない孤立エントリ → 削除して続行
+    $db->prepare("DELETE FROM social_accounts WHERE provider = ? AND provider_id = ?")->execute([$provider, $info['provider_id']]);
 }
 
 // メールが一致する既存ユーザーがいれば自動リンク
@@ -88,8 +96,12 @@ if (!empty($info['email'])) {
     $stmt2->execute([$info['email']]);
     $user = $stmt2->fetch();
     if ($user) {
-        $db->prepare("INSERT INTO social_accounts (user_id, provider, provider_id, email, display_name, username) VALUES (?, ?, ?, ?, ?, ?)")
-           ->execute([$user['id'], $provider, $info['provider_id'], $info['email'], $info['display_name'], $info['username']]);
+        try {
+            $db->prepare("INSERT INTO social_accounts (user_id, provider, provider_id, email, display_name, username) VALUES (?, ?, ?, ?, ?, ?)")
+               ->execute([$user['id'], $provider, $info['provider_id'], $info['email'], $info['display_name'], $info['username']]);
+        } catch (PDOException $e) {
+            // 二重送信等で既に登録済みの場合は無視
+        }
         asobiLoginFromUserRow($user);
         header('Location: ' . $redirectTo);
         exit;

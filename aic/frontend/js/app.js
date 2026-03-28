@@ -1364,6 +1364,92 @@ async function _sendRequest(msg, aiMsg, chatEl) {
     let aiText = '';
     aiMsg.innerHTML = '';
 
+    // === ストリーミング早期TTS再生 ===
+    let _sBuf = '';       // セグメント抽出用バッファ
+    let _sQueue = [];     // {type:'audio',prom:Promise<Blob>}|{type:'se',name:string}
+    let _sDone = false;   // ストリーム完了フラグ
+    let _sWakeResolve = null;
+    let _sLoopStarted = false;
+    let _sTtsBtn = null;
+
+    function _sSignal() {
+      if (_sWakeResolve) { const r = _sWakeResolve; _sWakeResolve = null; r(); }
+    }
+    function _sWaitForMore() {
+      return new Promise(r => { _sWakeResolve = r; });
+    }
+    // バッファからセグメントを抽出してキューに追加
+    function _sExtract(isFinal) {
+      let added = false;
+      while (true) {
+        const first = _sBuf.indexOf('{');
+        if (first === -1) {
+          // {style}なし: finalなら残り全体をデフォルトスタイルで再生
+          if (isFinal && _sBuf.trim()) {
+            const styleId = Object.values(_vvStyleMap)[0];
+            if (styleId) {
+              _sQueue.push({ type: 'audio', prom: _fetchTtsAudio(_sBuf.trim().slice(0, 300), styleId, null) });
+              added = true;
+            }
+            _sBuf = '';
+          }
+          break;
+        }
+        const next = _sBuf.indexOf('{', first + 1);
+        if (next === -1 && !isFinal) break; // 次の{が来るまで待機
+        const end = isFinal ? _sBuf.length : next;
+        const segs = parseMessageSegments(_sBuf.slice(0, end));
+        _sBuf = _sBuf.slice(end);
+        for (const s of segs) {
+          if (s.type === 'voice' && s.text.trim()) {
+            const sId = _vvStyleMap[s.style] ?? _vvStyleMap['ノーマル'] ?? Object.values(_vvStyleMap)[0];
+            if (sId) {
+              _sQueue.push({ type: 'audio', prom: _fetchTtsAudio(s.text.trim().slice(0, 300), sId, s.voiceParams) });
+              added = true;
+            }
+          } else if (s.type === 'se' && s.name) {
+            _sQueue.push({ type: 'se', name: s.name });
+            added = true;
+          }
+        }
+        if (isFinal) break;
+      }
+      if (added) _sSignal();
+    }
+    // 再生ループ（ストリームと並行動作）
+    async function _sPlayLoop(btn) {
+      let idx = 0;
+      _ttsStopFlag = false;
+      _ttsPlaying = true;
+      _ttsPlayingBtn = btn;
+      btn.innerHTML = '<span class="tts-dots"><b></b><b></b><b></b></span>';
+      btn.classList.remove('tts-playing');
+      btn.classList.add('tts-loading');
+      btn.dataset.duration = '0';
+      while (true) {
+        if (_ttsStopFlag) break;
+        if (idx < _sQueue.length) {
+          const item = _sQueue[idx++];
+          if (item.type === 'audio') {
+            const blob = await item.prom;
+            if (!blob || _ttsStopFlag) continue;
+            await _playAudioBlob(blob);
+          } else if (item.type === 'se') {
+            await _playSe(item.name);
+          }
+        } else if (_sDone) {
+          break;
+        } else {
+          await _sWaitForMore(); // 次のセグメントが来るまで待機
+        }
+      }
+      _ttsPlaying = false;
+      if (_ttsPlayingBtn === btn) {
+        _ttsResetBtn(btn);
+        _ttsPlayingBtn = null;
+      }
+    }
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -1381,6 +1467,22 @@ async function _sendRequest(msg, aiMsg, chatEl) {
               .replace(/<<<[A-Z]*$/g, '');                       // <<< 途中のタグ
             aiMsg.innerHTML = esc(getDisplayText(stripped));
             chatEl.scrollTop = chatEl.scrollHeight;
+
+            // ストリーミング早期再生（自動再生ONの場合）
+            if (_ttsAutoPlay && _ttsAvailable) {
+              _sBuf += data.text;
+              _sExtract(false);
+              // 最初のセグメントがキューに入ったらループ開始
+              if (!_sLoopStarted && _sQueue.length > 0) {
+                _sLoopStarted = true;
+                _sTtsBtn = document.createElement('button');
+                _sTtsBtn.className = 'tts-btn';
+                _sTtsBtn.title = '停止';
+                _sTtsBtn.onclick = function() { ttsPlayFromBtn(this); };
+                aiMsg.appendChild(_sTtsBtn);
+                _sPlayLoop(_sTtsBtn); // awaitしない（並行実行）
+              }
+            }
           }
           if (data.done) {
             // raw テキストを保存（STATEタグを除去）
@@ -1388,19 +1490,47 @@ async function _sendRequest(msg, aiMsg, chatEl) {
               .replace(/<<<STATE>>>[\s\S]*?<<\/STATE>>>/g, '').replace(/<<<STATE>>>[\s\S]*$/g, '')
               .trim();
             aiMsg.dataset.raw = rawText;
-            // 読み上げボタン追加（TTS設定がある場合）
+
             if (_ttsAvailable) {
-              const ttsBtn = document.createElement('button');
-              ttsBtn.className = 'tts-btn';
-              ttsBtn.textContent = '▶';
-              ttsBtn.title = '読み上げ';
-              ttsBtn.onclick = function() { ttsPlayFromBtn(this); };
-              aiMsg.appendChild(ttsBtn);
-              // 自動読み上げ
               if (_ttsAutoPlay) {
-                ttsPlayFromBtn(ttsBtn);
+                // 残りバッファを処理してループを終了
+                _sExtract(true);
+                _sDone = true;
+                _sSignal();
+                if (!_sLoopStarted) {
+                  // {スタイル}形式なし or キューが空 → 通常の自動再生
+                  if (_sQueue.length > 0) {
+                    // 残りバッファからのみセグメントが取れた場合、ループを起動
+                    _sLoopStarted = true;
+                    _sTtsBtn = document.createElement('button');
+                    _sTtsBtn.className = 'tts-btn';
+                    _sTtsBtn.title = '停止';
+                    _sTtsBtn.onclick = function() { ttsPlayFromBtn(this); };
+                    aiMsg.appendChild(_sTtsBtn);
+                    _sPlayLoop(_sTtsBtn);
+                  } else {
+                    // 完全フォールバック: rawTextをそのまま再生
+                    const ttsBtn = document.createElement('button');
+                    ttsBtn.className = 'tts-btn';
+                    ttsBtn.textContent = '▶';
+                    ttsBtn.title = '読み上げ';
+                    ttsBtn.onclick = function() { ttsPlayFromBtn(this); };
+                    aiMsg.appendChild(ttsBtn);
+                    ttsPlayFromBtn(ttsBtn);
+                  }
+                }
+                // ループ起動済みの場合は_sDone+_sSignalで自動終了
+              } else {
+                // 自動再生OFF → ボタンのみ追加
+                const ttsBtn = document.createElement('button');
+                ttsBtn.className = 'tts-btn';
+                ttsBtn.textContent = '▶';
+                ttsBtn.title = '読み上げ';
+                ttsBtn.onclick = function() { ttsPlayFromBtn(this); };
+                aiMsg.appendChild(ttsBtn);
               }
             }
+
             const balRes = await api('/balance');
             if (balRes.ok) updateBalance(await balRes.json());
           }

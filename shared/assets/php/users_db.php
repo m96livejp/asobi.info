@@ -20,6 +20,7 @@ function asobiUsersDb(): PDO {
     $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     $db->exec('PRAGMA journal_mode=WAL');
     $db->exec('PRAGMA busy_timeout=5000');
+    $db->exec('PRAGMA foreign_keys=ON');
 
     // スキーマ初期化は初回のみ（マーカーファイルで判定）
     $markerFile = dirname(ASOBI_USERS_DB_PATH) . '/.schema_v8';
