@@ -194,6 +194,7 @@ body {
 }
 .msg {
   max-width: 80%;
+  flex-shrink: 0;
   padding: 10px 14px;
   border-radius: 16px;
   font-size: 1rem;
