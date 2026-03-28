@@ -17,7 +17,9 @@ class SdSettings(Base):
     cfg_scale        = Column(Float,   nullable=False, default=7.0)
     width            = Column(Integer, nullable=False, default=512)
     height           = Column(Integer, nullable=False, default=512)
-    lt_endpoint      = Column(String, nullable=True)          # LibreTranslate エンドポイント（例: http://127.0.0.1:5000）
+    lt_endpoint      = Column(String, nullable=True)          # LibreTranslate ローカルエンドポイント（例: http://127.0.0.1:5000）
+    lt_mode          = Column(String, nullable=False, default="off")  # off / free / local / both
+    lt_api_key       = Column(String, nullable=True)          # libretranslate.com APIキー（無料登録で取得）
     updated_at       = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
@@ -43,7 +45,16 @@ class SdSelectableModel(Base):
     display_name = Column(String,  nullable=False)           # 表示名（例: リアル系、アニメ系）
     is_active    = Column(Integer, nullable=False, default=1)
     sort_order   = Column(Integer, nullable=False, default=0)
+    use_count    = Column(Integer, nullable=False, default=0) # 利用回数
     created_at   = Column(DateTime, server_default=func.now())
+
+
+class ChatStateConfig(Base):
+    """チャットステータス機能のON/OFF（id=1 の1行のみ使用）"""
+    __tablename__ = "chat_state_config"
+
+    id = Column(Integer, primary_key=True)
+    enabled = Column(Integer, nullable=False, default=0)  # 0=OFF, 1=ON
 
 
 class AiSettings(Base):

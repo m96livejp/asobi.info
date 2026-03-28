@@ -101,10 +101,18 @@ async def generate_image(
         if sel:
             use_model = sel.model_id
 
+    # 自動翻訳（lt_mode が off 以外なら日→英翻訳を試みる）
+    final_prompt = req.prompt
+    lt_mode = (sd.lt_mode if sd else None) or "off"
+    if lt_mode != "off" and req.prompt:
+        translated = await _auto_translate(sd, req.prompt)
+        if translated:
+            final_prompt = translated
+
     # キューに追加
     job = GenerationQueue(
         user_id=user.id,
-        prompt=req.prompt,
+        prompt=final_prompt,
         negative_prompt=req.negative_prompt or sd.negative_prompt,
         model=use_model,
         template_id=req.template_id,
@@ -220,7 +228,7 @@ async def get_pending_images(
         .order_by(UserImage.id)
     )
     imgs = result.scalars().all()
-    return {"images": [{"id": img.id, "url": img.url, "prompt": img.prompt, "rating": img.rating} for img in imgs]}
+    return {"images": [{"id": img.id, "url": img.url, "prompt": img.prompt, "rating": img.rating, "seed": img.seed} for img in imgs]}
 
 
 @router.post("/save/{image_id}")
@@ -363,7 +371,7 @@ async def get_my_images(
     )
     imgs = result.scalars().all()
     return {
-        "images": [{"id": img.id, "url": img.url, "prompt": img.prompt, "is_favorite": img.is_favorite} for img in imgs],
+        "images": [{"id": img.id, "url": img.url, "prompt": img.prompt, "is_favorite": img.is_favorite, "seed": img.seed} for img in imgs],
         "count": len(imgs),
     }
 
@@ -442,11 +450,12 @@ async def list_selectable_models(db: AsyncSession = Depends(get_db)):
 @router.get("/sd-status")
 async def sd_status(db: AsyncSession = Depends(get_db)):
     sd = await _get_sd_settings(db)
+    lt_mode = (sd.lt_mode if sd else None) or "off"
     return {
         "enabled":      bool(sd and sd.enabled and sd.endpoint),
         "width":        sd.width       if sd else 512,
         "height":       sd.height      if sd else 512,
-        "lt_enabled":   bool(sd and sd.lt_endpoint),
+        "lt_enabled":   lt_mode != "off",
     }
 
 
@@ -454,10 +463,49 @@ async def sd_status(db: AsyncSession = Depends(get_db)):
 # 翻訳（LibreTranslate プロキシ）
 # ─────────────────────────────────────────────
 
+LT_FREE_ENDPOINT = "https://libretranslate.com"
+
+
+async def _auto_translate(sd: SdSettings, text: str) -> str | None:
+    """プロンプトを自動翻訳（日→英）。失敗時はNone（原文のまま生成）"""
+    lt_mode = (sd.lt_mode if sd else None) or "off"
+    if lt_mode == "off":
+        return None
+    lt_api_key = (sd.lt_api_key or "") if sd else ""
+    endpoints = []
+    if lt_mode in ("free", "both"):
+        endpoints.append((LT_FREE_ENDPOINT, lt_api_key))
+    if lt_mode in ("local", "both"):
+        if sd and sd.lt_endpoint:
+            endpoints.append((sd.lt_endpoint.rstrip("/"), ""))
+    for ep, key in endpoints:
+        result = await _try_translate(ep, text, "ja", "en", api_key=key)
+        if result:
+            return result
+    return None
+
+
 class TranslateRequest(BaseModel):
     text: str
     source: str = "ja"
     target: str = "en"
+
+
+async def _try_translate(endpoint: str, text: str, source: str, target: str, api_key: str = "") -> str | None:
+    """1つのエンドポイントで翻訳を試みる。成功時はテキスト、失敗時はNone"""
+    import httpx
+    try:
+        payload: dict = {"q": text, "source": source, "target": target, "format": "text"}
+        if api_key:
+            payload["api_key"] = api_key
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(f"{endpoint}/translate", json=payload)
+            r.raise_for_status()
+            data = r.json()
+            result = data.get("translatedText", "")
+            return result if result else None
+    except Exception:
+        return None
 
 
 @router.post("/translate")
@@ -470,27 +518,29 @@ async def translate_text(
         raise HTTPException(status_code=401, detail="ログインが必要です")
 
     sd = await _get_sd_settings(db)
-    if not sd or not sd.lt_endpoint:
-        raise HTTPException(status_code=503, detail="翻訳機能が設定されていません")
+    lt_mode = (sd.lt_mode if sd else None) or "off"
+    if lt_mode == "off":
+        raise HTTPException(status_code=503, detail="翻訳機能が無効です")
 
-    endpoint = sd.lt_endpoint.rstrip("/")
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(
-                f"{endpoint}/translate",
-                json={"q": req.text, "source": req.source, "target": req.target, "format": "text"},
-            )
-            r.raise_for_status()
-            data = r.json()
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="翻訳サービスがタイムアウトしました")
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"翻訳サービスへの接続エラー: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"翻訳エラー: {str(e)}")
+    lt_api_key = (sd.lt_api_key or "") if sd else ""
 
-    translated = data.get("translatedText", "")
-    if not translated:
-        raise HTTPException(status_code=500, detail="翻訳結果が空です")
+    # 試行するエンドポイントを構築
+    endpoints = []
+    if lt_mode in ("free", "both"):
+        endpoints.append(("無料版", LT_FREE_ENDPOINT, lt_api_key))
+    if lt_mode in ("local", "both"):
+        if sd and sd.lt_endpoint:
+            endpoints.append(("ローカル", sd.lt_endpoint.rstrip("/"), ""))
 
-    return {"translated_text": translated}
+    if not endpoints:
+        raise HTTPException(status_code=503, detail="翻訳エンドポイントが設定されていません")
+
+    # 順番に試行（フォールバック）
+    last_label = ""
+    for label, endpoint, key in endpoints:
+        last_label = label
+        result = await _try_translate(endpoint, req.text, req.source, req.target, api_key=key)
+        if result:
+            return {"translated_text": result, "source": label}
+
+    raise HTTPException(status_code=502, detail=f"翻訳に失敗しました（{last_label}）")

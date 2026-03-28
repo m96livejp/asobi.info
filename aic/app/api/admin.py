@@ -2,14 +2,15 @@
 import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, update
 from ..database import get_db
 from ..deps import require_admin
 from ..models.user import User
-from ..models.character import Character
+from ..models.character import Character, CharacterReport
 from ..models.conversation import Conversation, Message
-from ..models.settings import AiSettings, SdSettings, PromptTemplate, SdSelectableModel
-from ..models.image import UserImage, ImageFeedback
+from ..models.settings import AiSettings, SdSettings, PromptTemplate, SdSelectableModel, ChatStateConfig
+from ..models.image import UserImage, ImageFeedback, GenerationQueue
+from ..services import queue_worker
 from pydantic import BaseModel
 import httpx
 
@@ -144,6 +145,25 @@ async def _test_gemini(api_key):
 
 @router.get("/users")
 async def list_users(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    from ..models.character import Character
+    from ..models.image import UserImage
+
+    # ユーザーごとのキャラ数
+    char_counts = {}
+    cr = await db.execute(
+        select(Character.creator_id, func.count()).group_by(Character.creator_id)
+    )
+    for uid, cnt in cr.all():
+        char_counts[uid] = cnt
+
+    # ユーザーごとの画像数
+    img_counts = {}
+    ir = await db.execute(
+        select(UserImage.user_id, func.count()).group_by(UserImage.user_id)
+    )
+    for uid, cnt in ir.all():
+        img_counts[uid] = cnt
+
     result = await db.execute(select(User).order_by(User.id.desc()))
     users = result.scalars().all()
     return [{
@@ -152,6 +172,9 @@ async def list_users(admin: User = Depends(require_admin), db: AsyncSession = De
         "role": u.role,
         "is_guest": u.asobi_user_id is None,
         "asobi_user_id": u.asobi_user_id,
+        "char_count": char_counts.get(u.id, 0),
+        "image_count": img_counts.get(u.id, 0),
+        "last_active": str(u.updated_at) if u.updated_at else "",
         "created_at": str(u.created_at),
     } for u in users]
 
@@ -183,6 +206,74 @@ async def delete_user(user_id: int, admin: User = Depends(require_admin), db: As
     await db.delete(u)
     await db.commit()
     return {"ok": True}
+
+
+# ─────────────────────────────────────────────
+# ユーザー会話閲覧（管理者用）
+# ─────────────────────────────────────────────
+
+@router.get("/users/{user_id}/conversations")
+async def list_user_conversations(user_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """指定ユーザーの会話一覧"""
+    result = await db.execute(
+        select(Conversation).where(Conversation.user_id == user_id).order_by(Conversation.updated_at.desc())
+    )
+    convs = result.scalars().all()
+    out = []
+    for c in convs:
+        cr = await db.execute(select(Character.name, Character.avatar_url, Character.is_deleted).where(Character.id == c.character_id))
+        char_row = cr.first()
+        mr = await db.execute(
+            select(func.count()).select_from(Message).where(Message.conversation_id == c.id)
+        )
+        msg_count = mr.scalar()
+        out.append({
+            "id": c.id,
+            "character_id": c.character_id,
+            "character_name": char_row[0] if char_row else "不明",
+            "character_avatar": char_row[1] if char_row else None,
+            "character_is_deleted": char_row[2] if char_row else 0,
+            "title": c.title,
+            "message_count": msg_count,
+            "updated_at": str(c.updated_at),
+            "created_at": str(c.created_at),
+        })
+    return out
+
+
+@router.get("/conversations/{conv_id}/messages")
+async def get_conversation_messages(conv_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """会話のメッセージ一覧（管理者用）"""
+    conv = (await db.execute(select(Conversation).where(Conversation.id == conv_id))).scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=404, detail="会話が見つかりません")
+
+    # ユーザー情報
+    user = (await db.execute(select(User).where(User.id == conv.user_id))).scalar_one_or_none()
+    # キャラクター情報
+    char = (await db.execute(select(Character).where(Character.id == conv.character_id))).scalar_one_or_none()
+
+    result = await db.execute(
+        select(Message).where(Message.conversation_id == conv_id).order_by(Message.id)
+    )
+    messages = [{
+        "id": m.id, "role": m.role, "content": m.content, "created_at": str(m.created_at)
+    } for m in result.scalars()]
+
+    return {
+        "conversation": {
+            "id": conv.id,
+            "title": conv.title,
+            "user_id": conv.user_id,
+            "user_name": user.display_name if user else f"User#{conv.user_id}",
+            "character_id": conv.character_id,
+            "character_name": char.name if char else "不明",
+            "character_avatar": char.avatar_url if char else None,
+            "created_at": str(conv.created_at),
+            "updated_at": str(conv.updated_at),
+        },
+        "messages": messages,
+    }
 
 
 # ─────────────────────────────────────────────
@@ -224,16 +315,22 @@ async def update_character(char_id: int, req: CharacterUpdate,
 
 @router.delete("/characters/{char_id}")
 async def delete_character(char_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """管理者によるキャラクター削除（ソフトデリート: is_deleted=2）"""
     result = await db.execute(select(Character).where(Character.id == char_id))
     c = result.scalar_one_or_none()
     if not c: raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
-    await db.execute(delete(Message).where(
-        Message.conversation_id.in_(
-            select(Conversation.id).where(Conversation.character_id == char_id)
-        )
-    ))
-    await db.execute(delete(Conversation).where(Conversation.character_id == char_id))
-    await db.delete(c)
+    c.is_deleted = 2
+    await db.commit()
+    return {"ok": True}
+
+
+@router.put("/characters/{char_id}/restore")
+async def restore_character(char_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """管理者によるキャラクター復元"""
+    result = await db.execute(select(Character).where(Character.id == char_id))
+    c = result.scalar_one_or_none()
+    if not c: raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
+    c.is_deleted = 0
     await db.commit()
     return {"ok": True}
 
@@ -263,6 +360,8 @@ class SdSettingsUpdate(BaseModel):
     width: int = 512
     height: int = 512
     lt_endpoint: str | None = None
+    lt_mode: str = "off"  # off / free / local / both
+    lt_api_key: str | None = None
 
 
 @router.get("/sd-settings")
@@ -274,6 +373,8 @@ async def get_sd_settings(admin: User = Depends(require_admin), db: AsyncSession
         "steps": s.steps, "cfg_scale": s.cfg_scale,
         "width": s.width, "height": s.height,
         "lt_endpoint": s.lt_endpoint,
+        "lt_mode": s.lt_mode or "off",
+        "lt_api_key": s.lt_api_key or "",
     }
 
 
@@ -284,6 +385,8 @@ async def update_sd_settings(req: SdSettingsUpdate, admin: User = Depends(requir
     s.negative_prompt = req.negative_prompt; s.steps = req.steps
     s.cfg_scale = req.cfg_scale; s.width = req.width; s.height = req.height
     s.lt_endpoint = req.lt_endpoint or None
+    s.lt_mode = req.lt_mode if req.lt_mode in ("off", "free", "local", "both") else "off"
+    s.lt_api_key = req.lt_api_key or None
     await db.commit()
     return {"ok": True}
 
@@ -320,6 +423,35 @@ async def test_sd_connection(req: SdTestRequest = SdTestRequest(), admin: User =
         return {"ok": False, "error": f"Timeout: {endpoint} への接続がタイムアウトしました。ポート転送・ファイアウォールを確認してください。"}
     except httpx.HTTPStatusError as e:
         return {"ok": False, "error": f"HTTP {e.response.status_code}: APIが有効か確認してください（--api オプション必要）"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+class LtTestRequest(BaseModel):
+    endpoint: str | None = None
+
+
+@router.post("/lt-test")
+async def test_lt_connection(req: LtTestRequest = LtTestRequest(), admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    endpoint = req.endpoint
+    if not endpoint:
+        s = await _get_or_create_sd(db)
+        endpoint = s.lt_endpoint
+    if not endpoint:
+        return {"ok": False, "error": "エンドポイントが未設定です"}
+    endpoint = endpoint.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"{endpoint}/languages")
+            r.raise_for_status()
+            langs = r.json()
+            has_ja = any(l.get("code") == "ja" for l in langs)
+            has_en = any(l.get("code") == "en" for l in langs)
+            return {"ok": True, "ja": has_ja, "en": has_en}
+    except httpx.ConnectError:
+        return {"ok": False, "error": f"接続できません: {endpoint}"}
+    except httpx.TimeoutException:
+        return {"ok": False, "error": f"タイムアウト: {endpoint}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -390,7 +522,7 @@ class SelectableModelBody(BaseModel):
 
 def _selmodel_dict(m: SdSelectableModel) -> dict:
     return {"id": m.id, "model_id": m.model_id, "display_name": m.display_name,
-            "is_active": m.is_active, "sort_order": m.sort_order}
+            "is_active": m.is_active, "sort_order": m.sort_order, "use_count": m.use_count or 0}
 
 
 @router.get("/selectable-models")
@@ -462,8 +594,15 @@ async def list_all_images(
         cq = cq.where(UserImage.user_id == user_id)
     total = (await db.execute(cq)).scalar()
 
+    # SD設定から画像サイズ取得
+    from ..models.settings import SdSettings as _Sd
+    sd_r = await db.execute(select(_Sd).where(_Sd.id == 1))
+    sd = sd_r.scalar_one_or_none()
+
     return {
         "total": total,
+        "width": sd.width if sd else 512,
+        "height": sd.height if sd else 512,
         "images": [{
             "id": img.id,
             "user_id": img.user_id,
@@ -471,6 +610,8 @@ async def list_all_images(
             "url": img.url,
             "prompt": img.prompt,
             "template_id": img.template_id,
+            "model": img.model,
+            "seed": img.seed,
             "status": img.status,
             "is_deleted": img.is_deleted,
             "created_at": str(img.created_at) if img.created_at else "",
@@ -538,8 +679,9 @@ async def list_image_feedbacks(
     offset: int = Query(0, ge=0),
 ):
     """マイナス評価フィードバック一覧"""
+    from ..models.settings import PromptTemplate as _PT
     q = (
-        select(ImageFeedback, User.display_name, UserImage.url, UserImage.prompt)
+        select(ImageFeedback, User.display_name, UserImage.url, UserImage.prompt, UserImage.model, UserImage.template_id)
         .join(User, User.id == ImageFeedback.user_id, isouter=True)
         .join(UserImage, UserImage.id == ImageFeedback.image_id, isouter=True)
         .order_by(ImageFeedback.id.desc())
@@ -547,6 +689,10 @@ async def list_image_feedbacks(
     )
     result = await db.execute(q)
     rows = result.all()
+
+    # テンプレート名のマップを取得
+    tmpl_result = await db.execute(select(_PT.id, _PT.name))
+    tmpl_map = {r[0]: r[1] for r in tmpl_result.all()}
 
     cq = select(func.count()).select_from(ImageFeedback)
     total = (await db.execute(cq)).scalar()
@@ -560,8 +706,282 @@ async def list_image_feedbacks(
             "display_name": display_name or f"User#{fb.user_id}",
             "image_url": image_url or "",
             "prompt": prompt or "",
+            "model": model or "",
+            "template_name": tmpl_map.get(template_id, "") if template_id else "",
             "reasons": fb.reasons,
             "comment": fb.comment or "",
             "created_at": str(fb.created_at) if fb.created_at else "",
-        } for fb, display_name, image_url, prompt in rows],
+        } for fb, display_name, image_url, prompt, model, template_id in rows],
     }
+
+
+# ─────────────────────────────────────────────
+# 生成キュー管理
+# ─────────────────────────────────────────────
+
+@router.get("/queue")
+async def get_queue(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, le=200),
+):
+    """生成キューの状態と最近のジョブ一覧"""
+    # ワーカー状態
+    info = await queue_worker.get_queue_info(db)
+
+    # 最近のジョブ一覧
+    result = await db.execute(
+        select(GenerationQueue, User.display_name)
+        .join(User, User.id == GenerationQueue.user_id, isouter=True)
+        .order_by(GenerationQueue.id.desc())
+        .limit(limit)
+    )
+    rows = result.all()
+
+    # ステータス別集計
+    counts_result = await db.execute(
+        select(GenerationQueue.status, func.count())
+        .group_by(GenerationQueue.status)
+    )
+    status_counts = {row[0]: row[1] for row in counts_result.all()}
+
+    return {
+        "worker": info,
+        "status_counts": status_counts,
+        "jobs": [{
+            "id": job.id,
+            "user_id": job.user_id,
+            "display_name": display_name or f"User#{job.user_id}",
+            "status": job.status,
+            "prompt": (job.prompt[:80] + "...") if job.prompt and len(job.prompt) > 80 else job.prompt,
+            "model": job.model,
+            "batch_size": job.batch_size,
+            "error_message": job.error_message,
+            "created_at": str(job.created_at) if job.created_at else "",
+            "started_at": str(job.started_at) if job.started_at else "",
+            "completed_at": str(job.completed_at) if job.completed_at else "",
+        } for job, display_name in rows],
+    }
+
+
+@router.post("/queue/resume")
+async def admin_queue_resume(admin: User = Depends(require_admin)):
+    """停止中のワーカーを再開"""
+    queue_worker.resume()
+    return {"ok": True}
+
+
+@router.delete("/queue/{job_id}")
+async def admin_cancel_job(
+    job_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """ジョブをキャンセル（pending のみ）"""
+    result = await db.execute(
+        select(GenerationQueue).where(
+            GenerationQueue.id == job_id,
+            GenerationQueue.status == "pending",
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="キャンセルできるジョブが見つかりません")
+    job.status = "cancelled"
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/queue-clear/{status}")
+async def admin_clear_queue(
+    status: str,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """指定ステータスのジョブを一括削除"""
+    if status not in ("completed", "failed", "cancelled"):
+        raise HTTPException(status_code=400, detail="削除できるのは completed/failed/cancelled のみです")
+    result = await db.execute(
+        delete(GenerationQueue).where(GenerationQueue.status == status)
+    )
+    await db.commit()
+    return {"ok": True, "deleted": result.rowcount}
+
+
+# ─────────────────────────────────────────────
+# チャットステータス機能設定
+# ─────────────────────────────────────────────
+
+async def _get_or_create_chat_state_config(db: AsyncSession) -> ChatStateConfig:
+    result = await db.execute(select(ChatStateConfig).where(ChatStateConfig.id == 1))
+    cfg = result.scalar_one_or_none()
+    if not cfg:
+        cfg = ChatStateConfig(id=1, enabled=0)
+        db.add(cfg)
+        await db.commit()
+        await db.refresh(cfg)
+    return cfg
+
+
+@router.get("/chat-state-config")
+async def get_chat_state_config(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    cfg = await _get_or_create_chat_state_config(db)
+    return {"enabled": cfg.enabled}
+
+
+class ChatStateConfigUpdate(BaseModel):
+    enabled: int = 0
+
+
+@router.put("/chat-state-config")
+async def update_chat_state_config(req: ChatStateConfigUpdate, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    cfg = await _get_or_create_chat_state_config(db)
+    cfg.enabled = 1 if req.enabled else 0
+    await db.commit()
+    return {"ok": True}
+
+
+# ─────────────────────────────────────────────
+# チャット用システムプロンプト確認
+# ─────────────────────────────────────────────
+
+@router.get("/chat-prompt-info")
+async def chat_prompt_info(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """チャット用システムプロンプトのテンプレート構造とキャラ一覧を返す"""
+    from ..services.chat_service import build_system_prompt
+
+    # キャラクター一覧（プレビュー用）
+    result = await db.execute(select(Character).order_by(Character.id))
+    chars = [{"id": c.id, "name": c.name, "char_name": c.char_name} for c in result.scalars()]
+
+    return {
+        "template_description": (
+            "キャラクター設定からシステムプロンプトを自動構築します:\n"
+            "1. キャラクター名 → 「あなたの名前は〇〇です。」\n"
+            "2. 年齢 → 「年齢は〇〇です。」\n"
+            "3. 性別 → 「性別は〇〇です。」\n"
+            "4. プロフィール → 「プロフィール: ...」\n"
+            "5. 非公開設定 → 「追加設定: ...」\n"
+            "6. ジャンル設定（物語/キャラタイプ/性格/時代/ベース）\n"
+            "7. キーワード\n"
+            "8. 末尾固定指示: 「キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。」"
+        ),
+        "characters": chars,
+    }
+
+
+@router.get("/chat-prompt-preview/{char_id}")
+async def chat_prompt_preview(
+    char_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """指定キャラクターの実際のシステムプロンプトをプレビュー"""
+    from ..services.chat_service import build_system_prompt
+
+    result = await db.execute(select(Character).where(Character.id == char_id))
+    c = result.scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
+
+    prompt = build_system_prompt(c)
+    return {"character_name": c.name, "char_name": c.char_name, "prompt": prompt}
+
+
+# ─────────────────────────────────────────────
+# 不正報告管理
+# ─────────────────────────────────────────────
+
+@router.get("/reports")
+async def list_reports(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    status: str = Query("pending"),
+):
+    """不正報告一覧（キャラ通報数・作者通報数付き）"""
+    from sqlalchemy import case, literal_column
+    from sqlalchemy.orm import aliased
+
+    Reporter = aliased(User)
+    Creator = aliased(User)
+
+    # メインクエリ: 報告 + キャラ + 報告者 + 作成者
+    q = (
+        select(
+            CharacterReport,
+            Character.name.label("char_name_display"),
+            Character.char_name,
+            Character.creator_id,
+            Reporter.display_name.label("reporter_name"),
+            Creator.display_name.label("creator_name"),
+        )
+        .join(Character, Character.id == CharacterReport.character_id, isouter=True)
+        .join(Reporter, Reporter.id == CharacterReport.user_id, isouter=True)
+        .join(Creator, Creator.id == Character.creator_id, isouter=True)
+    )
+    if status != "all":
+        q = q.where(CharacterReport.status == status)
+    q = q.order_by(CharacterReport.id.desc())
+    result = await db.execute(q)
+    rows = result.all()
+
+    # キャラごと通報数
+    char_counts_q = await db.execute(
+        select(CharacterReport.character_id, func.count())
+        .group_by(CharacterReport.character_id)
+    )
+    char_report_counts = {row[0]: row[1] for row in char_counts_q.all()}
+
+    # 作者ごと通報数（作者が作ったキャラへの合計通報数）
+    creator_counts_q = await db.execute(
+        select(Character.creator_id, func.count())
+        .select_from(CharacterReport)
+        .join(Character, Character.id == CharacterReport.character_id)
+        .group_by(Character.creator_id)
+    )
+    creator_report_counts = {row[0]: row[1] for row in creator_counts_q.all()}
+
+    return {
+        "reports": [{
+            "id": r.id,
+            "character_id": r.character_id,
+            "character_name": char_name_display or f"(削除済み#{r.character_id})",
+            "char_name": char_name or "",
+            "char_report_count": char_report_counts.get(r.character_id, 0),
+            "creator_id": creator_id,
+            "creator_name": creator_name or f"User#{creator_id}" if creator_id else "不明",
+            "creator_report_count": creator_report_counts.get(creator_id, 0) if creator_id else 0,
+            "reporter_id": r.user_id,
+            "reporter_name": reporter_name or f"User#{r.user_id}",
+            "category": r.category,
+            "reason": r.reason,
+            "status": r.status,
+            "created_at": str(r.created_at) if r.created_at else "",
+        } for r, char_name_display, char_name, creator_id, reporter_name, creator_name in rows],
+    }
+
+
+class ReportStatusUpdate(BaseModel):
+    status: str  # reviewed / dismissed
+
+
+@router.put("/reports/{report_id}")
+async def update_report_status(
+    report_id: int,
+    req: ReportStatusUpdate,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """報告ステータス更新"""
+    if req.status not in ("pending", "reviewed", "dismissed"):
+        raise HTTPException(status_code=400, detail="無効なステータス")
+    result = await db.execute(select(CharacterReport).where(CharacterReport.id == report_id))
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="報告が見つかりません")
+    report.status = req.status
+    await db.commit()
+    return {"ok": True}

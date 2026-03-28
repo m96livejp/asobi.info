@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>管理画面 - AI Chat</title>
+<title>AI Chat管理</title>
 <style>
 :root {
   --bg:#1a1a2e; --bg2:#16213e; --bg3:#0f3460;
@@ -145,7 +145,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .img-filter-bar input{width:120px}
 .img-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
 .img-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;position:relative}
-.img-card img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:var(--bg3)}
+.img-card img{width:100%;aspect-ratio:var(--admin-img-ratio,1);object-fit:cover;display:block;background:var(--bg3)}
+.img-card-model{font-size:0.7rem;color:var(--accent-l);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .img-card-info{padding:8px}
 .img-card-user{font-size:0.78rem;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .img-card-prompt{font-size:0.75rem;color:var(--text);margin-top:2px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
@@ -156,6 +157,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .badge-discarded{background:rgba(255,255,255,0.06);color:var(--sub)}
 .img-pagination{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:20px;font-size:0.85rem;color:var(--sub)}
 .img-summary{font-size:0.85rem;color:var(--sub);margin-bottom:12px}
+
+/* 会話メッセージ表示 */
+.conv-msg{padding:10px 14px;margin-bottom:8px;border-radius:10px;font-size:0.9rem;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-width:85%}
+.conv-msg.user{background:var(--bg3);margin-left:auto;border-bottom-right-radius:4px}
+.conv-msg.assistant{background:rgba(233,69,96,0.1);margin-right:auto;border-bottom-left-radius:4px}
+.conv-msg-meta{font-size:0.72rem;color:var(--sub);margin-top:4px;text-align:right}
+.conv-msg.assistant .conv-msg-meta{text-align:left}
 
 /* レスポンシブ */
 @media(max-width:640px){
@@ -176,7 +184,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 <!-- ヘッダー -->
 <header class="admin-header">
   <div class="admin-header-left">
-    <span class="admin-header-logo">🛠 管理画面</span>
+    <span class="admin-header-logo">🛠 AI Chat管理</span>
     <a href="/" class="admin-header-back">← チャットに戻る</a>
   </div>
   <div id="header-user-area" class="hdr-user-area"></div>
@@ -191,9 +199,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
     <button class="nav-item" onclick="showSection('ai')">🤖 AI設定チャット用</button>
     <button class="nav-item" onclick="showSection('sd')">🎨 AI設定画像用</button>
     <button class="nav-item" onclick="showSection('users')">👥 ユーザー</button>
+    <button class="nav-item" onclick="showSection('conversations')">💬 会話管理</button>
     <button class="nav-item" onclick="showSection('characters')">✨ キャラクター</button>
+    <button class="nav-item" onclick="showSection('queue')">📋 生成キュー</button>
     <button class="nav-item" onclick="showSection('images')">🖼 生成画像</button>
     <button class="nav-item" onclick="showSection('feedbacks')">📝 フィードバック</button>
+    <button class="nav-item" onclick="showSection('reports')">⚠ 不正報告</button>
   </nav>
 </aside>
 
@@ -264,6 +275,29 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       </div>
       <button class="btn btn-primary" id="btn-save" onclick="saveAiSettings()">保存</button>
     </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">チャット用システムプロンプト</div>
+      <div id="chat-prompt-desc" style="font-size:0.85rem;line-height:1.7;color:var(--sub);white-space:pre-wrap;margin-bottom:16px">読み込み中...</div>
+      <div class="form-group">
+        <label>キャラクター選択でプレビュー</label>
+        <select id="prompt-preview-char" onchange="previewChatPrompt()">
+          <option value="">-- キャラクターを選択 --</option>
+        </select>
+      </div>
+      <pre id="chat-prompt-preview" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:0.82rem;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;display:none"></pre>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">キャラクターステータス機能</div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="chat-state-enabled" onchange="saveChatStateConfig()" style="width:auto">
+          ステータス・記憶システムを有効にする
+        </label>
+        <div class="hint">有効時、AIがキャラクターの状態（関係性・気分・場所・状況・所持品・目標）と記憶を会話ごとに管理します。</div>
+      </div>
+    </div>
   </div>
 
   <!-- ユーザー管理 -->
@@ -273,11 +307,44 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       <div style="overflow-x:auto">
         <table class="tbl" id="user-table">
           <thead><tr>
-            <th>ID</th><th>表示名</th><th>種別</th><th>ロール</th><th>登録日</th><th>操作</th>
+            <th style="cursor:pointer" onclick="sortUsers('id')">ID ⇅</th>
+            <th style="cursor:pointer" onclick="sortUsers('display_name')">表示名 ⇅</th>
+            <th>ロール</th>
+            <th style="cursor:pointer" onclick="sortUsers('char_count')">キャラ数 ⇅</th>
+            <th style="cursor:pointer" onclick="sortUsers('image_count')">画像数 ⇅</th>
+            <th style="cursor:pointer" onclick="sortUsers('last_active')">最終ログイン ⇅</th>
+            <th style="cursor:pointer" onclick="sortUsers('created_at')">登録日 ⇅</th>
+            <th>操作</th>
           </tr></thead>
-          <tbody id="user-tbody"><tr><td colspan="6" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
+          <tbody id="user-tbody"><tr><td colspan="8" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- 会話管理 -->
+  <div id="sec-conversations" class="section">
+    <div class="section-title">💬 会話管理</div>
+    <div class="card">
+      <div class="card-title">ユーザーを選択</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+        <select id="conv-user-select" onchange="loadUserConversations()" style="flex:1">
+          <option value="">-- ユーザーを選択 --</option>
+        </select>
+      </div>
+      <div id="conv-list" style="display:none">
+        <div class="card-title" id="conv-list-title">会話一覧</div>
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead><tr><th>ID</th><th>キャラクター</th><th>メッセージ数</th><th>更新日</th><th>操作</th></tr></thead>
+            <tbody id="conv-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div id="conv-detail" class="card" style="display:none">
+      <div class="card-title" id="conv-detail-title">会話詳細</div>
+      <div id="conv-messages" style="max-height:600px;overflow-y:auto"></div>
     </div>
   </div>
 
@@ -288,9 +355,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       <div style="overflow-x:auto">
         <table class="tbl" id="char-table">
           <thead><tr>
-            <th>ID</th><th>名前</th><th>作成者</th><th>状態</th><th>❤</th><th>💬</th><th>作成日</th><th>操作</th>
+            <th>ID</th><th>名前</th><th>作成者</th><th>❤</th><th>💬</th><th>作成日</th><th>操作</th>
           </tr></thead>
-          <tbody id="char-tbody"><tr><td colspan="8" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
+          <tbody id="char-tbody"><tr><td colspan="7" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -325,11 +392,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
     </div>
     <div class="card">
       <div class="card-title">生成パラメータ</div>
-      <div class="form-group">
-        <label>使用モデル</label>
-        <input type="text" id="sd-model" placeholder="接続テストでモデルを選択するか直接入力">
-        <div class="hint">チェックポイントモデル名（例: v1-5-pruned-emaonly.safetensors）</div>
-      </div>
+      <input type="hidden" id="sd-model">
       <div class="form-group">
         <label>ネガティブプロンプト</label>
         <textarea id="sd-negative" rows="3" placeholder="lowres, bad anatomy..."></textarea>
@@ -355,31 +418,19 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           <div class="hint">縦長: 512×768 / 576×1024 など</div>
         </div>
       </div>
-      <div class="form-group" style="margin-top:16px">
-        <label>翻訳エンドポイント（LibreTranslate）</label>
-        <input type="text" id="sd-lt-endpoint" placeholder="例: http://127.0.0.1:5000">
-        <div class="hint">
-          空欄の場合は翻訳ボタンが非表示になります。<br>
-          LibreTranslate 起動例: <code>libretranslate --host 0.0.0.0 --port 5000</code>
-        </div>
-        <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-          <button class="btn btn-sm" id="btn-lt-test" onclick="testLtConnection()">接続テスト</button>
-          <span id="lt-test-result" style="font-size:0.85rem"></span>
-        </div>
-      </div>
       <button class="btn btn-primary" id="btn-sd-save" onclick="saveSdSettings()">保存</button>
     </div>
 
     <!-- 選択可能モデル管理 -->
     <div class="card">
       <div class="card-title">選択可能モデル</div>
-      <p style="font-size:0.85rem;color:var(--sub);margin-bottom:14px">ユーザーが画像生成時に選択できるモデルを設定します。表示名は自由に設定できます。</p>
+      <p style="font-size:0.85rem;color:var(--sub);margin-bottom:14px">ユーザーが画像生成時に選択できるモデルを設定します。接続テストのモデル一覧から「選択」すると自動登録されます。</p>
       <div id="selmodel-list" style="margin-bottom:16px"></div>
       <details style="border:1px solid var(--border);border-radius:8px;padding:12px">
-        <summary style="cursor:pointer;font-weight:600;font-size:0.9rem">＋ モデルを追加</summary>
+        <summary style="cursor:pointer;font-weight:600;font-size:0.9rem">＋ 手動で追加</summary>
         <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
           <div class="form-group" style="margin:0">
-            <label>表示名</label>
+            <label>表示名 <span style="color:var(--accent)">*必須</span></label>
             <input type="text" id="new-sm-name" placeholder="例: リアル系、アニメ系">
           </div>
           <div class="form-group" style="margin:0">
@@ -393,6 +444,43 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           <button class="btn btn-primary btn-sm" onclick="createSelectableModel()">追加する</button>
         </div>
       </details>
+    </div>
+
+    <!-- 翻訳エンドポイント -->
+    <div class="card">
+      <div class="card-title">翻訳（LibreTranslate）</div>
+      <div class="form-group">
+        <label>翻訳モード</label>
+        <select id="sd-lt-mode" onchange="updateLtModeUI()">
+          <option value="off">無効（翻訳ボタン非表示）</option>
+          <option value="free">無料版のみ（libretranslate.com）</option>
+          <option value="local">ローカルのみ</option>
+          <option value="both">無料版 → ローカル（フォールバック）</option>
+        </select>
+      </div>
+      <div id="lt-free-settings" style="display:none">
+        <div class="form-group">
+          <label>APIキー（libretranslate.com）</label>
+          <input type="text" id="sd-lt-api-key" placeholder="例: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
+          <div class="hint">
+            <a href="https://libretranslate.com" target="_blank">libretranslate.com</a> でアカウント登録するとAPIキーを取得できます（無料プランあり）。
+          </div>
+        </div>
+      </div>
+      <div id="lt-local-settings" style="display:none">
+        <div class="form-group">
+          <label>ローカルエンドポイント</label>
+          <input type="text" id="sd-lt-endpoint" placeholder="例: http://127.0.0.1:5000">
+          <div class="hint">
+            LibreTranslate 起動例: <code>docker run -d -p 5000:5000 libretranslate/libretranslate</code>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+            <button class="btn btn-sm" id="btn-lt-test" onclick="testLtConnection()">接続テスト</button>
+            <span id="lt-test-result" style="font-size:0.85rem"></span>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveSdSettings()">保存</button>
     </div>
 
     <!-- テンプレート管理 -->
@@ -425,6 +513,34 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
     </div>
   </div>
 
+  <!-- 生成キュー -->
+  <div id="sec-queue" class="section">
+    <div class="section-title">📋 生成キュー</div>
+    <div class="card">
+      <div class="card-title">ワーカー状態</div>
+      <div id="queue-worker-status" style="margin-bottom:16px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="loadQueue()">🔄 再読み込み</button>
+        <button class="btn btn-sm" id="btn-queue-resume" onclick="adminResumeQueue()" style="display:none">▶ ワーカー再開</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">ステータス別集計</div>
+      <div id="queue-status-counts" style="display:flex;gap:12px;flex-wrap:wrap"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">最近のジョブ</div>
+      <div style="overflow-x:auto">
+        <table id="queue-table">
+          <thead><tr>
+            <th>ID</th><th>ユーザー</th><th>状態</th><th>プロンプト</th><th>モデル</th><th>作成日時</th><th>エラー</th><th>操作</th>
+          </tr></thead>
+          <tbody id="queue-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- フィードバック一覧 -->
   <div id="sec-feedbacks" class="section">
     <div class="section-title">📝 画像フィードバック</div>
@@ -435,6 +551,40 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       </div>
       <div id="fb-list"></div>
       <div class="img-pagination" id="fb-pagination"></div>
+    </div>
+  </div>
+
+  <!-- 不正報告 -->
+  <div id="sec-reports" class="section">
+    <div class="section-title">⚠ 不正報告</div>
+    <div class="card">
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
+        <select id="report-filter-status" onchange="loadReports()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.85rem">
+          <option value="pending">未対応</option>
+          <option value="reviewed">対応済み</option>
+          <option value="dismissed">却下</option>
+          <option value="all">すべて</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="loadReports()">🔄 再読み込み</button>
+        <span id="report-total" style="font-size:0.85rem;color:var(--sub)"></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="tbl" id="report-table">
+          <thead><tr>
+            <th>ID</th>
+            <th>キャラクター</th>
+            <th>通報数</th>
+            <th>作成者</th>
+            <th>作者通報数</th>
+            <th>通報者</th>
+            <th>カテゴリ</th>
+            <th>理由</th>
+            <th>報告日時</th>
+            <th>操作</th>
+          </tr></thead>
+          <tbody id="report-tbody"><tr><td colspan="10" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -527,7 +677,8 @@ function renderHeaderUser(user) {
       <div class="hdr-user-displayname">${esc(user.display_name)}</div>
       <a href="/" class="hud-item">チャットに戻る</a>
       <div class="hud-divider"></div>
-      <button class="hud-item hud-logout" onclick="logout()">ログアウト</button>
+      <a href="https://asobi.info/" class="hud-item">asobi.info TOP</a>
+      <a href="https://asobi.info/admin/" class="hud-item">🔒 管理画面</a>
     </div>`;
 }
 
@@ -538,12 +689,6 @@ function toggleUserMenu(e) {
 document.addEventListener('click', () => {
   document.getElementById('header-user-area')?.classList.remove('open');
 });
-
-async function logout() {
-  localStorage.removeItem('aic_token');
-  sessionStorage.setItem('aic_skip_auto_login', '1');
-  window.location.href = '/';
-}
 
 function toast(msg, type = 'ok') {
   const el = document.getElementById('toast');
@@ -561,11 +706,15 @@ function showConfirm(msg, onOk, okLabel = 'OK', okClass = 'btn-danger') {
   const overlay = document.getElementById('adm-confirm-overlay');
   const msgEl   = document.getElementById('adm-confirm-msg');
   const okBtn   = document.getElementById('adm-confirm-ok');
-  msgEl.textContent = msg;
+  // HTML or plain text
+  if (msg.includes('<')) { msgEl.innerHTML = msg; } else { msgEl.textContent = msg; }
   okBtn.className = 'btn ' + okClass;
   okBtn.textContent = okLabel;
   okBtn.onclick = () => { admConfirmClose(); onOk(); };
   overlay.classList.add('show');
+}
+function openDialog(msg, onOk, okLabel = 'OK') {
+  showConfirm(msg, onOk, okLabel, 'btn-primary');
 }
 function admConfirmClose() {
   document.getElementById('adm-confirm-overlay').classList.remove('show');
@@ -584,6 +733,7 @@ function showSection(id) {
   if (id === 'dashboard') loadStats();
   else if (id === 'ai') loadAiSettings();
   else if (id === 'users') loadUsers();
+  else if (id === 'conversations') loadConvUsers();
   else if (id === 'characters') loadCharacters();
 }
 
@@ -632,6 +782,46 @@ async function loadAiSettings() {
   document.getElementById('max-tokens').value = d.max_tokens || 1024;
   document.getElementById('cost').value = d.cost ?? 1;
   onProviderChange();
+
+  // チャットプロンプト情報ロード
+  const r2 = await api('/admin/chat-prompt-info');
+  if (r2.ok) {
+    const info = await r2.json();
+    document.getElementById('chat-prompt-desc').textContent = info.template_description;
+    const sel = document.getElementById('prompt-preview-char');
+    sel.innerHTML = '<option value="">-- キャラクターを選択 --</option>';
+    for (const c of info.characters) {
+      sel.innerHTML += `<option value="${c.id}">${esc(c.name)}${c.char_name ? ' (' + esc(c.char_name) + ')' : ''}</option>`;
+    }
+  }
+
+  // チャットステータス設定ロード
+  const r3 = await api('/admin/chat-state-config');
+  if (r3.ok) {
+    const cfg = await r3.json();
+    document.getElementById('chat-state-enabled').checked = !!cfg.enabled;
+  }
+}
+
+async function saveChatStateConfig() {
+  const enabled = document.getElementById('chat-state-enabled').checked ? 1 : 0;
+  const r = await api('/admin/chat-state-config', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({enabled})});
+  if (r.ok) showToast('ステータス設定を保存しました');
+}
+
+async function previewChatPrompt() {
+  const charId = document.getElementById('prompt-preview-char').value;
+  const pre = document.getElementById('chat-prompt-preview');
+  if (!charId) { pre.style.display = 'none'; return; }
+  pre.style.display = 'block';
+  pre.textContent = '読み込み中...';
+  const r = await api('/admin/chat-prompt-preview/' + charId);
+  if (r.ok) {
+    const d = await r.json();
+    pre.textContent = d.prompt;
+  } else {
+    pre.textContent = '取得に失敗しました';
+  }
 }
 
 async function saveAiSettings() {
@@ -681,27 +871,53 @@ function selectModel(id) {
 }
 
 // ─── ユーザー管理 ───
+let _usersData = [];
+let _userSortKey = 'id';
+let _userSortAsc = false;
+
 async function loadUsers() {
   const r = await api('/admin/users');
   if (!r.ok) return;
-  const users = await r.json();
+  _usersData = await r.json();
+  renderUsers();
+}
+
+function sortUsers(key) {
+  if (_userSortKey === key) { _userSortAsc = !_userSortAsc; }
+  else { _userSortKey = key; _userSortAsc = key === 'display_name'; }
+  renderUsers();
+}
+
+function renderUsers() {
+  const users = [..._usersData].sort((a, b) => {
+    let va = a[_userSortKey] ?? '';
+    let vb = b[_userSortKey] ?? '';
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
+    if (va < vb) return _userSortAsc ? -1 : 1;
+    if (va > vb) return _userSortAsc ? 1 : -1;
+    return 0;
+  });
   const tbody = document.getElementById('user-tbody');
-  if (!users.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--sub);padding:20px">ユーザーがいません</td></tr>'; return; }
-  tbody.innerHTML = users.map(u => `
-    <tr>
+  if (!users.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:20px">ユーザーがいません</td></tr>'; return; }
+  tbody.innerHTML = users.map(u => {
+    const lastActive = u.last_active ? u.last_active.slice(0, 16) : '-';
+    return `<tr>
       <td style="color:var(--sub)">${u.id}</td>
       <td>${esc(u.display_name)}</td>
-      <td><span class="badge badge-${u.is_guest ? 'guest' : 'user'}">${u.is_guest ? 'ゲスト' : 'asobi連携'}</span></td>
       <td><span class="badge badge-${u.role}">${u.role}</span></td>
+      <td style="text-align:center">${u.char_count}</td>
+      <td style="text-align:center">${u.image_count}</td>
+      <td style="color:var(--sub);font-size:0.78rem">${lastActive}</td>
       <td style="color:var(--sub);font-size:0.78rem">${u.created_at.slice(0,10)}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         ${u.role === 'admin'
           ? `<button class="btn btn-sm btn-ghost" onclick="setRole(${u.id},'user')">解除</button>`
           : u.is_guest ? ''
           : `<button class="btn btn-sm btn-warn" onclick="setRole(${u.id},'admin')">管理者に</button>`}
+        <button class="btn btn-sm btn-info" onclick="showUserConversations(${u.id})">会話</button>
         <button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id},'${esc(u.display_name)}')">削除</button>
       </td>
-    </tr>`).join('');
+    </tr>`}).join('');
 }
 
 async function setRole(id, role) {
@@ -716,33 +932,117 @@ async function deleteUser(id, name) {
   }, '削除する');
 }
 
+async function showUserConversations(userId) {
+  showSection('conversations');
+  await loadConvUsers(true);
+  const sel = document.getElementById('conv-user-select');
+  sel.value = String(userId);
+  loadUserConversations();
+}
+
+// ─── 会話管理 ───
+let _convUsersLoaded = false;
+
+async function loadConvUsers(force) {
+  if (_convUsersLoaded && !force) return;
+  const r = await api('/admin/users');
+  if (!r.ok) return;
+  const users = await r.json();
+  const sel = document.getElementById('conv-user-select');
+  sel.innerHTML = '<option value="">-- ユーザーを選択 --</option>';
+  users.forEach(u => {
+    const label = `${esc(u.display_name)} (ID:${u.id}${u.is_guest ? ' ゲスト' : ''})`;
+    sel.innerHTML += `<option value="${u.id}">${label}</option>`;
+  });
+  _convUsersLoaded = true;
+}
+
+async function loadUserConversations() {
+  const uid = document.getElementById('conv-user-select').value;
+  const listDiv = document.getElementById('conv-list');
+  const detailDiv = document.getElementById('conv-detail');
+  detailDiv.style.display = 'none';
+  if (!uid) { listDiv.style.display = 'none'; return; }
+  const r = await api(`/admin/users/${uid}/conversations`);
+  if (!r.ok) { toast('会話の取得に失敗しました', 'err'); return; }
+  const convs = await r.json();
+  listDiv.style.display = 'block';
+  const sel = document.getElementById('conv-user-select');
+  const userName = sel.options[sel.selectedIndex].textContent;
+  document.getElementById('conv-list-title').textContent = `${userName} の会話一覧 (${convs.length}件)`;
+  const tbody = document.getElementById('conv-tbody');
+  if (!convs.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--sub);padding:20px">会話がありません</td></tr>';
+    return;
+  }
+  tbody.innerHTML = convs.map(c => {
+    const avatar = c.character_avatar
+      ? `<img src="${esc(c.character_avatar)}" style="width:28px;height:28px;border-radius:50%;vertical-align:middle;margin-right:6px;object-fit:cover">`
+      : `<span style="display:inline-block;width:28px;height:28px;border-radius:50%;background:var(--bg3);vertical-align:middle;margin-right:6px;text-align:center;line-height:28px;font-size:14px">🤖</span>`;
+    return `<tr>
+    <td style="color:var(--sub)">${c.id}</td>
+    <td>${avatar}${esc(c.character_name)}${c.character_is_deleted ? ' <span class="badge badge-pending">削除済</span>' : ''}</td>
+    <td style="text-align:center">${c.message_count}</td>
+    <td style="color:var(--sub);font-size:0.78rem">${(c.updated_at || '').slice(0,16)}</td>
+    <td><button class="btn btn-sm btn-info" onclick="viewConversation(${c.id})">閲覧</button></td>
+  </tr>`;
+  }).join('');
+}
+
+async function viewConversation(convId) {
+  const r = await api(`/admin/conversations/${convId}/messages`);
+  if (!r.ok) { toast('メッセージの取得に失敗しました', 'err'); return; }
+  const data = await r.json();
+  const detailDiv = document.getElementById('conv-detail');
+  detailDiv.style.display = 'block';
+  const conv = data.conversation;
+  const charAvatar = conv.character_avatar
+    ? `<img src="${esc(conv.character_avatar)}" style="width:32px;height:32px;border-radius:50%;vertical-align:middle;margin-right:8px;object-fit:cover">`
+    : `<span style="display:inline-block;width:32px;height:32px;border-radius:50%;background:var(--bg3);vertical-align:middle;margin-right:8px;text-align:center;line-height:32px;font-size:16px">🤖</span>`;
+  document.getElementById('conv-detail-title').innerHTML =
+    `${charAvatar}${esc(conv.user_name)} × ${esc(conv.character_name)} (${data.messages.length}件)`;
+  const msgDiv = document.getElementById('conv-messages');
+  if (!data.messages.length) {
+    msgDiv.innerHTML = '<p style="color:var(--sub);text-align:center;padding:20px">メッセージがありません</p>';
+    return;
+  }
+  const smallAvatar = conv.character_avatar
+    ? `<img src="${esc(conv.character_avatar)}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0">`
+    : `<span style="display:inline-block;width:24px;height:24px;border-radius:50%;background:var(--bg3);text-align:center;line-height:24px;font-size:12px;flex-shrink:0">🤖</span>`;
+  msgDiv.innerHTML = data.messages.map(m => {
+    if (m.role === 'assistant') {
+      return `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px">
+        ${smallAvatar}
+        <div class="conv-msg assistant">${esc(m.content)}<div class="conv-msg-meta">${(m.created_at || '').slice(0,16)}</div></div>
+      </div>`;
+    }
+    return `<div class="conv-msg ${m.role}">${esc(m.content)}<div class="conv-msg-meta">${(m.created_at || '').slice(0,16)}</div></div>`;
+  }).join('');
+  detailDiv.scrollIntoView({ behavior: 'smooth' });
+}
+
 // ─── キャラクター管理 ───
 async function loadCharacters() {
   const r = await api('/admin/characters');
   if (!r.ok) return;
   const chars = await r.json();
   const tbody = document.getElementById('char-tbody');
-  if (!chars.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:20px">キャラクターがいません</td></tr>'; return; }
+  if (!chars.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--sub);padding:20px">キャラクターがいません</td></tr>'; return; }
   tbody.innerHTML = chars.map(c => {
-    const badges = [];
-    if (c.is_sample) badges.push('<span class="badge badge-sample">サンプル</span>');
-    else if (c.is_public) badges.push('<span class="badge badge-public">公開</span>');
-    else badges.push('<span class="badge badge-private">非公開</span>');
     return `<tr>
       <td style="color:var(--sub)">${c.id}</td>
       <td>${esc(c.name)}</td>
       <td style="color:var(--sub)">${c.creator_id}</td>
-      <td>${badges.join('')}</td>
       <td>${c.like_count}</td>
       <td>${c.use_count}</td>
       <td style="color:var(--sub);font-size:0.78rem">${c.created_at.slice(0,10)}</td>
-      <td style="display:flex;gap:6px;flex-wrap:wrap">
-        ${c.is_sample
-          ? `<button class="btn btn-sm btn-ghost" onclick="setCharFlag(${c.id},{is_sample:0})">サンプル解除</button>`
-          : `<button class="btn btn-sm btn-info" onclick="setCharFlag(${c.id},{is_sample:1})">サンプルに</button>`}
-        ${c.is_public
-          ? `<button class="btn btn-sm btn-ghost" onclick="setCharFlag(${c.id},{is_public:0})">非公開に</button>`
-          : `<button class="btn btn-sm btn-ok" onclick="setCharFlag(${c.id},{is_public:1})">公開に</button>`}
+      <td style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem">
+          <input type="checkbox" ${c.is_public ? 'checked' : ''} onchange="setCharFlag(${c.id},{is_public:this.checked?1:0})"> 公開
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem">
+          <input type="checkbox" ${c.is_sample ? 'checked' : ''} onchange="setCharFlag(${c.id},{is_sample:this.checked?1:0})"> サンプル
+        </label>
         <button class="btn btn-sm btn-danger" onclick="deleteChar(${c.id},'${esc(c.name)}')">削除</button>
       </td>
     </tr>`;
@@ -775,6 +1075,13 @@ async function loadSdSettings() {
   document.getElementById('sd-width').value = d.width || 512;
   document.getElementById('sd-height').value = d.height || 512;
   document.getElementById('sd-lt-endpoint').value = d.lt_endpoint || '';
+  document.getElementById('sd-lt-api-key').value = d.lt_api_key || '';
+  // lt_mode: off / free / local / both
+  document.getElementById('sd-lt-mode').value = d.lt_mode || 'off';
+  updateLtModeUI();
+  // 画像比率CSS変数を設定
+  const w = d.width || 512, h = d.height || 512;
+  document.documentElement.style.setProperty('--gen-img-ratio', `${w}/${h}`);
 }
 
 async function saveSdSettings() {
@@ -790,15 +1097,62 @@ async function saveSdSettings() {
     width: parseInt(document.getElementById('sd-width').value) || 512,
     height: parseInt(document.getElementById('sd-height').value) || 512,
     lt_endpoint: document.getElementById('sd-lt-endpoint').value || null,
+    lt_mode: document.getElementById('sd-lt-mode').value,
+    lt_api_key: document.getElementById('sd-lt-api-key').value || null,
   };
   const r = await api('/admin/sd-settings', { method: 'PUT', body: JSON.stringify(body) });
   btn.disabled = false; btn.textContent = '保存';
   r.ok ? toast('設定を保存しました') : toast('保存に失敗しました', 'err');
 }
 
+// モデル一覧から選択 → 選択可能モデルに未登録なら追加ダイアログ
+let _pendingModelId = '';
 function selectSdModel(name) {
   document.getElementById('sd-model').value = name;
-  toast(`モデル "${name}" を選択しました`);
+  // 既に選択可能モデルに登録されているか確認
+  (async () => {
+    const r = await api('/admin/selectable-models');
+    if (!r.ok) return;
+    const models = await r.json();
+    if (models.some(m => m.model_id === name)) {
+      toast(`"${name}" は登録済みです`);
+      return;
+    }
+    // 未登録 → 表示名を入力して追加
+    _pendingModelId = name;
+    openDialog(
+      `<div style="text-align:left">
+        <p style="margin-bottom:8px">「${esc(name)}」を選択可能モデルに追加します。</p>
+        <div class="form-group" style="margin:0 0 8px">
+          <label>表示名 <span style="color:var(--accent)">*必須</span></label>
+          <input type="text" id="dlg-sm-name" placeholder="例: リアル系、アニメ系" style="width:100%">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>表示順</label>
+          <input type="number" id="dlg-sm-order" value="0" min="0" style="width:100px">
+        </div>
+      </div>`,
+      async () => {
+        const dname = document.getElementById('dlg-sm-name').value.trim();
+        const dord = parseInt(document.getElementById('dlg-sm-order').value) || 0;
+        if (!dname) { toast('表示名を入力してください', 'err'); return; }
+        const ar = await api('/admin/selectable-models', { method: 'POST', body: JSON.stringify({ display_name: dname, model_id: _pendingModelId, sort_order: dord }) });
+        if (ar.ok) {
+          toast('追加しました');
+          loadSelectableModels();
+          // モデル一覧の該当行をグレーアウト
+          document.querySelectorAll('.model-tbl tbody tr').forEach(tr => {
+            const cells = tr.querySelectorAll('td');
+            if (cells.length >= 2 && cells[1].textContent.trim() === _pendingModelId) {
+              const b = cells[0].querySelector('button');
+              if (b) { b.disabled = true; b.style.opacity = '0.4'; b.textContent = '登録済'; b.classList.remove('btn-ok'); b.onclick = null; }
+            }
+          });
+        } else { toast('追加に失敗しました', 'err'); }
+      },
+      '追加する'
+    );
+  })();
 }
 
 // ─── 選択可能モデル管理 ───
@@ -811,10 +1165,12 @@ async function loadSelectableModels() {
   el.innerHTML = models.map(m => `
     <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-        <div>
+        <div style="min-width:0;flex:1">
           <span style="font-weight:600">${esc(m.display_name)}</span>
-          <span style="font-size:0.8rem;color:var(--sub);margin-left:8px">${esc(m.model_id)}</span>
+          <span style="font-size:0.75rem;color:var(--sub);margin-left:4px">順: ${m.sort_order}</span>
           ${m.is_active ? '' : '<span style="font-size:0.75rem;color:var(--err);margin-left:6px">無効</span>'}
+          <div style="font-size:0.78rem;color:var(--sub);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.model_id)}</div>
+          <div style="font-size:0.78rem;color:var(--sub);margin-top:1px">利用: ${m.use_count ?? 0}回</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
           <button class="btn btn-sm ${m.is_active ? 'btn-ghost' : 'btn-ok'}" onclick="toggleSelectableModel(${m.id},${m.is_active})">${m.is_active ? '無効化' : '有効化'}</button>
@@ -828,7 +1184,8 @@ async function createSelectableModel() {
   const name = document.getElementById('new-sm-name').value.trim();
   const mid  = document.getElementById('new-sm-id').value.trim();
   const ord  = parseInt(document.getElementById('new-sm-order').value) || 0;
-  if (!name || !mid) { toast('表示名とモデルIDは必須です', 'err'); return; }
+  if (!name) { toast('表示名は必須です', 'err'); return; }
+  if (!mid) { toast('モデルIDは必須です', 'err'); return; }
   const r = await api('/admin/selectable-models', { method: 'POST', body: JSON.stringify({ display_name: name, model_id: mid, sort_order: ord }) });
   if (r.ok) {
     document.getElementById('new-sm-name').value = '';
@@ -981,14 +1338,33 @@ async function testSdConnection() {
   }
   let html = '<div class="test-status ok">✓ 接続成功</div>';
   if (d.models?.length) {
+    // 登録済みモデルを取得してグレーアウト判定
+    let registeredIds = new Set();
+    try {
+      const sr = await api('/admin/selectable-models');
+      if (sr.ok) { const sm = await sr.json(); sm.forEach(m => registeredIds.add(m.model_id)); }
+    } catch(_) {}
     html += '<div style="background:var(--bg);border-radius:8px;padding:12px;margin-top:8px">';
-    html += '<div style="font-weight:600;margin-bottom:8px;font-size:0.85rem">利用可能なモデル</div>';
+    html += `<div style="font-weight:600;margin-bottom:8px;font-size:0.85rem">利用可能なモデル（${d.models.length}件）</div>`;
+    html += '<div style="max-height:360px;overflow-y:auto">';
     html += '<table class="model-tbl"><thead><tr><th></th><th>モデル名</th></tr></thead><tbody>';
-    for (const m of d.models)
-      html += `<tr><td><button class="btn btn-sm btn-ok" onclick="selectSdModel('${esc(m)}')">選択</button></td><td>${esc(m)}</td></tr>`;
-    html += '</tbody></table></div>';
+    for (const m of d.models) {
+      const registered = registeredIds.has(m);
+      if (registered) {
+        html += `<tr><td><button class="btn btn-sm" disabled style="opacity:0.4">登録済</button></td><td>${esc(m)}</td></tr>`;
+      } else {
+        html += `<tr><td><button class="btn btn-sm btn-ok" onclick="selectSdModel('${esc(m)}')">選択</button></td><td>${esc(m)}</td></tr>`;
+      }
+    }
+    html += '</tbody></table></div></div>';
   }
   el.innerHTML = html;
+}
+
+function updateLtModeUI() {
+  const mode = document.getElementById('sd-lt-mode').value;
+  document.getElementById('lt-free-settings').style.display = (mode === 'free' || mode === 'both') ? '' : 'none';
+  document.getElementById('lt-local-settings').style.display = (mode === 'local' || mode === 'both') ? '' : 'none';
 }
 
 async function testLtConnection() {
@@ -997,19 +1373,14 @@ async function testLtConnection() {
   btn.disabled = true; btn.textContent = 'テスト中...'; el.innerHTML = '';
   const endpoint = (document.getElementById('sd-lt-endpoint').value || '').trim().replace(/\/$/, '');
   if (!endpoint) { btn.disabled = false; btn.textContent = '接続テスト'; el.textContent = 'URLを入力してください'; return; }
-  try {
-    const r = await fetch(endpoint + '/languages');
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const langs = await r.json();
-    const hasJa = langs.some(l => l.code === 'ja');
-    const hasEn = langs.some(l => l.code === 'en');
-    if (hasJa && hasEn) {
-      el.innerHTML = '<span style="color:var(--ok)">✓ 接続成功（日→英 翻訳可能）</span>';
-    } else {
-      el.innerHTML = `<span style="color:orange">⚠ 接続成功（ja:${hasJa ? '○' : '×'} / en:${hasEn ? '○' : '×'}）</span>`;
-    }
-  } catch(e) {
-    el.innerHTML = `<span style="color:var(--err)">✗ ${esc(e.message)}</span>`;
+  const r = await api('/admin/lt-test', { method: 'POST', body: JSON.stringify({ endpoint }) });
+  const d = await r.json();
+  if (!d.ok) {
+    el.innerHTML = `<span style="color:var(--err)">✗ ${esc(d.error)}</span>`;
+  } else if (d.ja && d.en) {
+    el.innerHTML = '<span style="color:var(--ok)">✓ 接続成功（日→英 翻訳可能）</span>';
+  } else {
+    el.innerHTML = `<span style="color:orange">⚠ 接続成功（ja:${d.ja ? '○' : '×'} / en:${d.en ? '○' : '×'}）</span>`;
   }
   btn.disabled = false; btn.textContent = '接続テスト';
 }
@@ -1038,19 +1409,27 @@ async function loadImages(reset = true) {
     return;
   }
 
+  // SD設定の比率をCSS変数にセット
+  if (d.width && d.height) {
+    document.documentElement.style.setProperty('--admin-img-ratio', `${d.width}/${d.height}`);
+  }
+
   grid.innerHTML = d.images.map(img => {
     const statusLabel = { saved:'保存済み', pending:'Pending', discarded:'破棄済み' }[img.status] || img.status;
     const statusClass = `badge-${img.status}`;
     const deletedBadge = img.is_deleted ? '<span class="badge" style="background:rgba(233,69,96,0.15);color:var(--accent-l)">削除済</span>' : '';
     const date = img.created_at ? img.created_at.slice(0,16) : '';
     const prompt = esc(img.prompt || '');
+    const modelName = img.model ? esc(img.model) : '';
     return `
       <div class="img-card" id="imgcard-${img.id}">
-        <a href="${esc(img.url)}" target="_blank">
+        <div style="position:relative;cursor:pointer" onclick="adminPreviewImg('${esc(img.url)}')">
           <img src="${esc(img.url)}" alt="" loading="lazy" onerror="this.style.minHeight='80px'">
-        </a>
+          <a href="${esc(img.url)}" target="_blank" onclick="event.stopPropagation()" style="position:absolute;bottom:4px;right:4px;font-size:0.65rem;background:rgba(0,0,0,0.6);color:#fff;padding:1px 5px;border-radius:4px;text-decoration:none">↗</a>
+        </div>
         <div class="img-card-info">
           <div class="img-card-user">👤 ${esc(img.display_name)} <span style="color:var(--sub);font-size:0.7rem">#${img.user_id}</span></div>
+          ${modelName ? `<div class="img-card-model">🎨 ${modelName}</div>` : ''}
           <div class="img-card-prompt" title="${prompt}">${prompt || '<span style="color:var(--sub);font-style:italic">プロンプトなし</span>'}</div>
           <div class="img-card-footer">
             <span class="badge ${statusClass}">${statusLabel}</span>${deletedBadge}
@@ -1101,6 +1480,43 @@ async function adminDeleteImage(id) {
 let fbOffset = 0;
 const FB_LIMIT = 50;
 
+// ─── 不正報告 ───
+async function loadReports() {
+  const status = document.getElementById('report-filter-status').value;
+  const r = await api('/admin/reports?status=' + status);
+  if (!r.ok) { toast('報告の取得に失敗しました', 'err'); return; }
+  const d = await r.json();
+  document.getElementById('report-total').textContent = d.reports.length + '件';
+  const tbody = document.getElementById('report-tbody');
+  if (!d.reports.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="color:var(--sub);text-align:center;padding:20px">報告なし</td></tr>';
+    return;
+  }
+  tbody.innerHTML = d.reports.map(r => `<tr>
+    <td>${r.id}</td>
+    <td title="${esc(r.char_name)}">${esc(r.character_name)}</td>
+    <td style="text-align:center;${r.char_report_count >= 3 ? 'color:#e53935;font-weight:700' : ''}">${r.char_report_count}</td>
+    <td>${esc(r.creator_name)}</td>
+    <td style="text-align:center;${r.creator_report_count >= 5 ? 'color:#e53935;font-weight:700' : ''}">${r.creator_report_count}</td>
+    <td>${esc(r.reporter_name)}</td>
+    <td style="font-size:0.82rem">${esc(r.category)}</td>
+    <td style="font-size:0.82rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.reason)}">${esc(r.reason || '-')}</td>
+    <td style="font-size:0.78rem;color:var(--sub);white-space:nowrap">${r.created_at.slice(0, 16)}</td>
+    <td>
+      ${r.status === 'pending' ? `
+        <button class="btn btn-sm btn-info" onclick="updateReportStatus(${r.id}, 'reviewed')">対応済み</button>
+        <button class="btn btn-sm btn-ghost" onclick="updateReportStatus(${r.id}, 'dismissed')">却下</button>
+      ` : `<span style="font-size:0.8rem;color:var(--sub)">${r.status === 'reviewed' ? '対応済み' : '却下'}</span>`}
+    </td>
+  </tr>`).join('');
+}
+
+async function updateReportStatus(id, status) {
+  const r = await api('/admin/reports/' + id, { method: 'PUT', body: JSON.stringify({ status }) });
+  if (r.ok) { toast('更新しました'); loadReports(); }
+  else toast('更新に失敗しました', 'err');
+}
+
 async function loadFeedbacks(reset = true) {
   if (reset) fbOffset = 0;
   const params = new URLSearchParams({ limit: FB_LIMIT, offset: fbOffset });
@@ -1119,19 +1535,23 @@ async function loadFeedbacks(reset = true) {
   list.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.85rem">'
     + '<thead><tr style="border-bottom:1px solid var(--border);text-align:left">'
     + '<th style="padding:8px 6px;width:60px">画像</th>'
-    + '<th style="padding:8px 6px">理由</th>'
-    + '<th style="padding:8px 6px">コメント</th>'
+    + '<th style="padding:8px 6px">詳細</th>'
+    + '<th style="padding:8px 6px">理由 / コメント</th>'
     + '<th style="padding:8px 6px">ユーザー</th>'
     + '<th style="padding:8px 6px;width:80px">日時</th>'
     + '</tr></thead><tbody>'
     + d.feedbacks.map(fb => {
       const reasons = fb.reasons ? fb.reasons.split(',').map(r => `<span style="display:inline-block;background:rgba(233,69,96,0.15);color:var(--accent-l);border-radius:4px;padding:2px 6px;margin:1px;font-size:0.75rem">${esc(r)}</span>`).join('') : '';
-      const imgThumb = fb.image_url ? `<a href="${esc(fb.image_url)}" target="_blank"><img src="${esc(fb.image_url)}" style="width:50px;height:50px;object-fit:cover;border-radius:4px"></a>` : '-';
+      const imgThumb = fb.image_url ? `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><img src="${esc(fb.image_url)}" style="width:50px;height:50px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="adminPreviewImg('${esc(fb.image_url)}')"><a href="${esc(fb.image_url)}" target="_blank" style="font-size:0.65rem;color:var(--sub)">開く↗</a></div>` : '-';
       const date = fb.created_at ? fb.created_at.slice(0, 16) : '';
+      const modelHtml = fb.model ? `<div style="font-size:0.75rem;color:var(--accent-l)">🎨 ${esc(fb.model)}</div>` : '';
+      const tmplHtml = fb.template_name ? `<div style="font-size:0.75rem;color:var(--sub)">📋 ${esc(fb.template_name)}</div>` : '';
+      const promptHtml = fb.prompt ? `<div style="font-size:0.73rem;color:var(--sub);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical" title="${esc(fb.prompt)}">${esc(fb.prompt)}</div>` : '';
+      const commentHtml = fb.comment ? `<div style="margin-top:4px;font-size:0.8rem">${esc(fb.comment)}</div>` : '';
       return `<tr style="border-bottom:1px solid var(--border)">
         <td style="padding:8px 6px">${imgThumb}</td>
-        <td style="padding:8px 6px">${reasons || '<span style="color:var(--sub)">-</span>'}</td>
-        <td style="padding:8px 6px">${fb.comment ? esc(fb.comment) : '<span style="color:var(--sub)">-</span>'}</td>
+        <td style="padding:8px 6px">${modelHtml}${tmplHtml}${promptHtml}</td>
+        <td style="padding:8px 6px">${reasons || '<span style="color:var(--sub)">-</span>'}${commentHtml}</td>
         <td style="padding:8px 6px">${esc(fb.display_name)} <span style="color:var(--sub);font-size:0.7rem">#${fb.user_id}</span></td>
         <td style="padding:8px 6px;font-size:0.75rem;color:var(--sub)">${date}</td>
       </tr>`;
@@ -1149,46 +1569,143 @@ async function loadFeedbacks(reset = true) {
   `;
 }
 
+function adminPreviewImg(url) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer';
+  overlay.innerHTML = `<img src="${url}" style="max-width:90vw;max-height:90vh;object-fit:contain;border-radius:8px">`;
+  overlay.onclick = () => overlay.remove();
+  document.body.appendChild(overlay);
+}
+
 function fbPage(dir) {
   fbOffset = Math.max(0, fbOffset + dir * FB_LIMIT);
   loadFeedbacks(false);
 }
 
-// showSection の拡張
+// ─── 生成キュー ───
+async function loadQueue() {
+  const r = await api('/admin/queue');
+  if (!r.ok) return;
+  const d = await r.json();
+  const w = d.worker;
+
+  // ワーカー状態
+  const wsEl = document.getElementById('queue-worker-status');
+  const resumeBtn = document.getElementById('btn-queue-resume');
+  if (w.is_stopped) {
+    wsEl.innerHTML = `<div style="padding:12px;background:rgba(231,76,60,0.12);border-radius:8px;border:1px solid rgba(231,76,60,0.3)">
+      <div style="font-weight:600;color:#e74c3c;margin-bottom:4px">⛔ 停止中</div>
+      <div style="font-size:0.88rem;color:var(--text)">${esc(w.stop_reason || '不明')}</div>
+      <div style="font-size:0.82rem;color:var(--sub);margin-top:4px">待機中: ${w.queue_length}件</div>
+    </div>`;
+    resumeBtn.style.display = '';
+  } else {
+    const cur = w.current_job;
+    wsEl.innerHTML = `<div style="padding:12px;background:rgba(46,204,113,0.12);border-radius:8px;border:1px solid rgba(46,204,113,0.3)">
+      <div style="font-weight:600;color:#2ecc71;margin-bottom:4px">✅ 稼働中</div>
+      <div style="font-size:0.88rem;color:var(--text)">待機中: ${w.queue_length}件 ／ 平均生成時間: ${w.avg_generation_seconds}秒</div>
+      ${cur ? `<div style="font-size:0.82rem;color:var(--sub);margin-top:4px">処理中: Job#${cur.id} (User#${cur.user_id}) 開始: ${cur.started_at || '-'}</div>` : ''}
+    </div>`;
+    resumeBtn.style.display = 'none';
+  }
+
+  // ステータス別集計
+  const scEl = document.getElementById('queue-status-counts');
+  const labels = { pending: '⏳ 待機', processing: '⚙ 処理中', completed: '✅ 完了', failed: '❌ 失敗', cancelled: '🚫 キャンセル' };
+  const colors = { pending: '#f39c12', processing: '#3498db', completed: '#2ecc71', failed: '#e74c3c', cancelled: '#95a5a6' };
+  scEl.innerHTML = Object.entries(labels).map(([k, label]) => {
+    const count = d.status_counts[k] || 0;
+    return `<div style="padding:8px 14px;background:var(--bg2);border-radius:8px;border-left:3px solid ${colors[k]};min-width:100px">
+      <div style="font-size:0.82rem;color:var(--sub)">${label}</div>
+      <div style="font-size:1.3rem;font-weight:700;color:${colors[k]}">${count}</div>
+      ${(k === 'completed' || k === 'failed' || k === 'cancelled') && count > 0
+        ? `<button class="btn btn-ghost btn-sm" style="margin-top:4px;font-size:0.75rem" onclick="clearQueueStatus('${k}')">🗑 一括削除</button>` : ''}
+    </div>`;
+  }).join('');
+
+  // ジョブ一覧
+  const tbody = document.getElementById('queue-tbody');
+  const statusBadge = (s) => {
+    const c = colors[s] || '#888';
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.78rem;background:${c}22;color:${c};font-weight:600">${s}</span>`;
+  };
+  tbody.innerHTML = d.jobs.map(j => `<tr>
+    <td>${j.id}</td>
+    <td title="User#${j.user_id}">${esc(j.display_name)}</td>
+    <td>${statusBadge(j.status)}</td>
+    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(j.prompt || '')}">${esc(j.prompt || '')}</td>
+    <td style="font-size:0.82rem">${esc(j.model || '-')}</td>
+    <td style="font-size:0.82rem;white-space:nowrap">${j.created_at?.slice(0,19) || ''}</td>
+    <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e74c3c;font-size:0.82rem" title="${esc(j.error_message || '')}">${esc(j.error_message || '')}</td>
+    <td>${j.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="cancelQueueJob(${j.id})">キャンセル</button>` : ''}</td>
+  </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--sub)">ジョブなし</td></tr>';
+}
+
+async function adminResumeQueue() {
+  const r = await api('/admin/queue/resume', { method: 'POST' });
+  r.ok ? (toast('ワーカーを再開しました'), loadQueue()) : toast('再開に失敗しました', 'err');
+}
+
+async function cancelQueueJob(id) {
+  openDialog('ジョブ#' + id + ' をキャンセルしますか？', async () => {
+    const r = await api('/admin/queue/' + id, { method: 'DELETE' });
+    r.ok ? (toast('キャンセルしました'), loadQueue()) : toast('キャンセルに失敗しました', 'err');
+  }, 'キャンセルする');
+}
+
+async function clearQueueStatus(status) {
+  const labels = { completed: '完了', failed: '失敗', cancelled: 'キャンセル' };
+  openDialog(`${labels[status]}済みのジョブを一括削除しますか？`, async () => {
+    const r = await api('/admin/queue-clear/' + status, { method: 'DELETE' });
+    if (r.ok) {
+      const d = await r.json();
+      toast(`${d.deleted}件削除しました`);
+      loadQueue();
+    } else {
+      toast('削除に失敗しました', 'err');
+    }
+  }, '削除する');
+}
+
+// showSection の拡張（ハッシュ連動）
+const _sectionLoaders = {
+  dashboard: () => loadStats(),
+  ai: () => loadAiSettings(),
+  users: () => loadUsers(),
+  conversations: () => loadConvUsers(),
+  characters: () => loadCharacters(),
+  sd: () => { loadSdSettings(); loadTemplates(); loadSelectableModels(); },
+  queue: () => loadQueue(),
+  images: () => loadImages(),
+  feedbacks: () => loadFeedbacks(),
+  reports: () => loadReports(),
+};
+
 const _origShowSection = showSection;
-showSection = function(id) {
-  if (id === 'sd') {
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-    document.getElementById('sec-sd').classList.add('active');
+showSection = function(id, fromHash) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  const sec = document.getElementById('sec-' + id);
+  if (!sec) { _origShowSection('dashboard'); return; }
+  sec.classList.add('active');
+  // nav-item のアクティブ化
+  if (!fromHash && event?.currentTarget) {
     event.currentTarget.classList.add('active');
-    loadSdSettings();
-    loadTemplates();
-    loadSelectableModels();
-    return;
+  } else {
+    document.querySelectorAll('.nav-item').forEach(b => {
+      if (b.getAttribute('onclick')?.includes("'" + id + "'")) b.classList.add('active');
+    });
   }
-  if (id === 'images') {
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-    document.getElementById('sec-images').classList.add('active');
-    event.currentTarget.classList.add('active');
-    loadImages();
-    return;
-  }
-  if (id === 'feedbacks') {
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-    document.getElementById('sec-feedbacks').classList.add('active');
-    event.currentTarget.classList.add('active');
-    loadFeedbacks();
-    return;
-  }
-  _origShowSection(id);
+  // データ読み込み
+  if (_sectionLoaders[id]) _sectionLoaders[id]();
+  // ハッシュ更新
+  if (location.hash !== '#' + id) history.replaceState(null, '', '#' + id);
 };
 
 // 初期化
 initHeader();
-loadStats();
+const initSection = location.hash.replace('#', '') || 'dashboard';
+showSection(initSection, true);
 </script>
 </body>
 </html>
