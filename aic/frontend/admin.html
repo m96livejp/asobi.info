@@ -273,6 +273,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         <input type="number" id="cost" value="1" min="0" max="100">
         <div class="hint">1メッセージあたりの消費ポイント（0 = 無料）</div>
       </div>
+      <div class="form-group">
+        <label>レスポンス指示文</label>
+        <textarea id="response-guideline" rows="4" placeholder="例: キャラクターとして自然に会話してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。"></textarea>
+        <div class="hint">空欄の場合はデフォルト指示文が使用されます。全キャラクター共通のシステムプロンプト末尾に追加されます。</div>
+      </div>
       <button class="btn btn-primary" id="btn-save" onclick="saveAiSettings()">保存</button>
     </div>
 
@@ -310,8 +315,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
             <th style="cursor:pointer" onclick="sortUsers('id')">ID ⇅</th>
             <th style="cursor:pointer" onclick="sortUsers('display_name')">表示名 ⇅</th>
             <th>ロール</th>
-            <th style="cursor:pointer" onclick="sortUsers('char_count')">キャラ数 ⇅</th>
-            <th style="cursor:pointer" onclick="sortUsers('image_count')">画像数 ⇅</th>
+            <th style="cursor:pointer" onclick="sortUsers('char_count')">キャラ ⇅</th>
+            <th style="cursor:pointer" onclick="sortUsers('image_count')">画像 ⇅</th>
             <th style="cursor:pointer" onclick="sortUsers('last_active')">最終ログイン ⇅</th>
             <th style="cursor:pointer" onclick="sortUsers('created_at')">登録日 ⇅</th>
             <th>操作</th>
@@ -331,6 +336,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         <select id="conv-user-select" onchange="loadUserConversations()" style="flex:1">
           <option value="">-- ユーザーを選択 --</option>
         </select>
+        <label style="display:flex;align-items:center;gap:5px;font-size:0.83rem;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="conv-show-deleted" onchange="loadUserConversations()"> 削除済み表示
+        </label>
       </div>
       <div id="conv-list" style="display:none">
         <div class="card-title" id="conv-list-title">会話一覧</div>
@@ -341,10 +349,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           </table>
         </div>
       </div>
-    </div>
-    <div id="conv-detail" class="card" style="display:none">
-      <div class="card-title" id="conv-detail-title">会話詳細</div>
-      <div id="conv-messages" style="max-height:600px;overflow-y:auto"></div>
     </div>
   </div>
 
@@ -781,6 +785,7 @@ async function loadAiSettings() {
   document.getElementById('model').value = d.model || '';
   document.getElementById('max-tokens').value = d.max_tokens || 1024;
   document.getElementById('cost').value = d.cost ?? 1;
+  document.getElementById('response-guideline').value = d.response_guideline || '';
   onProviderChange();
 
   // チャットプロンプト情報ロード
@@ -834,6 +839,7 @@ async function saveAiSettings() {
     model: document.getElementById('model').value,
     max_tokens: parseInt(document.getElementById('max-tokens').value) || 1024,
     cost: parseInt(document.getElementById('cost').value) ?? 1,
+    response_guideline: document.getElementById('response-guideline').value || null,
   };
   const r = await api('/admin/ai-settings', { method: 'PUT', body: JSON.stringify(body) });
   btn.disabled = false; btn.textContent = '保存';
@@ -901,9 +907,10 @@ function renderUsers() {
   if (!users.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:20px">ユーザーがいません</td></tr>'; return; }
   tbody.innerHTML = users.map(u => {
     const lastActive = u.last_active ? u.last_active.slice(0, 16) : '-';
-    return `<tr>
+    const suspendedBadge = u.is_suspended ? ' <span style="background:#e74c3c;color:#fff;font-size:0.65rem;padding:1px 5px;border-radius:3px;vertical-align:middle">停止</span>' : '';
+    return `<tr${u.is_suspended ? ' style="opacity:0.6"' : ''}>
       <td style="color:var(--sub)">${u.id}</td>
-      <td>${esc(u.display_name)}</td>
+      <td>${esc(u.display_name)}${suspendedBadge}</td>
       <td><span class="badge badge-${u.role}">${u.role}</span></td>
       <td style="text-align:center">${u.char_count}</td>
       <td style="text-align:center">${u.image_count}</td>
@@ -914,8 +921,9 @@ function renderUsers() {
           ? `<button class="btn btn-sm btn-ghost" onclick="setRole(${u.id},'user')">解除</button>`
           : u.is_guest ? ''
           : `<button class="btn btn-sm btn-warn" onclick="setRole(${u.id},'admin')">管理者に</button>`}
+        <button class="btn btn-sm ${u.is_suspended ? 'btn-ghost' : 'btn-warn'}" onclick="toggleSuspend(${u.id},'${esc(u.display_name)}',${u.is_suspended})">${u.is_suspended ? '停止解除' : '利用停止'}</button>
         <button class="btn btn-sm btn-info" onclick="showUserConversations(${u.id})">会話</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id},'${esc(u.display_name)}')">削除</button>
+        ${u.role !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id},'${esc(u.display_name)}')">削除</button>` : ''}
       </td>
     </tr>`}).join('');
 }
@@ -923,6 +931,15 @@ function renderUsers() {
 async function setRole(id, role) {
   const r = await api(`/admin/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
   r.ok ? (toast('ロールを変更しました'), loadUsers()) : toast('変更に失敗しました', 'err');
+}
+
+async function toggleSuspend(id, name, isSuspended) {
+  const msg = isSuspended ? `「${name}」の利用停止を解除しますか？` : `「${name}」の利用を停止しますか？`;
+  const label = isSuspended ? '解除する' : '停止する';
+  showConfirm(msg, async () => {
+    const r = await api(`/admin/users/${id}/suspend`, { method: 'PATCH' });
+    r.ok ? (toast(isSuspended ? '停止を解除しました' : '利用を停止しました'), loadUsers()) : toast('変更に失敗しました', 'err');
+  }, label);
 }
 
 async function deleteUser(id, name) {
@@ -960,10 +977,9 @@ async function loadConvUsers(force) {
 async function loadUserConversations() {
   const uid = document.getElementById('conv-user-select').value;
   const listDiv = document.getElementById('conv-list');
-  const detailDiv = document.getElementById('conv-detail');
-  detailDiv.style.display = 'none';
   if (!uid) { listDiv.style.display = 'none'; return; }
-  const r = await api(`/admin/users/${uid}/conversations`);
+  const showDeleted = document.getElementById('conv-show-deleted').checked;
+  const r = await api(`/admin/users/${uid}/conversations?include_deleted=${showDeleted ? 1 : 0}`);
   if (!r.ok) { toast('会話の取得に失敗しました', 'err'); return; }
   const convs = await r.json();
   listDiv.style.display = 'block';
@@ -977,48 +993,87 @@ async function loadUserConversations() {
   }
   tbody.innerHTML = convs.map(c => {
     const avatar = c.character_avatar
-      ? `<img src="${esc(c.character_avatar)}" style="width:28px;height:28px;border-radius:50%;vertical-align:middle;margin-right:6px;object-fit:cover">`
+      ? `<img src="${esc(c.character_avatar)}" style="width:28px;height:28px;border-radius:50%;vertical-align:middle;margin-right:6px;object-fit:cover${c.is_deleted ? ';filter:grayscale(1);opacity:0.5' : ''}">`
       : `<span style="display:inline-block;width:28px;height:28px;border-radius:50%;background:var(--bg3);vertical-align:middle;margin-right:6px;text-align:center;line-height:28px;font-size:14px">🤖</span>`;
-    return `<tr>
+    const deletedBadge = c.is_deleted ? ' <span class="badge badge-danger" style="font-size:0.65rem">削除済</span>' : '';
+    const charDeletedBadge = c.character_is_deleted ? ' <span class="badge badge-pending">削除済</span>' : '';
+    return `<tr${c.is_deleted ? ' style="opacity:0.55"' : ''}>
     <td style="color:var(--sub)">${c.id}</td>
-    <td>${avatar}${esc(c.character_name)}${c.character_is_deleted ? ' <span class="badge badge-pending">削除済</span>' : ''}</td>
+    <td>${avatar}${esc(c.character_name)}${charDeletedBadge}${deletedBadge}</td>
     <td style="text-align:center">${c.message_count}</td>
     <td style="color:var(--sub);font-size:0.78rem">${(c.updated_at || '').slice(0,16)}</td>
-    <td><button class="btn btn-sm btn-info" onclick="viewConversation(${c.id})">閲覧</button></td>
+    <td style="display:flex;gap:6px">
+      <button class="btn btn-sm btn-info" onclick="viewConversation(${c.id})">閲覧</button>
+      <button class="btn btn-sm ${c.is_deleted ? 'btn-ghost' : 'btn-danger'}" onclick="adminToggleConvDelete(${c.id},${c.is_deleted})">${c.is_deleted ? '復元' : '削除'}</button>
+    </td>
   </tr>`;
   }).join('');
+}
+
+async function adminToggleConvDelete(convId, isDeleted) {
+  const msg = isDeleted ? 'この会話を復元しますか？' : 'この会話を削除しますか？（ソフトデリート）';
+  const label = isDeleted ? '復元する' : '削除する';
+  showConfirm(msg, async () => {
+    const r = await api(`/admin/conversations/${convId}/delete`, { method: 'PATCH' });
+    r.ok ? (toast(isDeleted ? '復元しました' : '削除しました'), loadUserConversations()) : toast('操作に失敗しました', 'err');
+  }, label);
 }
 
 async function viewConversation(convId) {
   const r = await api(`/admin/conversations/${convId}/messages`);
   if (!r.ok) { toast('メッセージの取得に失敗しました', 'err'); return; }
   const data = await r.json();
-  const detailDiv = document.getElementById('conv-detail');
-  detailDiv.style.display = 'block';
   const conv = data.conversation;
-  const charAvatar = conv.character_avatar
-    ? `<img src="${esc(conv.character_avatar)}" style="width:32px;height:32px;border-radius:50%;vertical-align:middle;margin-right:8px;object-fit:cover">`
-    : `<span style="display:inline-block;width:32px;height:32px;border-radius:50%;background:var(--bg3);vertical-align:middle;margin-right:8px;text-align:center;line-height:32px;font-size:16px">🤖</span>`;
-  document.getElementById('conv-detail-title').innerHTML =
-    `${charAvatar}${esc(conv.user_name)} × ${esc(conv.character_name)} (${data.messages.length}件)`;
-  const msgDiv = document.getElementById('conv-messages');
-  if (!data.messages.length) {
-    msgDiv.innerHTML = '<p style="color:var(--sub);text-align:center;padding:20px">メッセージがありません</p>';
-    return;
-  }
-  const smallAvatar = conv.character_avatar
-    ? `<img src="${esc(conv.character_avatar)}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0">`
-    : `<span style="display:inline-block;width:24px;height:24px;border-radius:50%;background:var(--bg3);text-align:center;line-height:24px;font-size:12px;flex-shrink:0">🤖</span>`;
-  msgDiv.innerHTML = data.messages.map(m => {
-    if (m.role === 'assistant') {
-      return `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px">
-        ${smallAvatar}
-        <div class="conv-msg assistant">${esc(m.content)}<div class="conv-msg-meta">${(m.created_at || '').slice(0,16)}</div></div>
-      </div>`;
+
+  const win = window.open('', `conv_${convId}`, 'width=500,height=720,resizable=yes,scrollbars=no');
+  if (!win) { toast('ポップアップがブロックされています。ブラウザの設定をご確認ください', 'err'); return; }
+
+  const avatarHtml = conv.character_avatar
+    ? `<img src="${esc(conv.character_avatar)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0">`
+    : `<span style="display:inline-flex;width:38px;height:38px;border-radius:50%;background:#0f3460;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🤖</span>`;
+
+  const messagesHtml = data.messages.length ? data.messages.map(m => {
+    const time = (m.created_at || '').slice(0, 16);
+    if (m.role === 'user') {
+      return `<div class="msg msg-user">${esc(m.content)}<div class="msg-meta">${time}</div></div>`;
     }
-    return `<div class="conv-msg ${m.role}">${esc(m.content)}<div class="conv-msg-meta">${(m.created_at || '').slice(0,16)}</div></div>`;
-  }).join('');
-  detailDiv.scrollIntoView({ behavior: 'smooth' });
+    return `<div class="msg msg-ai"><div class="msg-ai-name">${esc(conv.character_name)}</div>${esc(m.content)}<div class="msg-meta">${time}</div></div>`;
+  }).join('') : '<div style="text-align:center;color:#888;padding:40px">メッセージがありません</div>';
+
+  win.document.write(`<!DOCTYPE html><html lang="ja"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>${esc(conv.user_name)} × ${esc(conv.character_name)}</title>
+<style>
+:root{--bg:#1a1a2e;--bg2:#16213e;--bg3:#0f3460;--text:#e0e0e0;--sub:#a0a0b0;--accent:#e94560;--border:#2a2a4a}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.chat-header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+.header-info{flex:1;min-width:0}
+.header-char{font-weight:700;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.header-user{font-size:0.78rem;color:var(--sub);margin-top:2px}
+.header-count{font-size:0.72rem;color:var(--sub);white-space:nowrap}
+.chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:80%;padding:10px 14px;border-radius:16px;font-size:0.95rem;line-height:1.7;word-break:break-word;white-space:pre-wrap}
+.msg-user{background:rgba(253,208,228,0.92);color:#222;align-self:flex-end;border-bottom-right-radius:4px}
+.msg-ai{background:rgba(255,249,251,0.92);color:#222;border:1px solid #2a2a4a;align-self:flex-start;border-bottom-left-radius:4px}
+.msg-ai-name{font-size:0.8rem;color:#e94560;font-weight:600;margin-bottom:3px}
+.msg-meta{font-size:0.68rem;color:#888;margin-top:4px;text-align:right}
+.msg-ai .msg-meta{text-align:left}
+.conv-footer{padding:8px 16px;background:var(--bg2);border-top:1px solid var(--border);font-size:0.72rem;color:var(--sub);flex-shrink:0;text-align:center}
+</style></head><body>
+<div class="chat-header">
+  ${avatarHtml}
+  <div class="header-info">
+    <div class="header-char">${esc(conv.character_name)}</div>
+    <div class="header-user">👤 ${esc(conv.user_name)}</div>
+  </div>
+  <div class="header-count">${data.messages.length}件</div>
+</div>
+<div class="chat-messages" id="msgs">${messagesHtml}</div>
+<div class="conv-footer">会話ID: ${conv.id} ／ ${(conv.created_at || '').slice(0, 16)} ～ ${(conv.updated_at || '').slice(0, 16)}</div>
+<script>document.getElementById('msgs').scrollTop=999999;<\/script>
+</body></html>`);
+  win.document.close();
 }
 
 // ─── キャラクター管理 ───

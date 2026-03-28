@@ -3,7 +3,7 @@ require_once '/opt/asobi/shared/assets/php/auth.php';
 asobiRequireAdmin();
 session_write_close();
 
-// ─── AJAX: ping チェック（HTML出力より前に処理） ───
+// ─── AJAX: ping チェック ───
 if (isset($_GET['check'])) {
     header('Content-Type: application/json; charset=utf-8');
     $url = $_GET['url'] ?? '';
@@ -29,6 +29,80 @@ if (isset($_GET['check'])) {
     }
 
     echo json_encode($result, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// ─── AJAX: 翻訳テスト ───
+if (isset($_GET['translate'])) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $aicDbPath = '/opt/asobi/aic/data/aic.sqlite';
+    $ltEndpoint = '';
+    $ltMode     = 'off';
+    $ltApiKey   = '';
+
+    if (file_exists($aicDbPath)) {
+        try {
+            $db = new PDO('sqlite:' . $aicDbPath);
+            $row = $db->query("SELECT lt_endpoint, lt_mode, lt_api_key FROM sd_settings WHERE id=1")->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                $ltEndpoint = $row['lt_endpoint'] ?? '';
+                $ltMode     = $row['lt_mode'] ?? 'off';
+                $ltApiKey   = $row['lt_api_key'] ?? '';
+            }
+        } catch (Exception $e) {}
+    }
+
+    $text   = trim($_POST['text'] ?? '');
+    $source = $_POST['source'] ?? 'ja';
+    $target = $_POST['target'] ?? 'en';
+
+    if (!$text) {
+        echo json_encode(['ok' => false, 'error' => 'テキストを入力してください'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $endpoints = [];
+    if (in_array($ltMode, ['local', 'both']) && $ltEndpoint)
+        $endpoints[] = ['url' => rtrim($ltEndpoint, '/'), 'key' => ''];
+    if (in_array($ltMode, ['free', 'both']))
+        $endpoints[] = ['url' => 'https://libretranslate.com', 'key' => $ltApiKey];
+
+    if (!$endpoints) {
+        echo json_encode(['ok' => false, 'error' => 'LibreTranslate が無効または未設定です'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $translated = null;
+    $usedEndpoint = '';
+    $ms = 0;
+    foreach ($endpoints as $ep) {
+        $payload = json_encode(['q' => $text, 'source' => $source, 'target' => $target, 'api_key' => $ep['key']]);
+        $t0 = microtime(true);
+        $ctx = stream_context_create(['http' => [
+            'method'        => 'POST',
+            'header'        => "Content-Type: application/json\r\nContent-Length: " . strlen($payload),
+            'content'       => $payload,
+            'timeout'       => 8,
+            'ignore_errors' => true,
+        ]]);
+        $res = @file_get_contents($ep['url'] . '/translate', false, $ctx);
+        $ms  = (int)((microtime(true) - $t0) * 1000);
+        if ($res !== false) {
+            $data = json_decode($res, true);
+            if (!empty($data['translatedText'])) {
+                $translated   = $data['translatedText'];
+                $usedEndpoint = $ep['url'];
+                break;
+            }
+        }
+    }
+
+    if ($translated !== null) {
+        echo json_encode(['ok' => true, 'result' => $translated, 'endpoint' => $usedEndpoint, 'ms' => $ms], JSON_UNESCAPED_UNICODE);
+    } else {
+        echo json_encode(['ok' => false, 'error' => '翻訳に失敗しました（' . $ms . 'ms）'], JSON_UNESCAPED_UNICODE);
+    }
     exit;
 }
 
@@ -62,7 +136,7 @@ if (file_exists($aicDbPath)) {
     } catch (Exception $e) { /* DB読み取り失敗は無視 */ }
 }
 
-$voicevoxUrl    = 'http://127.0.0.1:50021';
+$voicevoxUrl    = 'http://133.117.75.23:50021';
 $sdCheckUrl     = $sdEndpoint ? rtrim($sdEndpoint, '/') . '/sdapi/v1/options' : '';
 $ltCheckUrl     = $ltEndpoint ? rtrim($ltEndpoint, '/') . '/languages' : '';
 
@@ -91,7 +165,7 @@ $voicevoxCheckUrl = $voicevoxUrl . '/version';
   <?php $adminActivePage = 'api-status'; require __DIR__ . '/_sidebar.php'; ?>
 
   <style>
-    .api-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .api-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; margin-bottom: 28px; }
     .api-card { background: #fff; border: 1px solid #e0e4e8; border-radius: 10px; padding: 18px 20px; }
     .api-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
     .api-icon { font-size: 1.6rem; }
@@ -109,6 +183,13 @@ $voicevoxCheckUrl = $voicevoxUrl . '/version';
     .check-result.ok { background: #eaf6ee; color: #1e8449; }
     .check-result.ng { background: #fdecea; color: #c0392b; }
     .note-box { background: #f8f9fe; border: 1px solid #dde1f5; border-radius: 8px; padding: 14px 18px; font-size: 0.83rem; color: #3a4cc0; line-height: 1.7; }
+    .translate-test { margin-top: 12px; border-top: 1px solid #e0e4e8; padding-top: 12px; }
+    .translate-test-row { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 6px; }
+    .translate-test textarea { flex: 1; padding: 7px 10px; border: 1px solid #cdd1d8; border-radius: 6px; font-size: 0.82rem; font-family: inherit; resize: vertical; min-height: 60px; }
+    .translate-test select { padding: 7px 8px; border: 1px solid #cdd1d8; border-radius: 6px; font-size: 0.82rem; font-family: inherit; background: #fff; }
+    .translate-result { font-size: 0.82rem; padding: 7px 10px; border-radius: 6px; display: none; margin-top: 4px; word-break: break-all; }
+    .translate-result.ok { background: #eaf6ee; color: #1e6a34; }
+    .translate-result.ng { background: #fdecea; color: #c0392b; }
   </style>
 
   <div class="page-title">API接続確認</div>
@@ -189,14 +270,33 @@ $voicevoxCheckUrl = $voicevoxUrl . '/version';
         <span><strong>モード:</strong> <?= htmlspecialchars($ltMode ?: 'off') ?></span>
         <span><strong>ローカルURL:</strong> <?= $ltEndpoint ? '<code>' . htmlspecialchars($ltEndpoint) . '</code>' : '未設定' ?></span>
       </div>
-      <?php if ($ltCheckUrl): ?>
-      <button class="btn-check" onclick="checkApi(this, <?= htmlspecialchars(json_encode($ltCheckUrl)) ?>)">ローカルテスト</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <?php if ($ltCheckUrl): ?>
+        <button class="btn-check" onclick="checkApi(this, <?= htmlspecialchars(json_encode($ltCheckUrl)) ?>)">接続テスト</button>
+        <?php else: ?>
+        <span style="font-size:0.8rem;color:#aaa;">エンドポイント未設定のためテスト不可</span>
+        <?php endif; ?>
+        <button class="btn-check" onclick="checkApi(this, 'https://libretranslate.com/languages', document.getElementById('lt-free-result'))">無料版テスト</button>
+      </div>
       <div class="check-result"></div>
-      <?php else: ?>
-      <span style="font-size:0.8rem;color:#aaa;">ローカルエンドポイント未設定のためテスト不可</span>
-      <?php endif; ?>
-      <button class="btn-check" style="margin-top:6px;" onclick="checkApi(this, 'https://libretranslate.com/languages', document.getElementById('lt-free-result'))">無料版テスト</button>
       <div class="check-result" id="lt-free-result"></div>
+
+      <?php if ($ltMode !== 'off'): ?>
+      <div class="translate-test">
+        <div style="font-size:0.8rem;font-weight:600;margin-bottom:6px;color:#444;">翻訳テスト</div>
+        <div class="translate-test-row">
+          <textarea id="lt-test-input" placeholder="翻訳するテキストを入力..."></textarea>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <select id="lt-test-dir">
+              <option value="ja|en">日→英</option>
+              <option value="en|ja">英→日</option>
+            </select>
+            <button class="btn-check" onclick="doTranslateTest()">送信</button>
+          </div>
+        </div>
+        <div class="translate-result" id="lt-test-result"></div>
+      </div>
+      <?php endif; ?>
     </div>
 
     <!-- VoiceVox -->
@@ -222,25 +322,51 @@ $voicevoxCheckUrl = $voicevoxUrl . '/version';
     · Stable Diffusion / LibreTranslate / Ollama の設定変更 →
       <a href="https://aic.asobi.info/admin.html" target="_blank" style="color:#3a4cc0;">aic 管理画面</a><br>
     · VoiceVox は固定URL（localhost:50021）のため設定変更不要<br>
-    · リモートURL: サーバーサイドから疎通確認（タイムアウト4秒）<br>
-    · ローカルURL（127.x / localhost）: ブラウザから直接確認（LibreTranslate / VOICEVOX）
+    · Stable Diffusion / Ollama: サーバーサイドから疎通確認（タイムアウト4秒）<br>
+    · LibreTranslate（ローカル）/ VOICEVOX: ブラウザから直接確認（PC上で起動している必要があります）
   </div>
 
   <script>
-  async function checkApi(btn, url, resultEl) {
+  async function doTranslateTest() {
+      const text = document.getElementById('lt-test-input').value.trim();
+      const dir  = document.getElementById('lt-test-dir').value.split('|');
+      const resultEl = document.getElementById('lt-test-result');
+      if (!text) { resultEl.className = 'translate-result ng'; resultEl.style.display = 'block'; resultEl.textContent = 'テキストを入力してください'; return; }
+      resultEl.style.display = 'none';
+      const btn = document.querySelector('.translate-test .btn-check');
+      btn.disabled = true; btn.textContent = '送信中...';
+      try {
+          const fd = new FormData();
+          fd.append('text', text); fd.append('source', dir[0]); fd.append('target', dir[1]);
+          const res = await fetch('/admin/api-status.php?translate=1', { method: 'POST', body: fd });
+          const data = await res.json();
+          resultEl.className = 'translate-result ' + (data.ok ? 'ok' : 'ng');
+          resultEl.style.display = 'block';
+          resultEl.textContent = data.ok
+              ? data.result + '　（' + data.endpoint + '  ' + data.ms + 'ms）'
+              : data.error;
+      } catch (e) {
+          resultEl.className = 'translate-result ng'; resultEl.style.display = 'block'; resultEl.textContent = '通信エラー';
+      } finally {
+          btn.disabled = false; btn.textContent = '送信';
+      }
+  }
+
+  async function checkApi(btn, url, resultEl, forceClient, forceServer) {
       const card = btn.closest('.api-card');
       resultEl = resultEl || card.querySelector('.check-result');
+      const origText = btn.textContent;
       btn.disabled = true;
       btn.textContent = '確認中...';
       resultEl.style.display = 'none';
 
-      const isLocal = /^https?:\/\/(127\.|localhost)/i.test(url);
+      const useClient = !forceServer && (forceClient || /^https?:\/\/(127\.|localhost)/i.test(url));
       try {
           let ok, ms, detail;
-          if (isLocal) {
-              // ローカルエンドポイントはブラウザから直接チェック
+          if (useClient) {
+              // ブラウザから直接チェック（ローカルAPI / ユーザーPC上のサービス）
               const t0 = performance.now();
-              const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+              const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
               ms = Math.round(performance.now() - t0);
               ok = res.ok;
               detail = res.ok ? '' : 'HTTP ' + res.status;
@@ -255,13 +381,13 @@ $voicevoxCheckUrl = $voicevoxUrl . '/version';
       } catch (e) {
           resultEl.className = 'check-result ng';
           resultEl.style.display = 'block';
-          const msg = e.name === 'TimeoutError' ? 'タイムアウト（4秒）'
-                    : (isLocal ? 'CORS エラーまたは未起動（PC上で起動しているか確認してください）'
-                               : 'リクエストに失敗しました');
+          const msg = e.name === 'TimeoutError' ? 'タイムアウト（6秒）'
+                    : (useClient ? 'CORS エラーまたは未起動（PC上で起動しているか確認してください）'
+                                 : 'リクエストに失敗しました');
           resultEl.textContent = msg;
       } finally {
           btn.disabled = false;
-          btn.textContent = '接続テスト';
+          btn.textContent = origText;
       }
   }
   </script>

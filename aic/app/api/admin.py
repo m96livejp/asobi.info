@@ -65,13 +65,15 @@ class AiSettingsUpdate(BaseModel):
     model: str = ""
     max_tokens: int = 1024
     cost: int = 1
+    response_guideline: str | None = None
 
 
 @router.get("/ai-settings")
 async def get_ai_settings(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     s = await _get_or_create_settings(db)
     return {"provider": s.provider, "endpoint": s.endpoint, "api_key": s.api_key,
-            "model": s.model, "max_tokens": s.max_tokens, "cost": s.cost}
+            "model": s.model, "max_tokens": s.max_tokens, "cost": s.cost,
+            "response_guideline": s.response_guideline or ""}
 
 
 @router.put("/ai-settings")
@@ -79,6 +81,7 @@ async def update_ai_settings(req: AiSettingsUpdate, admin: User = Depends(requir
     s = await _get_or_create_settings(db)
     s.provider = req.provider; s.endpoint = req.endpoint; s.api_key = req.api_key
     s.model = req.model; s.max_tokens = req.max_tokens; s.cost = req.cost
+    s.response_guideline = req.response_guideline or None
     await db.commit()
     return {"ok": True}
 
@@ -174,6 +177,7 @@ async def list_users(admin: User = Depends(require_admin), db: AsyncSession = De
         "asobi_user_id": u.asobi_user_id,
         "char_count": char_counts.get(u.id, 0),
         "image_count": img_counts.get(u.id, 0),
+        "is_suspended": bool(u.is_suspended),
         "last_active": str(u.updated_at) if u.updated_at else "",
         "created_at": str(u.created_at),
     } for u in users]
@@ -196,6 +200,18 @@ async def update_user_role(user_id: int, req: UserRoleUpdate,
     return {"ok": True}
 
 
+@router.patch("/users/{user_id}/suspend")
+async def suspend_user(user_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    if user_id == admin.id:
+        raise HTTPException(status_code=400, detail="自分自身は停止できません")
+    result = await db.execute(select(User).where(User.id == user_id))
+    u = result.scalar_one_or_none()
+    if not u: raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+    u.is_suspended = 0 if u.is_suspended else 1
+    await db.commit()
+    return {"ok": True, "is_suspended": bool(u.is_suspended)}
+
+
 @router.delete("/users/{user_id}")
 async def delete_user(user_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     if user_id == admin.id:
@@ -203,6 +219,8 @@ async def delete_user(user_id: int, admin: User = Depends(require_admin), db: As
     result = await db.execute(select(User).where(User.id == user_id))
     u = result.scalar_one_or_none()
     if not u: raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+    if u.role == 'admin':
+        raise HTTPException(status_code=400, detail="管理者ユーザーは削除できません。先に管理者権限を外してください")
     await db.delete(u)
     await db.commit()
     return {"ok": True}
@@ -213,11 +231,13 @@ async def delete_user(user_id: int, admin: User = Depends(require_admin), db: As
 # ─────────────────────────────────────────────
 
 @router.get("/users/{user_id}/conversations")
-async def list_user_conversations(user_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def list_user_conversations(user_id: int, include_deleted: bool = Query(False),
+                                  admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     """指定ユーザーの会話一覧"""
-    result = await db.execute(
-        select(Conversation).where(Conversation.user_id == user_id).order_by(Conversation.updated_at.desc())
-    )
+    q = select(Conversation).where(Conversation.user_id == user_id)
+    if not include_deleted:
+        q = q.where(Conversation.is_deleted == 0)
+    result = await db.execute(q.order_by(Conversation.updated_at.desc()))
     convs = result.scalars().all()
     out = []
     for c in convs:
@@ -235,10 +255,22 @@ async def list_user_conversations(user_id: int, admin: User = Depends(require_ad
             "character_is_deleted": char_row[2] if char_row else 0,
             "title": c.title,
             "message_count": msg_count,
+            "is_deleted": c.is_deleted,
             "updated_at": str(c.updated_at),
             "created_at": str(c.created_at),
         })
     return out
+
+
+@router.patch("/conversations/{conv_id}/delete")
+async def admin_toggle_conv_deleted(conv_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """会話のソフトデリートをトグル（管理者）"""
+    conv = (await db.execute(select(Conversation).where(Conversation.id == conv_id))).scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=404, detail="会話が見つかりません")
+    conv.is_deleted = 0 if conv.is_deleted else 1
+    await db.commit()
+    return {"ok": True, "is_deleted": conv.is_deleted}
 
 
 @router.get("/conversations/{conv_id}/messages")
