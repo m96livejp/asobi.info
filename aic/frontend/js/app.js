@@ -2276,7 +2276,8 @@ function ttsPlayFromBtn(btn) {
   if (!rawText) return;
 
   _ttsPlayingBtn = btn;
-  btn.textContent = '■';
+  btn.textContent = '◼';
+  btn.title = '停止';
   btn.classList.add('tts-playing');
 
   const segments = parseMessageSegments(rawText);
@@ -2285,6 +2286,7 @@ function ttsPlayFromBtn(btn) {
   _playTtsQueue(segments).finally(() => {
     if (_ttsPlayingBtn === btn) {
       btn.textContent = '▶';
+      btn.title = '読み上げ';
       btn.classList.remove('tts-playing');
       _ttsPlayingBtn = null;
     }
@@ -2302,6 +2304,7 @@ function ttsStopAll() {
   }
   if (_ttsPlayingBtn) {
     _ttsPlayingBtn.textContent = '▶';
+    _ttsPlayingBtn.title = '読み上げ';
     _ttsPlayingBtn.classList.remove('tts-playing', 'tts-loading');
     _ttsPlayingBtn = null;
   }

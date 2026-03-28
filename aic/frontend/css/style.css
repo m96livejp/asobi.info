@@ -218,30 +218,35 @@ body {
 /* TTS読み上げボタン */
 .tts-btn {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  background: none;
+  top: -11px;
+  left: -11px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
   border: none;
   cursor: pointer;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  opacity: 0;
-  padding: 2px 5px;
-  line-height: 1;
-  border-radius: 4px;
-  transition: opacity 0.15s, background 0.15s;
+  font-size: 0.6rem;
+  color: #fff;
+  opacity: 0.45;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s, transform 0.15s;
+  z-index: 1;
 }
-.msg-ai:hover .tts-btn { opacity: 0.7; }
-.tts-btn:hover { opacity: 1 !important; background: rgba(255,255,255,0.1); }
+.msg-ai:hover .tts-btn { opacity: 0.85; }
+.tts-btn:hover { opacity: 1 !important; transform: scale(1.15); }
 .tts-btn.tts-playing {
   opacity: 1;
-  color: var(--accent-light);
-  animation: tts-pulse 1s ease-in-out infinite;
+  animation: tts-ripple 1.2s ease-out infinite;
 }
-.tts-btn.tts-loading { opacity: 0.5; pointer-events: none; }
-@keyframes tts-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+.tts-btn.tts-loading { opacity: 0.35; pointer-events: none; }
+@keyframes tts-ripple {
+  0%   { box-shadow: 0 0 0 0 rgba(216,27,96,0.55); }
+  70%  { box-shadow: 0 0 0 9px rgba(216,27,96,0); }
+  100% { box-shadow: 0 0 0 0 rgba(216,27,96,0); }
 }
 .msg-typing {
   display: flex;
