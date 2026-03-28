@@ -144,6 +144,8 @@ async def get_conversation(conv_id: int, user: User = Depends(require_user), db:
         "character": {
             "id": char.id, "name": char.name, "avatar_url": char.avatar_url,
             "ai_model": char.ai_model, "is_deleted": char.is_deleted,
+            "voice_model": char.voice_model,
+            "tts_styles": __import__("json").loads(char.tts_styles or "[]") if char.tts_styles else [],
         } if char else None,
         "title": conv.title,
         "messages": messages,
