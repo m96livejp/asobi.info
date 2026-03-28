@@ -18,6 +18,7 @@ let _ttsPlaying = false;   // キュー再生中フラグ
 let _ttsStopFlag = false;  // 停止リクエスト
 let _ttsAutoPlay = false;  // 自動読み上げON/OFF
 let _vvStyleMap = {};      // スタイル名→IDマップ（現在の会話のキャラから構築）
+let _ttsCache = new Map(); // テキスト+styleId → Blob キャッシュ（会話ごとにリセット）
 
 // キャラクター編集モード
 let _editingCharId = null;
@@ -850,8 +851,9 @@ async function openConversation(convId) {
   currentCharacter = data.character;
   // TTS利用可否（サーバー判定結果 + キャラに音声設定があること）
   _ttsAvailable = !!(data.tts_available && currentCharacter?.voice_model);
-  // スタイルマップ構築
+  // スタイルマップ・キャッシュリセット
   _vvStyleMap = {};
+  _ttsCache.clear();
   if (currentCharacter?.tts_styles) {
     const styles = Array.isArray(currentCharacter.tts_styles) ? currentCharacter.tts_styles : [];
     for (const s of styles) { if (s.name != null && s.id != null) _vvStyleMap[s.name] = s.id; }
@@ -2263,6 +2265,16 @@ function esc(s) {
 // === VOICEVOX TTS ===
 
 // ボタンから再生（トグル）
+function _ttsResetBtn(btn) {
+  const dur = parseFloat(btn.dataset.duration || '0');
+  const durSec = Math.ceil(dur);
+  btn.innerHTML = durSec > 0
+    ? '▶ <span class="tts-dur">' + durSec + '″</span>'
+    : '▶';
+  btn.title = '読み上げ';
+  btn.classList.remove('tts-playing', 'tts-loading');
+}
+
 function ttsPlayFromBtn(btn) {
   if (_ttsPlaying && _ttsPlayingBtn === btn) {
     ttsStopAll();
@@ -2276,18 +2288,18 @@ function ttsPlayFromBtn(btn) {
   if (!rawText) return;
 
   _ttsPlayingBtn = btn;
-  btn.textContent = '◼';
+  // 押した瞬間: ドットアニメーション（読み込み中）
+  btn.innerHTML = '<span class="tts-dots"><b></b><b></b><b></b></span>';
   btn.title = '停止';
-  btn.classList.add('tts-playing');
+  btn.classList.remove('tts-playing');
+  btn.classList.add('tts-loading');
 
   const segments = parseMessageSegments(rawText);
   _ttsStopFlag = false;
   _ttsPlaying = true;
   _playTtsQueue(segments).finally(() => {
     if (_ttsPlayingBtn === btn) {
-      btn.textContent = '▶';
-      btn.title = '読み上げ';
-      btn.classList.remove('tts-playing');
+      _ttsResetBtn(btn);
       _ttsPlayingBtn = null;
     }
     _ttsPlaying = false;
@@ -2303,9 +2315,7 @@ function ttsStopAll() {
     _ttsAudio = null;
   }
   if (_ttsPlayingBtn) {
-    _ttsPlayingBtn.textContent = '▶';
-    _ttsPlayingBtn.title = '読み上げ';
-    _ttsPlayingBtn.classList.remove('tts-playing', 'tts-loading');
+    _ttsResetBtn(_ttsPlayingBtn);
     _ttsPlayingBtn = null;
   }
 }
@@ -2350,13 +2360,17 @@ async function _playTtsQueue(segments) {
 }
 
 async function _fetchTtsAudio(text, styleId) {
+  const key = styleId + '|' + text.trim().slice(0, 300);
+  if (_ttsCache.has(key)) return _ttsCache.get(key);
   try {
     const res = await api('/tts/' + currentConversationId, {
       method: 'POST',
       body: JSON.stringify({ text: text.trim().slice(0, 300), style_id: styleId }),
     });
     if (!res.ok) return null;
-    return await res.blob();
+    const blob = await res.blob();
+    _ttsCache.set(key, blob);
+    return blob;
   } catch (_) { return null; }
 }
 
@@ -2365,7 +2379,23 @@ function _playAudioBlob(blob) {
     if (_ttsStopFlag) { resolve(); return; }
     const url = URL.createObjectURL(blob);
     _ttsAudio = new Audio(url);
-    _ttsAudio.onended = () => { URL.revokeObjectURL(url); _ttsAudio = null; resolve(); };
+    // 再生開始できたら loading → playing（音波アニメーション）に切替
+    _ttsAudio.addEventListener('loadedmetadata', () => {
+      if (_ttsPlayingBtn && _ttsPlayingBtn.classList.contains('tts-loading')) {
+        _ttsPlayingBtn.classList.remove('tts-loading');
+        _ttsPlayingBtn.classList.add('tts-playing');
+        _ttsPlayingBtn.innerHTML = '<span class="tts-wave"><b></b><b></b><b></b></span>';
+      }
+    });
+    _ttsAudio.onended = () => {
+      // duration を蓄積
+      const dur = _ttsAudio ? (_ttsAudio.duration || 0) : 0;
+      if (_ttsPlayingBtn && !isNaN(dur) && dur > 0) {
+        const prev = parseFloat(_ttsPlayingBtn.dataset.duration || '0');
+        _ttsPlayingBtn.dataset.duration = String(prev + dur);
+      }
+      URL.revokeObjectURL(url); _ttsAudio = null; resolve();
+    };
     _ttsAudio.onerror = () => { URL.revokeObjectURL(url); _ttsAudio = null; resolve(); };
     _ttsAudio.play().catch(() => { resolve(); });
   });
