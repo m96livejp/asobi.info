@@ -13,9 +13,11 @@ define('ASOBI_AUTH_SESSION_NAME', 'ASOBI_SESSION');
 define('ASOBI_LOGIN_URL', 'https://asobi.info/login.php');
 
 if (session_status() === PHP_SESSION_NONE) {
-    ini_set('session.cookie_domain', ASOBI_AUTH_COOKIE_DOMAIN);
+    ini_set('session.cookie_domain',   ASOBI_AUTH_COOKIE_DOMAIN);
     ini_set('session.cookie_httponly', '1');
     ini_set('session.cookie_samesite', 'Lax');
+    ini_set('session.cookie_lifetime', '2592000'); // 30日
+    ini_set('session.gc_maxlifetime',  '2592000'); // 30日
     session_name(ASOBI_AUTH_SESSION_NAME);
     session_start();
 }

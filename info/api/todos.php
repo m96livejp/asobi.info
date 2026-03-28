@@ -12,7 +12,7 @@ asobiRequireApiKey();
 $db = asobiUsersDb();
 $action = $_GET['action'] ?? '';
 
-$validSites = ['common','top','dbd','pkq','tbt','aic'];
+$validSites = ['common','top','dbd','pkq','tbt','aic','game'];
 $siteLabels = [
     'common' => '全サイト共通',
     'top'    => 'asobi.info トップページ',
@@ -20,6 +20,7 @@ $siteLabels = [
     'pkq'    => 'ポケモンクエスト',
     'tbt'    => 'Tournament Battle',
     'aic'    => 'AI チャット',
+    'game'   => 'レトロゲーム情報',
 ];
 
 // ─── GET: 一覧取得 ───

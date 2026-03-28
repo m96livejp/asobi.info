@@ -1,0 +1,827 @@
+<?php
+require_once '/opt/asobi/shared/assets/php/auth.php';
+asobiRequireAdmin();
+
+$db = asobiUsersDb();
+
+// セッションからフラッシュメッセージ取得
+session_start();
+$msg = $_SESSION['todo_msg'] ?? '';
+unset($_SESSION['todo_msg']);
+
+$siteLabels = [
+    'common' => '全サイト共通',
+    'top'    => 'asobi.info トップページ',
+    'dbd'    => 'Dead by Daylight',
+    'pkq'    => 'ポケモンクエスト',
+    'tbt'    => 'Tournament Battle',
+    'aic'    => 'AI チャット',
+    'game'   => 'レトロゲーム情報',
+];
+$areaLabels     = ['general' => '一般', 'admin' => '管理'];
+$priorityLabels = ['high' => '高', 'medium' => '中', 'low' => '低'];
+$statusPresets  = ['未着手', '対応中', '確認待ち', '完了', '再対応', '保留'];
+
+// ステータスグループ定義
+$statusGroups = [
+    'active'  => ['label' => '処理中',  'statuses' => ['未着手', '対応中', '再対応']],
+    'review'  => ['label' => '要対応',  'statuses' => ['確認待ち', '保留']],
+    'done'    => ['label' => '完了',    'statuses' => ['完了']],
+];
+$defaultGroup = 'review'; // デフォルト表示グループ（管理者対応が必要なもの）
+
+// 追加
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add') {
+    $site     = $_POST['site'] ?? '';
+    $area     = $_POST['area'] ?? 'general';
+    $title    = trim(str_replace("\r\n", "\n", $_POST['title'] ?? ''));
+    $priority = $_POST['priority'] ?? 'medium';
+    $dueDate  = $_POST['due_date'] ?? '';
+
+    if (!isset($siteLabels[$site])) {
+        $_SESSION['todo_msg'] = 'error:サイトを選択してください';
+        header('Location: /admin/todos.php'); exit;
+    } elseif ($title === '') {
+        $_SESSION['todo_msg'] = 'error:更新内容を入力してください';
+        header('Location: /admin/todos.php'); exit;
+    } elseif (!in_array($area, ['general','admin'], true)) {
+        $_SESSION['todo_msg'] = 'error:区分が不正です';
+        header('Location: /admin/todos.php'); exit;
+    } elseif (!in_array($priority, ['low','medium','high'], true)) {
+        $_SESSION['todo_msg'] = 'error:優先度が不正です';
+        header('Location: /admin/todos.php'); exit;
+    } else {
+        $stmt = $db->prepare("INSERT INTO content_todos (site, area, title, priority, due_date) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([$site, $area, $title, $priority, $dueDate ?: null]);
+        $_SESSION['todo_msg'] = 'success:TODOを追加しました';
+        $_SESSION['todo_last_site'] = $site;
+        $_SESSION['todo_last_area'] = $area;
+        $_SESSION['todo_last_priority'] = $priority;
+        header('Location: /admin/todos.php'); exit;
+    }
+}
+
+// ステータス変更（フリーフォーム）+ 時刻自動記録
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'status') {
+    $id     = (int)($_POST['id'] ?? 0);
+    $status = trim($_POST['status'] ?? '');
+    if ($id > 0 && $status !== '') {
+        $extra = '';
+        if ($status === '対応中' || $status === '再対応') {
+            $extra = ", started_at = COALESCE(started_at, datetime('now','localtime'))";
+        } elseif ($status === '完了') {
+            $extra = ", completed_at = datetime('now','localtime')";
+        }
+        $db->prepare("UPDATE content_todos SET status = ?, updated_at = datetime('now','localtime'){$extra} WHERE id = ?")
+           ->execute([$status, $id]);
+        $_SESSION['todo_msg'] = 'success:対応状況を更新しました';
+        header('Location: /admin/todos.php?sel=' . $id); exit;
+    }
+}
+
+// 対応状況メモの更新
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'status_note') {
+    $id   = (int)($_POST['id'] ?? 0);
+    $note = trim($_POST['status_note'] ?? '');
+    if ($id > 0) {
+        $db->prepare("UPDATE content_todos SET status_note = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+           ->execute([$note, $id]);
+        $_SESSION['todo_msg'] = 'success:対応状況メモを更新しました';
+        header('Location: /admin/todos.php?sel=' . $id); exit;
+    }
+}
+
+// 保留解除回答
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hold_answer') {
+    $id     = (int)($_POST['id'] ?? 0);
+    $answer = trim($_POST['hold_answer'] ?? '');
+    if ($id > 0 && $answer !== '') {
+        $db->prepare("UPDATE content_todos SET hold_answer = ?, status = '再対応', updated_at = datetime('now','localtime') WHERE id = ?")
+           ->execute([$answer, $id]);
+        $_SESSION['todo_msg'] = 'success:保留解除回答を記入し、ステータスを「再対応」に変更しました';
+        header('Location: /admin/todos.php?sel=' . $id); exit;
+    }
+}
+
+// 確認結果の更新
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'result') {
+    $id         = (int)($_POST['id'] ?? 0);
+    $resultType = $_POST['result_type'] ?? '';
+    $ngReason   = trim($_POST['ng_reason'] ?? '');
+    $result     = '';
+    if ($resultType === 'OK') {
+        $result = 'OK';
+    } elseif ($resultType === 'NG') {
+        $result = $ngReason ? 'NG: ' . $ngReason : 'NG';
+    }
+    if ($id > 0) {
+        $db->prepare("UPDATE content_todos SET result = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+           ->execute([$result, $id]);
+        // 自動遷移
+        if ($result !== '') {
+            $cur = $db->prepare("SELECT status FROM content_todos WHERE id = ?");
+            $cur->execute([$id]);
+            $curRow = $cur->fetch();
+            // OK → 完了
+            if ($curRow && $result === 'OK') {
+                $db->prepare("UPDATE content_todos SET status = '完了', completed_at = datetime('now','localtime'), updated_at = datetime('now','localtime') WHERE id = ?")
+                   ->execute([$id]);
+                $_SESSION['todo_msg'] = 'success:確認結果をOKに更新し、ステータスを「完了」に変更しました';
+                header('Location: /admin/todos.php'); exit;
+            }
+            // 確認待ち + NG → 再対応（対応メモにNG理由を自動追記）
+            if ($curRow && $curRow['status'] === '確認待ち' && str_starts_with($result, 'NG')) {
+                // 対応メモにNG理由を追記
+                $noteStmt = $db->prepare("SELECT status_note FROM content_todos WHERE id = ?");
+                $noteStmt->execute([$id]);
+                $noteRow = $noteStmt->fetch();
+                $currentNote = $noteRow['status_note'] ?? '';
+                $ngAppend = "\n\n【NG: " . date('m/d H:i') . '】' . ($ngReason ?: '理由なし');
+                $newNote = rtrim($currentNote) . $ngAppend;
+                $db->prepare("UPDATE content_todos SET status = '再対応', status_note = ?, result = '', updated_at = datetime('now','localtime') WHERE id = ?")
+                   ->execute([$newNote, $id]);
+                $_SESSION['todo_msg'] = 'success:確認結果をNGに更新し、ステータスを「再対応」に変更しました（対応メモにNG理由を追記）';
+                header('Location: /admin/todos.php'); exit;
+            }
+        }
+        $_SESSION['todo_msg'] = 'success:確認結果を更新しました';
+        header('Location: /admin/todos.php?sel=' . $id); exit;
+    }
+}
+
+// 削除
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id > 0) {
+        $db->prepare("DELETE FROM content_todos WHERE id = ?")->execute([$id]);
+        $_SESSION['todo_msg'] = 'success:削除しました';
+        header('Location: /admin/todos.php'); exit;
+    }
+}
+
+// フィルター
+$filterSite   = $_GET['site'] ?? '';
+$filterArea   = $_GET['area'] ?? '';
+$filterGroup  = $_GET['group'] ?? '';  // active, review, done, all
+$hasGroupParam = isset($_GET['group']);
+
+// グループ未指定ならデフォルトグループ（処理中）を適用
+if (!$hasGroupParam) {
+    $filterGroup = $defaultGroup;
+}
+
+// グループからステータス配列を決定
+$filterStatuses = [];
+if ($filterGroup !== 'all' && isset($statusGroups[$filterGroup])) {
+    $filterStatuses = $statusGroups[$filterGroup]['statuses'];
+}
+
+$sql = "SELECT * FROM content_todos WHERE 1=1";
+$params = [];
+if ($filterSite && isset($siteLabels[$filterSite])) {
+    $sql .= " AND site = ?";
+    $params[] = $filterSite;
+}
+if ($filterArea && isset($areaLabels[$filterArea])) {
+    $sql .= " AND area = ?";
+    $params[] = $filterArea;
+}
+if (!empty($filterStatuses)) {
+    $placeholders = implode(',', array_fill(0, count($filterStatuses), '?'));
+    $sql .= " AND status IN ($placeholders)";
+    $params = array_merge($params, $filterStatuses);
+}
+$sql .= " ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 END, created_at ASC";
+
+$stmt = $db->prepare($sql);
+$stmt->execute($params);
+$todos = $stmt->fetchAll();
+
+// 選択中のアイテム
+$selItem = null;
+$selId = (int)($_GET['sel'] ?? 0);
+if ($selId > 0) {
+    $selStmt = $db->prepare("SELECT * FROM content_todos WHERE id = ?");
+    $selStmt->execute([$selId]);
+    $selItem = $selStmt->fetch();
+}
+
+// 件数集計
+$countRows = $db->query("SELECT status, COUNT(*) as cnt FROM content_todos GROUP BY status")->fetchAll();
+$counts = [];
+foreach ($countRows as $r) { $counts[$r['status']] = (int)$r['cnt']; }
+$totalCount = array_sum($counts);
+
+// グループ別件数
+$groupCounts = [];
+foreach ($statusGroups as $gKey => $gDef) {
+    $groupCounts[$gKey] = 0;
+    foreach ($gDef['statuses'] as $s) {
+        $groupCounts[$gKey] += $counts[$s] ?? 0;
+    }
+}
+
+// フィルタークエリ組み立てヘルパー
+function buildQuery(array $overrides): string {
+    $p = array_merge([
+        'site'  => $_GET['site'] ?? '',
+        'area'  => $_GET['area'] ?? '',
+        'group' => $_GET['group'] ?? '',
+    ], $overrides);
+    $p = array_filter($p, fn($v) => $v !== '');
+    return $p ? '?' . http_build_query($p) : '?';
+}
+?>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TODO管理 - asobi.info</title>
+  <link rel="stylesheet" href="/assets/css/common.css?v=20260327f">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+      background: #f0f2f5;
+      color: #1d2d3a;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 8px; color: #1d2d3a; }
+    .section-title { font-size: 1rem; font-weight: 600; color: #637080; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #e0e4e8; }
+
+    .stats-bar {
+      display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;
+      font-size: 0.82rem; color: #637080;
+    }
+    .stats-bar span { white-space: nowrap; }
+    .stats-bar .num { font-weight: 700; color: #1d2d3a; }
+
+    .card-panel {
+      background: #fff; border: 1px solid #e0e4e8; border-radius: 12px;
+      padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 0.78rem; font-weight: 600; color: #637080; }
+    .form-group input[type=text], .form-group input[type=date], .form-group textarea {
+      padding: 9px 12px; border: 2px solid #e0e4e8; border-radius: 8px;
+      font-size: 0.9rem; font-family: inherit; outline: none; transition: border-color 0.2s;
+      resize: vertical;
+    }
+    .form-group input:focus, .form-group textarea:focus { border-color: #667eea; }
+    .form-group select {
+      padding: 9px 12px; border: 2px solid #e0e4e8; border-radius: 8px;
+      font-size: 0.9rem; font-family: inherit; outline: none; transition: border-color 0.2s; background: #fff;
+    }
+    .form-group select:focus { border-color: #667eea; }
+    .btn-primary {
+      padding: 9px 20px; background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff; border: none; border-radius: 8px; font-size: 0.9rem;
+      font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .btn-primary:hover { opacity: 0.88; }
+    .btn-save {
+      padding: 7px 16px; background: linear-gradient(135deg, #43a047, #2e7d32);
+      color: #fff; border: none; border-radius: 8px; font-size: 0.85rem;
+      font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .btn-save:hover { opacity: 0.88; }
+
+    .filters {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;
+    }
+    .filter-btn {
+      padding: 6px 14px; border: 1px solid #e0e4e8; border-radius: 20px;
+      background: #fff; font-size: 0.8rem; color: #637080; cursor: pointer;
+      text-decoration: none; font-family: inherit; transition: all 0.15s;
+    }
+    .filter-btn:hover { border-color: #667eea; color: #667eea; }
+    .filter-btn.active { background: #667eea; color: #fff; border-color: #667eea; }
+    .filter-sep { width: 1px; background: #e0e4e8; margin: 0 4px; }
+
+    .msg { padding: 10px 14px; border-radius: 8px; font-size: 0.875rem; margin-bottom: 20px; }
+    .msg.success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+    .msg.error   { background: #fff1f2; border: 1px solid #fecdd3; color: #e11d48; }
+
+    .todo-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    .todo-table th { background: #f8fafc; font-size: 0.8rem; font-weight: 600; color: #637080; padding: 10px 12px; text-align: left; border-bottom: 2px solid #e0e4e8; white-space: nowrap; }
+    .todo-table td { padding: 10px 12px; border-bottom: 1px solid #f0f2f5; font-size: 0.85rem; color: #1d2d3a; vertical-align: top; }
+    .todo-table tr:last-child td { border-bottom: none; }
+    .todo-table tr { cursor: pointer; transition: background 0.1s; }
+    .todo-table tr:hover td { background: #f5f7fa; }
+    .todo-table tr.selected td { background: #eef1f8; }
+
+    .badge { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+    .badge-high    { background: rgba(231,76,60,0.15);  color: #e74c3c; }
+    .badge-medium  { background: rgba(247,201,78,0.2);  color: #b78a00; }
+    .badge-low     { background: rgba(76,175,80,0.15);  color: #388e3c; }
+    .badge-site    { background: rgba(0,0,0,0.06); color: #1d2d3a; }
+    .badge-general { background: rgba(102,126,234,0.12); color: #5567cc; }
+    .badge-admin   { background: rgba(231,76,60,0.12);   color: #c0392b; }
+
+    .btn-sm {
+      padding: 4px 10px; border: 1px solid #e0e4e8; border-radius: 6px;
+      font-size: 0.75rem; cursor: pointer; font-family: inherit; transition: background 0.15s;
+      background: #fff; color: #637080;
+    }
+    .btn-sm:hover { background: #f0f2f5; }
+    .btn-delete { color: #e74c3c; }
+    .btn-delete:hover { background: #fff1f2; }
+
+    .no-data { text-align: center; color: #9ba8b5; padding: 24px; }
+    .todo-title { font-weight: 500; white-space: pre-wrap; line-height: 1.6; }
+    .todo-title.completed { text-decoration: line-through; color: #9ba8b5; }
+    .todo-note {
+      margin-top: 6px; padding: 6px 10px; background: #f0f4ff; border-left: 3px solid #667eea;
+      border-radius: 4px; font-size: 0.78rem; color: #4a5568; line-height: 1.5; white-space: pre-wrap;
+    }
+
+    /* 選択パネル */
+    .sel-panel { border-left: 4px solid #667eea; }
+    .sel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .sel-header .sel-title { font-size: 1rem; font-weight: 600; color: #1d2d3a; }
+    .sel-close { font-size: 0.8rem; color: #667eea; text-decoration: none; }
+    .sel-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; font-size: 0.82rem; color: #637080; }
+    .sel-meta .meta-label { font-weight: 600; color: #9ba8b5; margin-right: 4px; }
+    .sel-content { background: #f8fafc; border: 1px solid #e0e4e8; border-radius: 8px; padding: 14px; margin-bottom: 16px; white-space: pre-wrap; line-height: 1.7; font-size: 0.9rem; }
+    .sel-actions { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+    .sel-actions .action-group { flex: 1; min-width: 200px; }
+    .action-group-title { font-size: 0.78rem; font-weight: 600; color: #637080; margin-bottom: 8px; }
+
+    /* フロー図 */
+    .flow-chart { margin-bottom: 20px; padding: 16px 20px; background: #f8fafc; border: 1px solid #e0e4e8; border-radius: 10px; overflow-x: auto; }
+    .flow-main { display: flex; align-items: center; gap: 0; }
+    .flow-node {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 5px 12px; border-radius: 16px; font-size: 0.76rem; font-weight: 600;
+      border: 2px solid #d0d5dd; background: #fff; color: #9ba8b5;
+      white-space: nowrap; position: relative;
+    }
+    .flow-arrow { color: #d0d5dd; font-size: 0.75rem; padding: 0 4px; flex-shrink: 0; }
+    .flow-node.done { border-color: #a7f3d0; background: #ecfdf5; color: #065f46; }
+    .flow-node.current { border-color: #667eea; background: #eef1f8; color: #4338ca; box-shadow: 0 0 0 3px rgba(102,126,234,0.15); }
+    .flow-node.skip { opacity: 0.35; }
+    .flow-who {
+      font-size: 0.58rem; font-weight: 700; padding: 1px 5px; border-radius: 8px; margin-left: 2px;
+    }
+    .flow-who.ai { background: #dbeafe; color: #1d4ed8; }
+    .flow-who.admin { background: #fce7f3; color: #be185d; }
+    /* 分岐（下段） */
+    .flow-branches { display: flex; gap: 32px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e0e4e8; }
+    .flow-branch { display: flex; align-items: center; gap: 0; }
+    .flow-branch-label {
+      font-size: 0.68rem; font-weight: 600; color: #9ba8b5; margin-right: 8px; white-space: nowrap;
+    }
+    .flow-v-arrow { color: #d0d5dd; font-size: 0.65rem; padding: 0 3px; }
+    /* 凡例 */
+    .flow-legend {
+      display: flex; gap: 12px; font-size: 0.68rem; color: #9ba8b5; margin-top: 10px;
+      padding-top: 8px; border-top: 1px solid #e0e4e8;
+    }
+    .flow-legend span { display: flex; align-items: center; gap: 3px; }
+  </style>
+</head>
+<body>
+  <?php $adminActivePage = 'todos'; require __DIR__ . '/_sidebar.php'; ?>
+
+    <h1 style="font-size:1.4rem;margin-bottom:8px;">TODO管理</h1>
+    <div class="stats-bar">
+      <span>全 <span class="num"><?= $totalCount ?></span> 件</span>
+      <?php foreach ($statusGroups as $gKey => $gDef): ?>
+      <span><?= $gDef['label'] ?> <span class="num"><?= $groupCounts[$gKey] ?></span></span>
+      <?php endforeach; ?>
+    </div>
+
+    <?php if ($msg): ?>
+    <?php [$type, $text] = explode(':', $msg, 2); ?>
+    <div class="msg <?= $type ?>"><?= $text ?></div>
+    <?php endif; ?>
+
+    <?php if ($selItem): ?>
+    <!-- 選択アイテム詳細パネル -->
+    <div class="card-panel sel-panel" id="sel-panel">
+      <div class="sel-header">
+        <span class="sel-title">TODO詳細 <span style="font-size:0.75rem;color:#9ba8b5;">#<?= $selItem['id'] ?></span></span>
+        <a href="/admin/todos.php" class="sel-close">✕ 閉じる</a>
+      </div>
+      <div class="sel-meta">
+        <span><span class="meta-label">対象:</span> <span class="badge badge-site"><?= htmlspecialchars($selItem['site']) ?></span> <?= $siteLabels[$selItem['site']] ?? '' ?></span>
+        <span><span class="meta-label">区分:</span> <span class="badge badge-<?= $selItem['area'] ?? 'general' ?>"><?= $areaLabels[$selItem['area'] ?? 'general'] ?></span></span>
+        <span><span class="meta-label">優先度:</span> <span class="badge badge-<?= $selItem['priority'] ?>"><?= $priorityLabels[$selItem['priority']] ?? $selItem['priority'] ?></span></span>
+        <?php $due = $selItem['due_date'] ?? ''; ?>
+        <?php if ($due): ?>
+        <span><span class="meta-label">期限:</span> <?php
+          $isOverdue = $due < date('Y-m-d') && !in_array($selItem['status'], ['完了', '保留'], true);
+          echo '<span style="color:' . ($isOverdue ? '#e74c3c' : 'inherit') . ';">' . htmlspecialchars($due) . '</span>';
+        ?></span>
+        <?php endif; ?>
+        <span><span class="meta-label">登録:</span> <?= substr($selItem['created_at'], 0, 10) ?></span>
+        <?php if (!empty($selItem['started_at'])): ?>
+        <span><span class="meta-label">開始:</span> <?= substr($selItem['started_at'], 0, 16) ?></span>
+        <?php endif; ?>
+        <?php if (!empty($selItem['completed_at'])): ?>
+        <span><span class="meta-label">完了:</span> <?= substr($selItem['completed_at'], 0, 16) ?></span>
+        <?php endif; ?>
+      </div>
+      <div class="sel-content"><?= htmlspecialchars($selItem['title']) ?></div>
+
+      <!-- ステータスフロー図 -->
+      <?php
+        $st = $selItem['status'];
+        $hasHold = ($selItem['hold_answer'] ?? '') !== '';
+        $hasNg   = str_starts_with($selItem['result'] ?? '', 'NG');
+
+        // メインフロー: [ラベル, 担当, ステータス値]
+        $mainSteps = [
+            ['未着手',   'ai',    '未着手'],
+            ['対応中',   'ai',    '対応中'],
+            ['確認待ち', 'admin', '確認待ち'],
+            ['完了',     '',      '完了'],
+        ];
+
+        // メインフローの現在位置
+        $mainIdx = -1;
+        $mainOrder = ['未着手' => 0, '対応中' => 1, '確認待ち' => 2, '完了' => 3];
+        if (isset($mainOrder[$st])) {
+            $mainIdx = $mainOrder[$st];
+        }
+        // 再対応は対応中の前段階扱い
+        if ($st === '再対応') $mainIdx = 1;
+
+        // 分岐フロー: 保留ルート
+        $holdBranch = [
+            ['保留',   'admin', '保留'],
+            ['再対応', 'ai',    '再対応'],
+        ];
+        $holdIdx = -1;
+        if ($st === '保留') $holdIdx = 0;
+        if ($st === '再対応' && $hasHold) $holdIdx = 1;
+        $showHold = ($st === '保留' || $hasHold);
+
+        // 分岐フロー: NGルート（保留と同じ構造）
+        $ngBranch = [
+            ['NG',     'admin', '_ng'],
+            ['再対応', 'ai',    '再対応'],
+        ];
+        $ngIdx = -1;
+        if ($st === '再対応' && $hasNg && !$hasHold) $ngIdx = 1;
+        $showNg = ($hasNg && !$showHold);
+      ?>
+      <div class="flow-chart">
+        <!-- メインフロー（上段） -->
+        <div class="flow-main">
+          <?php foreach ($mainSteps as $i => $step): ?>
+            <?php if ($i > 0): ?><span class="flow-arrow">→</span><?php endif; ?>
+            <?php
+              $cls = '';
+              if ($mainIdx >= 0 && $i < $mainIdx) $cls = 'done';
+              elseif ($mainIdx >= 0 && $i === $mainIdx) $cls = 'current';
+              // 保留中は確認待ち以降をスキップ表示
+              if ($st === '保留' && $i >= 2) $cls = 'skip';
+            ?>
+            <span class="flow-node <?= $cls ?>">
+              <?= $step[0] ?>
+              <?php if ($step[1]): ?>
+              <span class="flow-who <?= $step[1] ?>"><?= $step[1] === 'ai' ? 'AI' : '管理者' ?></span>
+              <?php endif; ?>
+            </span>
+          <?php endforeach; ?>
+        </div>
+
+        <?php if ($showHold || $showNg): ?>
+        <!-- 分岐フロー（下段） -->
+        <div class="flow-branches">
+          <?php if ($showHold): ?>
+          <div class="flow-branch">
+            <span class="flow-branch-label">保留ルート:</span>
+            <span class="flow-v-arrow">↓</span>
+            <?php foreach ($holdBranch as $i => $step): ?>
+              <?php if ($i > 0): ?><span class="flow-arrow">→</span><?php endif; ?>
+              <?php
+                $cls = '';
+                if ($holdIdx >= 0 && $i < $holdIdx) $cls = 'done';
+                elseif ($holdIdx >= 0 && $i === $holdIdx) $cls = 'current';
+                // 保留解除済みなら全部done
+                if ($hasHold && $st !== '保留' && $st !== '再対応') $cls = 'done';
+              ?>
+              <span class="flow-node <?= $cls ?>">
+                <?= $step[0] ?>
+                <span class="flow-who <?= $step[1] ?>"><?= $step[1] === 'ai' ? 'AI' : '管理者' ?></span>
+              </span>
+            <?php endforeach; ?>
+            <span class="flow-v-arrow">↑</span>
+            <span style="font-size:0.68rem;color:#9ba8b5;">対応中に戻る</span>
+          </div>
+          <?php endif; ?>
+
+          <?php if ($showNg): ?>
+          <div class="flow-branch">
+            <span class="flow-branch-label">NGルート:</span>
+            <span class="flow-v-arrow">↓</span>
+            <?php foreach ($ngBranch as $i => $step): ?>
+              <?php if ($i > 0): ?><span class="flow-arrow">→</span><?php endif; ?>
+              <?php
+                $cls = '';
+                if ($ngIdx >= 0 && $i < $ngIdx) $cls = 'done';
+                elseif ($ngIdx >= 0 && $i === $ngIdx) $cls = 'current';
+                // NG後に対応中以降に進んでいたら全done
+                if ($hasNg && in_array($st, ['対応中','確認待ち','完了'])) $cls = 'done';
+              ?>
+              <span class="flow-node <?= $cls ?>">
+                <?= $step[0] ?>
+                <span class="flow-who <?= $step[1] ?>"><?= $step[1] === 'ai' ? 'AI' : '管理者' ?></span>
+              </span>
+            <?php endforeach; ?>
+            <span class="flow-v-arrow">↑</span>
+            <span style="font-size:0.68rem;color:#9ba8b5;">対応中に戻る</span>
+          </div>
+          <?php endif; ?>
+        </div>
+        <?php endif; ?>
+
+        <div class="flow-legend">
+          <span><span class="flow-who ai">AI</span> Claude対応</span>
+          <span><span class="flow-who admin">管理者</span> あなたが対応</span>
+          <span style="color:#4338ca;">◉ 現在地</span>
+        </div>
+      </div>
+
+      <?php $isLocked = in_array($selItem['status'], ['対応中', '再対応']); ?>
+      <?php if ($isLocked): ?>
+      <!-- 対応中/再対応: AI作業中のため編集不可 -->
+      <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:16px 20px;margin-bottom:16px;">
+        <div style="font-size:0.85rem;font-weight:600;color:#c2410c;margin-bottom:6px;">現在AIが対応中です</div>
+        <div style="font-size:0.8rem;color:#9a3412;">ステータスが「<?= htmlspecialchars($selItem['status']) ?>」のため、管理者からの編集はできません。保留にする場合のみ変更可能です。</div>
+      </div>
+      <div class="sel-actions">
+        <div class="action-group">
+          <div class="action-group-title">対応状況</div>
+          <form method="POST" action="" style="display:flex;gap:6px;align-items:center;margin-bottom:10px;">
+            <input type="hidden" name="action" value="status">
+            <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
+            <input type="hidden" name="status" value="保留">
+            <button type="button" class="btn-save" style="background:linear-gradient(135deg,#e8a838,#d48820);"
+                    data-confirm="このTODOを保留にしますか？AIの作業が中断されます。" data-confirm-ok="保留にする">保留にする</button>
+          </form>
+          <?php if (($selItem['status_note'] ?? '') !== ''): ?>
+          <div class="action-group-title">対応メモ</div>
+          <div style="background:#f0f4ff;border-left:3px solid #667eea;border-radius:4px;padding:10px 14px;font-size:0.85rem;line-height:1.6;white-space:pre-wrap;"><?= htmlspecialchars($selItem['status_note']) ?></div>
+          <?php endif; ?>
+        </div>
+      </div>
+      <?php else: ?>
+      <div class="sel-actions">
+        <!-- 対応状況 -->
+        <div class="action-group">
+          <div class="action-group-title">対応状況</div>
+          <form method="POST" action="" style="display:flex;gap:6px;align-items:center;margin-bottom:10px;">
+            <input type="hidden" name="action" value="status">
+            <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
+            <input type="text" name="status" value="<?= htmlspecialchars($selItem['status']) ?>" list="status-list"
+              style="padding:7px 10px;border:2px solid #e0e4e8;border-radius:8px;font-size:0.85rem;font-family:inherit;width:120px;">
+            <button type="submit" class="btn-save">保存</button>
+          </form>
+          <div class="action-group-title">対応メモ</div>
+          <form method="POST" action="">
+            <input type="hidden" name="action" value="status_note">
+            <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
+            <textarea name="status_note" rows="8" placeholder="対応状況の詳細メモ（自由記入）"
+              style="width:100%;padding:9px 12px;border:2px solid #e0e4e8;border-radius:8px;font-size:0.85rem;font-family:inherit;resize:vertical;line-height:1.6;margin-bottom:8px;"><?= htmlspecialchars($selItem['status_note'] ?? '') ?></textarea>
+            <button type="submit" class="btn-save">メモ保存</button>
+          </form>
+        </div>
+
+        <!-- 保留解除回答 / 確認結果 -->
+        <div class="action-group">
+          <?php $holdAnswer = $selItem['hold_answer'] ?? ''; ?>
+          <?php if ($selItem['status'] === '保留'): ?>
+          <!-- 保留中：解除回答入力 -->
+          <div class="action-group-title" style="color:#e8a838;">保留解除回答</div>
+          <form method="POST" action="" style="margin-bottom:16px;">
+            <input type="hidden" name="action" value="hold_answer">
+            <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
+            <textarea name="hold_answer" rows="3" placeholder="保留理由に対する回答を入力" required
+              style="width:100%;padding:9px 12px;border:2px solid #e8a838;border-radius:8px;font-size:0.85rem;font-family:inherit;resize:vertical;line-height:1.6;margin-bottom:8px;"><?= htmlspecialchars($holdAnswer) ?></textarea>
+            <button type="submit" class="btn-save" style="background:linear-gradient(135deg,#e8a838,#d48820);">回答して再対応へ</button>
+          </form>
+          <?php elseif ($holdAnswer !== ''): ?>
+          <!-- 保留解除済み：回答表示 -->
+          <div class="action-group-title">保留解除回答</div>
+          <div style="background:#fef9ee;border:1px solid #f0e0b8;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:0.85rem;line-height:1.6;white-space:pre-wrap;"><?= htmlspecialchars($holdAnswer) ?></div>
+          <?php endif; ?>
+
+          <div class="action-group-title">確認結果</div>
+          <?php
+            $resultRaw = $selItem['result'] ?? '';
+            $isOk = $resultRaw === 'OK';
+            $isNg = str_starts_with($resultRaw, 'NG');
+            $ngReason = $isNg ? trim(substr($resultRaw, 2), ': ') : '';
+          ?>
+          <?php if ($isNg): ?>
+          <div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.85rem;line-height:1.6;">
+            <span style="font-weight:600;color:#e11d48;">NG</span>
+            <?php if ($ngReason): ?>
+            <div style="margin-top:6px;white-space:pre-wrap;color:#64748b;"><?= htmlspecialchars($ngReason) ?></div>
+            <?php endif; ?>
+          </div>
+          <?php endif; ?>
+          <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px;">
+            <form method="POST" action="" style="margin:0;">
+              <input type="hidden" name="action" value="result">
+              <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
+              <input type="hidden" name="result_type" value="OK">
+              <button type="submit" class="btn-save" style="background:#388e3c;">✓ OK（完了）</button>
+            </form>
+          </div>
+          <form method="POST" action="">
+            <input type="hidden" name="action" value="result">
+            <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
+            <input type="hidden" name="result_type" value="NG">
+            <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px;">
+              <textarea name="ng_reason" rows="3" placeholder="NG理由（詳細を記入）"
+                style="padding:7px 10px;border:2px solid #e0e4e8;border-radius:8px;font-size:0.85rem;font-family:inherit;flex:1;min-width:200px;resize:vertical;line-height:1.6;"><?= htmlspecialchars($ngReason) ?></textarea>
+              <button type="submit" class="btn-save" style="background:#e74c3c;">✗ NG送信</button>
+            </div>
+          </form>
+
+          <!-- 削除 -->
+          <div style="margin-top:20px;">
+            <form method="POST" action="">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
+              <button type="button" class="btn-sm btn-delete" data-confirm="このTODOを削除しますか？" data-confirm-ok="削除する">削除</button>
+            </form>
+          </div>
+        </div>
+      </div>
+      <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if (!$selItem): ?>
+    <!-- 追加ボタン＆折りたたみフォーム -->
+    <div style="margin-bottom:16px;">
+      <button class="btn-primary" id="todo-add-toggle" onclick="document.getElementById('todo-add-form').style.display=this.style.display='none';document.getElementById('todo-add-form').style.display='block';">＋ TODO追加</button>
+    </div>
+    <div class="card-panel" id="todo-add-form" style="display:none;">
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>TODO追加</span>
+        <a href="#" style="font-size:0.8rem;color:#667eea;text-decoration:none;" onclick="event.preventDefault();document.getElementById('todo-add-form').style.display='none';document.getElementById('todo-add-toggle').style.display='';">✕ 閉じる</a>
+      </div>
+      <form method="POST" action="">
+        <input type="hidden" name="action" value="add">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
+          <div style="display:flex;flex-direction:column;gap:12px;min-width:160px;">
+            <div class="form-group">
+              <label>更新対象 <span style="color:#e74c3c;">*</span></label>
+              <?php
+                $lastSite     = $_SESSION['todo_last_site'] ?? '';
+                $lastArea     = $_SESSION['todo_last_area'] ?? 'general';
+                $lastPriority = $_SESSION['todo_last_priority'] ?? 'medium';
+              ?>
+              <select name="site" required>
+                <option value="">選択...</option>
+                <?php foreach ($siteLabels as $key => $label): ?>
+                <option value="<?= $key ?>" <?= $lastSite === $key ? 'selected' : '' ?>><?= $key ?> - <?= $label ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>区分</label>
+              <select name="area">
+                <option value="general" <?= $lastArea === 'general' ? 'selected' : '' ?>>一般</option>
+                <option value="admin" <?= $lastArea === 'admin' ? 'selected' : '' ?>>管理</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>優先度</label>
+              <select name="priority">
+                <option value="medium" <?= $lastPriority === 'medium' ? 'selected' : '' ?>>中</option>
+                <option value="high" <?= $lastPriority === 'high' ? 'selected' : '' ?>>高</option>
+                <option value="low" <?= $lastPriority === 'low' ? 'selected' : '' ?>>低</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>期日 <span style="color:#9ca3af;font-weight:400;">任意</span></label>
+              <input type="date" name="due_date">
+            </div>
+            <button type="submit" class="btn-primary">追加</button>
+          </div>
+          <div class="form-group" style="flex:2;min-width:320px;">
+            <label>更新内容 <span style="color:#e74c3c;">*</span></label>
+            <textarea name="title" rows="10" placeholder="修正・改善内容を入力（複数行可）" required
+              style="width:100%;line-height:1.6;"></textarea>
+          </div>
+        </div>
+      </form>
+    </div>
+    <?php endif; ?>
+
+    <!-- フィルター -->
+    <div class="filters">
+      <label style="font-size:12px;color:var(--sub);margin-right:2px;">サイト:</label>
+      <select onchange="location.href=this.value" style="padding:6px 28px 6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg2) url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2210%22 height=%226%22><path d=%22M0 0l5 6 5-6z%22 fill=%22%239ca3af%22/></svg>') no-repeat right 8px center;color:var(--text);font-size:13px;cursor:pointer;-webkit-appearance:none;appearance:none;">
+        <option value="<?= buildQuery(['site' => '']) ?>" <?= $filterSite === '' ? 'selected' : '' ?>>全サイト</option>
+        <?php foreach ($siteLabels as $key => $label): ?>
+        <option value="<?= buildQuery(['site' => $key]) ?>" <?= $filterSite === $key ? 'selected' : '' ?>><?= $key ?></option>
+        <?php endforeach; ?>
+      </select>
+      <label style="font-size:12px;color:var(--sub);margin-right:2px;margin-left:8px;">区分:</label>
+      <select onchange="location.href=this.value" style="padding:6px 28px 6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg2) url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2210%22 height=%226%22><path d=%22M0 0l5 6 5-6z%22 fill=%22%239ca3af%22/></svg>') no-repeat right 8px center;color:var(--text);font-size:13px;cursor:pointer;-webkit-appearance:none;appearance:none;">
+        <option value="<?= buildQuery(['area' => '']) ?>" <?= $filterArea === '' ? 'selected' : '' ?>>全区分</option>
+        <option value="<?= buildQuery(['area' => 'general']) ?>" <?= $filterArea === 'general' ? 'selected' : '' ?>>一般</option>
+        <option value="<?= buildQuery(['area' => 'admin']) ?>" <?= $filterArea === 'admin' ? 'selected' : '' ?>>管理</option>
+      </select>
+      <div class="filter-sep"></div>
+      <a href="<?= buildQuery(['group' => 'all']) ?>" class="filter-btn <?= $filterGroup === 'all' ? 'active' : '' ?>">全件</a>
+      <?php foreach ($statusGroups as $gKey => $gDef): ?>
+      <a href="<?= buildQuery(['group' => $gKey]) ?>" class="filter-btn <?= $filterGroup === $gKey ? 'active' : '' ?>"><?= $gDef['label'] ?> (<?= $groupCounts[$gKey] ?>)</a>
+      <?php endforeach; ?>
+    </div>
+
+    <!-- テーブル -->
+    <div class="section-title">一覧（<?= count($todos) ?>件）</div>
+    <?php if (empty($todos)): ?>
+    <div class="no-data">TODOはありません</div>
+    <?php else: ?>
+    <table class="todo-table">
+      <thead>
+        <tr style="cursor:default;">
+          <th>優先度</th>
+          <th>対象</th>
+          <th>更新内容</th>
+          <th>対応状況</th>
+          <th>NG理由</th>
+          <th>時間</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($todos as $t): ?>
+        <tr class="<?= $selItem && $selItem['id'] == $t['id'] ? 'selected' : '' ?>"
+            onclick="if(document.getElementById('todo-add-form').style.display!=='none')return;location.href='/admin/todos.php?sel=<?= $t['id'] ?>'">
+          <td><span class="badge badge-<?= $t['priority'] ?>"><?= $priorityLabels[$t['priority']] ?? $t['priority'] ?></span></td>
+          <td style="white-space:nowrap;">
+            <span class="badge badge-site"><?= htmlspecialchars($t['site']) ?></span><br>
+            <span class="badge badge-<?= $t['area'] ?? 'general' ?>" style="margin-top:3px;"><?= $areaLabels[$t['area'] ?? 'general'] ?></span>
+          </td>
+          <td>
+            <span class="todo-title <?= $t['status'] === '完了' ? 'completed' : '' ?>"><?= htmlspecialchars($t['title']) ?></span>
+            <?php if (($t['status_note'] ?? '') !== ''): ?>
+            <div class="todo-note"><?= htmlspecialchars($t['status_note']) ?></div>
+            <?php endif; ?>
+          </td>
+          <td style="white-space:nowrap;">
+            <?= htmlspecialchars($t['status']) ?>
+          </td>
+          <td>
+            <?php
+              $r = $t['result'] ?? '';
+              if (str_starts_with($r, 'NG')) {
+                $ngText = trim(substr($r, 2), ': ');
+                echo '<span style="color:#e74c3c;font-weight:600;" title="' . htmlspecialchars($ngText) . '">NG</span>';
+                if ($ngText) echo '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px;white-space:pre-wrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars(mb_substr($ngText, 0, 40)) . (mb_strlen($ngText) > 40 ? '…' : '') . '</div>';
+              } else {
+                echo '<span style="color:#ccc;">-</span>';
+              }
+            ?>
+          </td>
+          <td style="font-size:0.72rem;white-space:nowrap;color:#9ba8b5;">
+            <?php
+              $due = $t['due_date'] ?? '';
+              if ($due) {
+                $isOverdue = $due < date('Y-m-d') && !in_array($t['status'], ['完了', '保留'], true);
+                $color = $isOverdue ? '#e74c3c' : '#667eea';
+                echo '<div style="color:' . $color . ';">📅 ' . htmlspecialchars($due) . ' 期限</div>';
+              }
+            ?>
+            <div><?= substr($t['created_at'], 0, 10) ?> 登録</div>
+            <?php if (!empty($t['started_at'])): ?>
+            <div style="color:#667eea;"><?= substr($t['started_at'], 5, 11) ?> 開始</div>
+            <?php endif; ?>
+            <?php if (!empty($t['completed_at'])): ?>
+            <div style="color:#388e3c;"><?= substr($t['completed_at'], 5, 11) ?> 完了</div>
+            <?php endif; ?>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+    <?php endif; ?>
+
+  <datalist id="status-list">
+    <?php foreach ($statusPresets as $sp): ?>
+    <option value="<?= $sp ?>">
+    <?php endforeach; ?>
+  </datalist>
+
+  </main>
+  </div>
+
+  <script src="/assets/js/common.js?v=20260327h"></script>
+  <?php if ($selItem): ?>
+  <script>document.getElementById('sel-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });</script>
+  <?php endif; ?>
+</body>
+</html>
