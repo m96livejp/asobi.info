@@ -929,6 +929,7 @@ async function openConversation(convId) {
   el.style.removeProperty('mask-size');
   el.style.pointerEvents = '';
   _chatVisMode = 0;
+  _updateChatHideBtn();
   initMsgLongPress();
   el.scrollTop = el.scrollHeight;
 
@@ -1066,37 +1067,36 @@ async function editCharacter(charId) {
   document.getElementById('create-form').scrollTop = 0;
 }
 
-// 入力フォーカス時: ③(非表示)なら②(フェード)に戻す
+// 入力フォーカス時: 非表示(2)なら半分フェード(1)に戻す
 function onChatInputFocus() {
   if (_chatVisMode !== 2) return;
   const el = document.getElementById('chat-messages');
   if (!el) return;
   el.style.pointerEvents = '';
+  el.classList.add('msg-masked');
   el.style.setProperty('-webkit-mask-size', '100% 100%');
   el.style.setProperty('mask-size', '100% 100%');
   _chatVisMode = 1;
+  _updateChatHideBtn();
 }
 
-// === チャット表示3段階切り替え（全表示→上半分フェード→非表示） ===
+// === チャット表示切り替え（全表示↔半分フェード、2段階） ===
 function toggleChatVisibility() {
+  if (_chatVisMode === 2) return; // 非表示中はクリック無効
   const el = document.getElementById('chat-messages');
   if (!el) return;
-  _chatVisMode = (_chatVisMode + 1) % 3;
-  if (_chatVisMode === 1) {
-    // ①→②: マスク適用、250%(全可視)→100%(フェード) をゆっくり
+  if (_chatVisMode === 0) {
+    // 全表示→半分フェード
+    _chatVisMode = 1;
     el.classList.add('msg-masked');
     el.style.setProperty('-webkit-mask-size', '100% 250%');
     el.style.setProperty('mask-size', '100% 250%');
     el.offsetHeight;
     el.style.setProperty('-webkit-mask-size', '100% 100%');
     el.style.setProperty('mask-size', '100% 100%');
-  } else if (_chatVisMode === 2) {
-    // ②→③: 100%→0% で上からゆっくり消える
-    el.style.setProperty('-webkit-mask-size', '100% 0%');
-    el.style.setProperty('mask-size', '100% 0%');
-    el.style.pointerEvents = 'none';
   } else {
-    // ③→①: 0%→250% で下からゆっくり戻り、完了後マスク解除
+    // 半分フェード→全表示
+    _chatVisMode = 0;
     el.style.pointerEvents = '';
     el.style.setProperty('-webkit-mask-size', '100% 250%');
     el.style.setProperty('mask-size', '100% 250%');
@@ -1108,6 +1108,42 @@ function toggleChatVisibility() {
     };
     el.addEventListener('transitionend', onDone);
   }
+}
+
+// === チャット非表示トグル（メニューから） ===
+function toggleChatHide() {
+  _chatMenuOpen = false;
+  document.getElementById('chat-menu-panel')?.classList.remove('open');
+  const el = document.getElementById('chat-messages');
+  if (!el) return;
+  if (_chatVisMode === 2) {
+    // 非表示→全表示
+    _chatVisMode = 0;
+    el.style.pointerEvents = '';
+    el.classList.remove('msg-masked');
+    el.style.removeProperty('-webkit-mask-size');
+    el.style.removeProperty('mask-size');
+  } else {
+    // 全表示/半分→非表示
+    if (_chatVisMode === 0) {
+      // まずマスクを設定してから消す
+      el.classList.add('msg-masked');
+      el.style.setProperty('-webkit-mask-size', '100% 100%');
+      el.style.setProperty('mask-size', '100% 100%');
+      el.offsetHeight;
+    }
+    _chatVisMode = 2;
+    el.style.setProperty('-webkit-mask-size', '100% 0%');
+    el.style.setProperty('mask-size', '100% 0%');
+    el.style.pointerEvents = 'none';
+  }
+  _updateChatHideBtn();
+}
+
+function _updateChatHideBtn() {
+  const btn = document.getElementById('chat-hide-btn');
+  if (!btn) return;
+  btn.textContent = _chatVisMode === 2 ? '💬 チャット表示' : '💬 チャット非表示';
 }
 
 // === TTS テキスト解析 ===
