@@ -15,9 +15,8 @@ from ..services.chat_service import build_system_prompt, get_stream_func, get_ai
 from pydantic import BaseModel
 import json
 
-# STATEタグ・VOICEタグのパターン
+# STATEタグのパターン
 _STATE_TAG_RE = re.compile(r'<<<STATE>>>(.*?)<<</STATE>>>', re.DOTALL)
-_VOICE_TAG_RE = re.compile(r'<<<VOICE>>>(.*?)<<</VOICE>>>', re.DOTALL)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -107,11 +106,10 @@ async def send_message(
     rg = (ai_settings.response_guideline if ai_settings and ai_settings.response_guideline is not None else None)
     tts_vp = ai_settings.tts_voice_params if ai_settings else None
     system_prompt = build_system_prompt(char, conv_state=conv_state, state_enabled=state_enabled, response_guideline=rg, state_fields=state_fields, tts_voice_params=tts_vp)
-    tts_voice_configured = bool(tts_vp)
     provider = ai_settings.provider if ai_settings else char.ai_model
     stream_func = get_stream_func(provider)
 
-    should_buffer = state_enabled or tts_voice_configured
+    should_buffer = state_enabled
 
     async def event_stream():
         full_response = ""
@@ -160,19 +158,8 @@ async def send_message(
         if should_buffer and buffer and not state_tag_started:
             yield f"data: {json.dumps({'text': buffer}, ensure_ascii=False)}\n\n"
 
-        # VOICEタグからパラメータを抽出
-        voice_params_out = None
-        visible_text = full_response
-        if tts_voice_configured:
-            voice_match = _VOICE_TAG_RE.search(full_response)
-            if voice_match:
-                try:
-                    voice_params_out = json.loads(voice_match.group(1).strip())
-                except Exception:
-                    pass
-            visible_text = _VOICE_TAG_RE.sub("", visible_text).strip()
-
         # STATEタグからステータスJSONを抽出
+        visible_text = full_response
         if state_enabled:
             match = _STATE_TAG_RE.search(full_response)
             if match:
@@ -248,7 +235,7 @@ async def send_message(
             import logging
             logging.getLogger("aic").error(f"Chat save FAILED after 3 retries: conv={conversation_id}")
 
-        yield f"data: {json.dumps({'done': True, 'cost': cost, 'currency': currency, 'voice_params': voice_params_out}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'done': True, 'cost': cost, 'currency': currency}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

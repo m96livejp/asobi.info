@@ -1147,7 +1147,8 @@ function _updateChatHideBtn() {
 }
 
 // === TTS テキスト解析 ===
-// [SE名]{スタイル}テキスト 形式を解析してセグメント配列に変換
+// [SE名]{スタイル:速度:ピッチ:抑揚:音量}テキスト 形式を解析してセグメント配列に変換
+// voiceParams がない場合（旧形式 {スタイル}）は null
 function parseMessageSegments(text) {
   const segments = [];
   const re = /(\[([^\]]*)\])|(\{([^}]+)\}([^[{]*))|([^[{]+)/g;
@@ -1158,12 +1159,22 @@ function parseMessageSegments(text) {
       const seName = match[2].trim();
       if (seName) segments.push({ type: 'se', name: seName });
     } else if (match[3]) {
-      const style = match[4].trim();
+      const styleRaw = match[4].trim();
       const content = match[5];
-      if (content && content.trim()) segments.push({ type: 'voice', style, text: content });
+      // {スタイル:速度:ピッチ:抑揚:音量} 形式を解析
+      const parts = styleRaw.split(':');
+      const style = parts[0].trim();
+      let voiceParams = null;
+      if (parts.length === 5) {
+        const [s, p, i, v] = parts.slice(1).map(n => parseInt(n, 10));
+        if (!isNaN(s) && !isNaN(p) && !isNaN(i) && !isNaN(v)) {
+          voiceParams = { speed: s, pitch: p, intonation: i, volume: v };
+        }
+      }
+      if (content && content.trim()) segments.push({ type: 'voice', style, text: content, voiceParams });
     } else if (match[6]) {
       const content = match[6];
-      if (content && content.trim()) segments.push({ type: 'voice', style: 'ノーマル', text: content });
+      if (content && content.trim()) segments.push({ type: 'voice', style: 'ノーマル', text: content, voiceParams: null });
     }
   }
   return segments;
@@ -1363,21 +1374,18 @@ async function _sendRequest(msg, aiMsg, chatEl) {
           const data = JSON.parse(line.slice(6));
           if (data.text) {
             aiText += data.text;
-            // STATE・VOICE・TTSマーカー除去して表示（未完成タグも除去）
+            // STATEタグ・TTSマーカー除去して表示（未完成タグも除去）
             const stripped = aiText
               .replace(/<<<STATE>>>[\s\S]*?<<\/STATE>>>/g, '')  // 完結したSTATEブロック
               .replace(/<<<STATE>>>[\s\S]*$/g, '')               // 未完成のSTATEブロック
-              .replace(/<<<VOICE>>>[\s\S]*?<<\/VOICE>>>/g, '')  // 完結したVOICEブロック
-              .replace(/<<<VOICE>>>[\s\S]*$/g, '')               // 未完成のVOICEブロック
               .replace(/<<<[A-Z]*$/g, '');                       // <<< 途中のタグ
             aiMsg.innerHTML = esc(getDisplayText(stripped));
             chatEl.scrollTop = chatEl.scrollHeight;
           }
           if (data.done) {
-            // raw テキストを保存（STATE/VOICEタグを除去）
+            // raw テキストを保存（STATEタグを除去）
             const rawText = aiText
               .replace(/<<<STATE>>>[\s\S]*?<<\/STATE>>>/g, '').replace(/<<<STATE>>>[\s\S]*$/g, '')
-              .replace(/<<<VOICE>>>[\s\S]*?<<\/VOICE>>>/g, '').replace(/<<<VOICE>>>[\s\S]*$/g, '')
               .trim();
             aiMsg.dataset.raw = rawText;
             // 読み上げボタン追加（TTS設定がある場合）
@@ -1386,8 +1394,6 @@ async function _sendRequest(msg, aiMsg, chatEl) {
               ttsBtn.className = 'tts-btn';
               ttsBtn.textContent = '▶';
               ttsBtn.title = '読み上げ';
-              // voice_params をボタンに保存
-              if (data.voice_params) ttsBtn.dataset.voiceParams = JSON.stringify(data.voice_params);
               ttsBtn.onclick = function() { ttsPlayFromBtn(this); };
               aiMsg.appendChild(ttsBtn);
               // 自動読み上げ
@@ -2349,12 +2355,11 @@ function ttsPlayFromBtn(btn) {
   btn.classList.remove('tts-playing');
   btn.classList.add('tts-loading');
 
-  const voiceParams = btn.dataset.voiceParams ? JSON.parse(btn.dataset.voiceParams) : null;
   btn.dataset.duration = '0';  // 再生開始時に累計をリセット
   const segments = parseMessageSegments(rawText);
   _ttsStopFlag = false;
   _ttsPlaying = true;
-  _playTtsQueue(segments, voiceParams).finally(() => {
+  _playTtsQueue(segments).finally(() => {
     if (_ttsPlayingBtn === btn) {
       _ttsResetBtn(btn);
       _ttsPlayingBtn = null;
@@ -2378,12 +2383,11 @@ function ttsStopAll() {
 }
 
 // セグメント配列を先読みパイプラインで順番に再生
-async function _playTtsQueue(segments, voiceParams) {
+async function _playTtsQueue(segments) {
   if (!currentConversationId) return;
 
   // SE と VOICE セグメントを処理
   let prefetch = null;
-  // 最初のVOICEセグメントのプリフェッチを開始
   for (let i = 0; i < segments.length; i++) {
     if (_ttsStopFlag) return;
     const seg = segments[i];
@@ -2392,15 +2396,15 @@ async function _playTtsQueue(segments, voiceParams) {
       const styleId = _vvStyleMap[seg.style] ?? _vvStyleMap['ノーマル'] ?? Object.values(_vvStyleMap)[0];
       if (styleId == null) continue;
 
-      // プリフェッチがなければフェッチ開始
-      const audioBlobPromise = prefetch || _fetchTtsAudio(seg.text, styleId, voiceParams);
+      // プリフェッチがなければフェッチ開始（セグメント固有のvoiceParamsを使用）
+      const audioBlobPromise = prefetch || _fetchTtsAudio(seg.text, styleId, seg.voiceParams);
       // 次セグメントがVOICEなら先読み
       prefetch = null;
       for (let j = i + 1; j < segments.length; j++) {
         if (segments[j].type === 'voice') {
           const nextStyleId = _vvStyleMap[segments[j].style] ?? _vvStyleMap['ノーマル'] ?? Object.values(_vvStyleMap)[0];
           if (nextStyleId != null) {
-            prefetch = _fetchTtsAudio(segments[j].text, nextStyleId, voiceParams);
+            prefetch = _fetchTtsAudio(segments[j].text, nextStyleId, segments[j].voiceParams);
           }
           break;
         }
