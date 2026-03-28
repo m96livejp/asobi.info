@@ -15,7 +15,7 @@ let _ttsAudio = null;
 let _ttsPlayingBtn = null;
 let _ttsQueue = [];        // 再生キュー [{type:'se'|'voice', name?, style?, text?, styleId?}]
 let _ttsPlaying = false;   // キュー再生中フラグ
-let _ttsStopFlag = false;  // 停止リクエスト
+let _ttsStopId = 0;        // 停止世代ID（インクリメントで全実行中セッションを無効化）
 let _ttsAutoPlay = false;  // 自動読み上げON/OFF
 let _showState = false;    // 感情STATE表示ON/OFF（管理者のみ）
 let _vvStyleMap = {};      // スタイル名→IDマップ（現在の会話のキャラから構築）
@@ -918,10 +918,13 @@ async function openConversation(convId) {
       const retryBtn = document.createElement('button');
       retryBtn.className = 'retry-btn';
       retryBtn.textContent = '↻';
-      retryBtn.onclick = () => {
+      retryBtn.onclick = async () => {
         if (!lastUser || isStreaming) return;
         isStreaming = true;
         document.getElementById('send-btn').disabled = true;
+        // 古いユーザーメッセージをDB削除してDOMからも除去（リロード後の重複送信防止）
+        await api('/chat/' + currentConversationId + '/messages/' + lastUser.id, { method: 'DELETE' }).catch(() => {});
+        el.querySelector('[data-msg-id="' + lastUser.id + '"]')?.remove();
         aiMsg.innerHTML = '<div class="msg-typing"><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span></div>';
         _sendRequest(lastUser.content, aiMsg, el);
       };
@@ -1469,7 +1472,7 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
     // 再生ループ（ストリームと並行動作）
     async function _sPlayLoop(btn) {
       let idx = 0;
-      _ttsStopFlag = false;
+      const myId = _ttsStopId;  // このセッションのID
       _ttsPlaying = true;
       _ttsPlayingBtn = btn;
       btn.innerHTML = '<span class="tts-dots"><b></b><b></b><b></b></span>';
@@ -1477,15 +1480,15 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
       btn.classList.add('tts-loading');
       btn.dataset.duration = '0';
       while (true) {
-        if (_ttsStopFlag) break;
+        if (_ttsStopId !== myId) break;
         if (idx < _sQueue.length) {
           const item = _sQueue[idx++];
           if (item.type === 'audio') {
             const blob = await item.prom;
-            if (!blob || _ttsStopFlag) continue;
-            await _playAudioBlob(blob);
+            if (!blob || _ttsStopId !== myId) break;
+            await _playAudioBlob(blob, myId);
           } else if (item.type === 'se') {
-            await _playSe(item.name);
+            await _playSe(item.name, myId);
           }
         } else if (_sDone) {
           break;
@@ -1493,10 +1496,12 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
           await _sWaitForMore(); // 次のセグメントが来るまで待機
         }
       }
-      _ttsPlaying = false;
-      if (_ttsPlayingBtn === btn) {
-        _ttsResetBtn(btn);
-        _ttsPlayingBtn = null;
+      if (_ttsStopId === myId) {
+        _ttsPlaying = false;
+        if (_ttsPlayingBtn === btn) {
+          _ttsResetBtn(btn);
+          _ttsPlayingBtn = null;
+        }
       }
     }
 
@@ -2543,19 +2548,21 @@ function ttsPlayFromBtn(btn) {
 
   btn.dataset.duration = '0';  // 再生開始時に累計をリセット
   const segments = parseMessageSegments(rawText);
-  _ttsStopFlag = false;
+  const myId = _ttsStopId;
   _ttsPlaying = true;
-  _playTtsQueue(segments).finally(() => {
-    if (_ttsPlayingBtn === btn) {
-      _ttsResetBtn(btn);
-      _ttsPlayingBtn = null;
+  _playTtsQueue(segments, myId).finally(() => {
+    if (_ttsStopId === myId) {
+      if (_ttsPlayingBtn === btn) {
+        _ttsResetBtn(btn);
+        _ttsPlayingBtn = null;
+      }
+      _ttsPlaying = false;
     }
-    _ttsPlaying = false;
   });
 }
 
 function ttsStopAll() {
-  _ttsStopFlag = true;
+  _ttsStopId++;          // 実行中の全セッションを無効化
   _ttsPlaying = false;
   if (_ttsAudio) {
     _ttsAudio.pause();
@@ -2569,13 +2576,13 @@ function ttsStopAll() {
 }
 
 // セグメント配列を先読みパイプラインで順番に再生
-async function _playTtsQueue(segments) {
+async function _playTtsQueue(segments, stopId) {
   if (!currentConversationId) return;
 
   // SE と VOICE セグメントを処理
   let prefetch = null;
   for (let i = 0; i < segments.length; i++) {
-    if (_ttsStopFlag) return;
+    if (_ttsStopId !== stopId) return;
     const seg = segments[i];
 
     if (seg.type === 'voice') {
@@ -2597,11 +2604,11 @@ async function _playTtsQueue(segments) {
       }
 
       const blob = await audioBlobPromise;
-      if (!blob || _ttsStopFlag) return;
-      await _playAudioBlob(blob);
+      if (!blob || _ttsStopId !== stopId) return;
+      await _playAudioBlob(blob, stopId);
 
     } else if (seg.type === 'se') {
-      await _playSe(seg.name);
+      await _playSe(seg.name, stopId);
     }
   }
 }
@@ -2629,9 +2636,9 @@ async function _fetchTtsAudio(text, styleId, voiceParams) {
   } catch (_) { return null; }
 }
 
-function _playAudioBlob(blob) {
+function _playAudioBlob(blob, stopId) {
   return new Promise(resolve => {
-    if (_ttsStopFlag) { resolve(); return; }
+    if (_ttsStopId !== stopId) { resolve(); return; }
     const url = URL.createObjectURL(blob);
     _ttsAudio = new Audio(url);
     // 再生開始できたら loading → playing（音波アニメーション）に切替
@@ -2656,8 +2663,8 @@ function _playAudioBlob(blob) {
   });
 }
 
-async function _playSe(name) {
-  if (_ttsStopFlag) return;
+async function _playSe(name, stopId) {
+  if (_ttsStopId !== stopId) return;
   const url = '/se/' + encodeURIComponent(name) + '.wav';
   try {
     const res = await fetch(url, { method: 'HEAD' });
@@ -2666,7 +2673,8 @@ async function _playSe(name) {
       api('/tts/se-miss', { method: 'POST', body: JSON.stringify({ name }) }).catch(() => {});
       return;
     }
-    await _playAudioBlob(await (await fetch(url)).blob());
+    if (_ttsStopId !== stopId) return;
+    await _playAudioBlob(await (await fetch(url)).blob(), stopId);
   } catch (_) {
     api('/tts/se-miss', { method: 'POST', body: JSON.stringify({ name }) }).catch(() => {});
   }
