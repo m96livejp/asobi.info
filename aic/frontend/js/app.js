@@ -909,27 +909,54 @@ async function openConversation(convId) {
     if (_ttsAutoPlay && _ttsAvailable) {
       setTimeout(ttsAutoPlayLast, 200);
     }
-    // 最後がuserメッセージ（AIが未返答 or 失敗）なら再送UIを表示
+    // 最後がuserメッセージ（AIが未返答 or 生成中）なら待機 → 必要ならリトライUI
     if (data.needs_retry) {
-      const aiMsg = document.createElement('div');
-      aiMsg.className = 'msg msg-ai';
       const active = data.messages.filter(m => !m.is_deleted);
       const lastUser = active.filter(m => m.role === 'user').pop();
-      const retryBtn = document.createElement('button');
-      retryBtn.className = 'retry-btn';
-      retryBtn.textContent = '↻';
-      retryBtn.onclick = async () => {
-        if (!lastUser || isStreaming) return;
-        isStreaming = true;
-        document.getElementById('send-btn').disabled = true;
-        // 古いユーザーメッセージをDB削除してDOMからも除去（リロード後の重複送信防止）
-        await api('/chat/' + currentConversationId + '/messages/' + lastUser.id, { method: 'DELETE' }).catch(() => {});
-        el.querySelector('[data-msg-id="' + lastUser.id + '"]')?.remove();
-        aiMsg.innerHTML = '<div class="msg-typing"><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span></div>';
-        _sendRequest(lastUser.content, aiMsg, el);
-      };
-      aiMsg.appendChild(retryBtn);
+
+      const aiMsg = document.createElement('div');
+      aiMsg.className = 'msg msg-ai';
+      // まず ・・・ を表示（サーバーがまだ生成中の可能性があるため）
+      aiMsg.innerHTML = '<div class="msg-typing"><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span></div>';
       el.appendChild(_createAiRow(aiMsg));
+
+      // リトライボタンを表示する関数
+      const showRetryBtn = () => {
+        aiMsg.innerHTML = '';
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'retry-btn';
+        retryBtn.textContent = '↻';
+        retryBtn.onclick = async () => {
+          if (!lastUser || isStreaming) return;
+          isStreaming = true;
+          document.getElementById('send-btn').disabled = true;
+          // 古いユーザーメッセージをDB削除してDOMからも除去
+          await api('/chat/' + currentConversationId + '/messages/' + lastUser.id, { method: 'DELETE' }).catch(() => {});
+          el.querySelector('[data-msg-id="' + lastUser.id + '"]')?.remove();
+          aiMsg.innerHTML = '<div class="msg-typing"><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span></div>';
+          _sendRequest(lastUser.content, aiMsg, el);
+        };
+        aiMsg.appendChild(retryBtn);
+      };
+
+      // 2秒おきに最大15回（30秒）ポーリング: AI応答が届いていれば再描画
+      let pollCount = 0;
+      const pollId = setInterval(async () => {
+        pollCount++;
+        if (currentConversationId !== convId) { clearInterval(pollId); return; }
+        try {
+          const pr = await api('/conversations/' + convId);
+          if (pr.ok) {
+            const pd = await pr.json();
+            if (!pd.needs_retry) {
+              clearInterval(pollId);
+              openConversation(convId);
+              return;
+            }
+          }
+        } catch (_) {}
+        if (pollCount >= 15) { clearInterval(pollId); showRetryBtn(); }
+      }, 2000);
     }
   }
 
