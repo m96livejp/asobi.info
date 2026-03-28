@@ -211,7 +211,7 @@ body {
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
   position: relative;
-  max-width: 100%;
+  align-self: flex-start;
 }
 .msg-ai-name { font-size: 0.84rem; color: var(--accent-light); margin-bottom: 4px; font-weight: 600; }
 

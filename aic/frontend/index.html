@@ -261,19 +261,19 @@
       <div class="chat-messages-wrap" onclick="if(event.target===this)toggleChatVisibility()">
         <div id="chat-messages" class="chat-messages" onclick="if(event.target===this)toggleChatVisibility()"></div>
       </div>
-      <!-- チャットメニューパネル -->
-      <div id="chat-menu-panel" class="chat-menu-panel">
-        <button class="chat-menu-item" onclick="viewCurrentCharProfile()">👤 キャラクタープロフィール</button>
-        <button class="chat-menu-item" id="auto-voice-btn" onclick="toggleAutoVoice()">
-          <span id="auto-voice-icon-off" class="auto-voice-icon">🔇</span>
-          <span class="auto-voice-arrow">→</span>
-          <span id="auto-voice-icon-on" class="auto-voice-icon">🔊</span>
-          <span id="auto-voice-label">自動音声オン</span>
-        </button>
-        <button class="chat-menu-item" id="chat-hide-btn" onclick="toggleChatHide()">💬 チャット非表示</button>
-        <button class="chat-menu-item chat-menu-danger" onclick="resetConversation()">🔄 全会話リセット</button>
-      </div>
       <div class="chat-input-area">
+        <!-- チャットメニューパネル -->
+        <div id="chat-menu-panel" class="chat-menu-panel">
+          <button class="chat-menu-item" onclick="viewCurrentCharProfile()">👤 キャラクタープロフィール</button>
+          <button class="chat-menu-item" id="auto-voice-btn" onclick="toggleAutoVoice()">
+            <span id="auto-voice-icon-off" class="auto-voice-icon">🔇</span>
+            <span class="auto-voice-arrow">→</span>
+            <span id="auto-voice-icon-on" class="auto-voice-icon">🔊</span>
+            <span id="auto-voice-label">自動音声オン</span>
+          </button>
+          <button class="chat-menu-item" id="chat-hide-btn" onclick="toggleChatHide()">💬 チャット非表示</button>
+          <button class="chat-menu-item chat-menu-danger" onclick="resetConversation()">🔄 全会話リセット</button>
+        </div>
         <button class="chat-menu-btn" id="chat-menu-btn" onclick="toggleChatMenu(event)">☰</button>
         <div id="chat-input" contenteditable="true" enterkeyhint="send"
           data-placeholder="メッセージを入力..."
