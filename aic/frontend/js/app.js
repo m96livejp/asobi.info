@@ -927,6 +927,7 @@ async function openConversation(convId) {
   el.classList.remove('msg-masked');
   el.style.removeProperty('-webkit-mask-size');
   el.style.removeProperty('mask-size');
+  el.style.removeProperty('opacity');
   el.style.pointerEvents = '';
   _chatVisMode = 0;
   _updateChatHideBtn();
@@ -1072,7 +1073,9 @@ function onChatInputFocus() {
   if (_chatVisMode !== 2) return;
   const el = document.getElementById('chat-messages');
   if (!el) return;
+  const isAdmin = currentUser && currentUser.role === 'admin';
   el.style.pointerEvents = '';
+  el.style.removeProperty('opacity');
   el.classList.add('msg-masked');
   el.style.setProperty('-webkit-mask-size', '100% 100%');
   el.style.setProperty('mask-size', '100% 100%');
@@ -1082,7 +1085,7 @@ function onChatInputFocus() {
 
 // === チャット表示切り替え（全表示↔半分フェード、2段階） ===
 function toggleChatVisibility() {
-  if (_chatVisMode === 2) return; // 非表示中はクリック無効
+  if (_chatVisMode === 2) { toggleChatHide(); return; } // 非表示中はクリックで全表示
   const el = document.getElementById('chat-messages');
   if (!el) return;
   if (_chatVisMode === 0) {
@@ -1116,26 +1119,36 @@ function toggleChatHide() {
   document.getElementById('chat-menu-panel')?.classList.remove('open');
   const el = document.getElementById('chat-messages');
   if (!el) return;
+  const isAdmin = currentUser && currentUser.role === 'admin';
   if (_chatVisMode === 2) {
     // 非表示→全表示
     _chatVisMode = 0;
     el.style.pointerEvents = '';
+    el.style.removeProperty('opacity');
     el.classList.remove('msg-masked');
     el.style.removeProperty('-webkit-mask-size');
     el.style.removeProperty('mask-size');
   } else {
     // 全表示/半分→非表示
-    if (_chatVisMode === 0) {
-      // まずマスクを設定してから消す
-      el.classList.add('msg-masked');
-      el.style.setProperty('-webkit-mask-size', '100% 100%');
-      el.style.setProperty('mask-size', '100% 100%');
-      el.offsetHeight;
-    }
     _chatVisMode = 2;
-    el.style.setProperty('-webkit-mask-size', '100% 0%');
-    el.style.setProperty('mask-size', '100% 0%');
     el.style.pointerEvents = 'none';
+    if (isAdmin) {
+      // 管理者: マスクでうっすら表示
+      if (!el.classList.contains('msg-masked')) {
+        el.classList.add('msg-masked');
+        el.style.setProperty('-webkit-mask-size', '100% 100%');
+        el.style.setProperty('mask-size', '100% 100%');
+        el.offsetHeight;
+      }
+      el.style.setProperty('-webkit-mask-size', '100% 0%');
+      el.style.setProperty('mask-size', '100% 0%');
+    } else {
+      // 一般ユーザー: 完全非表示
+      el.classList.remove('msg-masked');
+      el.style.removeProperty('-webkit-mask-size');
+      el.style.removeProperty('mask-size');
+      el.style.opacity = '0';
+    }
   }
   _updateChatHideBtn();
 }
@@ -1273,7 +1286,7 @@ function showMsgMenu(msgId, msgEl) {
   menu.className = 'msg-ctx-menu';
   menu.innerHTML =
     (canRegen ? '<button class="msg-ctx-item" data-act="regen">再更新</button>' : '') +
-    '<button class="msg-ctx-item" data-act="hide">' + (isHidden ? '元に戻す' : 'AI送信から除外') + '</button>';
+    '<button class="msg-ctx-item" data-act="hide">' + (isHidden ? '元に戻す' : '会話の削除') + '</button>';
 
   // メッセージ要素の位置に合わせて表示
   const rect = msgEl.getBoundingClientRect();
@@ -1334,24 +1347,53 @@ async function sendMessage() {
   document.getElementById('send-btn').disabled = true;
 
   const chatEl = document.getElementById('chat-messages');
-  chatEl.innerHTML += '<div class="msg msg-user">' + esc(msg) + '</div>';
 
+  // 1. AIリクエストを先行送信（await しない）
+  const fetchPromise = fetch(API_BASE + '/chat/' + currentConversationId, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ message: msg }),
+  });
+
+  // 2. ユーザーメッセージをゆっくり表示
+  const userMsgEl = document.createElement('div');
+  userMsgEl.className = 'msg msg-user';
+  chatEl.appendChild(userMsgEl);
+  await _typeUserMsg(userMsgEl, msg, chatEl);
+
+  // 3. AI typing indicator を追加
   const aiMsg = document.createElement('div');
   aiMsg.className = 'msg msg-ai';
   aiMsg.innerHTML = '<div class="msg-typing"><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span></div>';
   chatEl.appendChild(_createAiRow(aiMsg));
   chatEl.scrollTop = chatEl.scrollHeight;
 
-  await _sendRequest(msg, aiMsg, chatEl);
+  // 4. 先行fetch済みのリクエストを引き継いで処理
+  await _sendRequest(msg, aiMsg, chatEl, fetchPromise);
 }
 
-async function _sendRequest(msg, aiMsg, chatEl) {
+// ユーザーメッセージを1文字ずつ表示するアニメーション
+async function _typeUserMsg(el, text, chatEl) {
+  const chars = [...text]; // Unicode（絵文字等）対応
+  const totalMs = Math.min(1000, Math.max(200, chars.length * 30));
+  const perChar = totalMs / chars.length;
+  let displayed = '';
+  for (const char of chars) {
+    displayed += char;
+    el.textContent = displayed;
+    chatEl.scrollTop = chatEl.scrollHeight;
+    await new Promise(r => setTimeout(r, perChar));
+  }
+  el.textContent = text; // 最終確定
+}
+
+async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
   try {
-    const res = await fetch(API_BASE + '/chat/' + currentConversationId, {
+    const res = await (prefetch || fetch(API_BASE + '/chat/' + currentConversationId, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({ message: msg }),
-    });
+    }));
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
