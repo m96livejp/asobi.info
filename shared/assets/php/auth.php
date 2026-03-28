@@ -13,11 +13,21 @@ define('ASOBI_AUTH_SESSION_NAME', 'ASOBI_SESSION');
 define('ASOBI_LOGIN_URL', 'https://asobi.info/login.php');
 
 if (session_status() === PHP_SESSION_NONE) {
+    // セッション有効期限はDB設定値を優先（デフォルト: 2592000秒 = 30日）
+    $sessionLifetime = '2592000';
+    try {
+        $tmpDb = new PDO('sqlite:' . ASOBI_USERS_DB_PATH);
+        $tmpDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $stmt = $tmpDb->prepare("SELECT value FROM site_settings WHERE key='session_cookie_lifetime'");
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) $sessionLifetime = $row['value'];
+    } catch (Exception $e) {}
     ini_set('session.cookie_domain',   ASOBI_AUTH_COOKIE_DOMAIN);
     ini_set('session.cookie_httponly', '1');
     ini_set('session.cookie_samesite', 'Lax');
-    ini_set('session.cookie_lifetime', '2592000'); // 30日
-    ini_set('session.gc_maxlifetime',  '2592000'); // 30日
+    ini_set('session.cookie_lifetime', $sessionLifetime);
+    ini_set('session.gc_maxlifetime',  $sessionLifetime);
     session_name(ASOBI_AUTH_SESSION_NAME);
     session_start();
 }
@@ -88,6 +98,39 @@ function asobiRequireAdminApi(): void {
     }
     if (!asobiIsAdmin()) {
         _asobiJsonError(403, 'Forbidden');
+    }
+}
+
+// ─────────────────── 年齢認証 ───────────────────
+
+function asobiIsAgeVerified(): bool {
+    if (!asobiIsLoggedIn()) return false;
+    if (!empty($_SESSION['asobi_age_verified'])) return true;
+    // DBを確認してセッションにキャッシュ
+    try {
+        $db = asobiUsersDb();
+        $stmt = $db->prepare("SELECT age_verified_at FROM users WHERE id = ?");
+        $stmt->execute([$_SESSION['asobi_user_id']]);
+        $row = $stmt->fetch();
+        if ($row && !empty($row['age_verified_at'])) {
+            $_SESSION['asobi_age_verified'] = true;
+            return true;
+        }
+    } catch (Exception $e) {}
+    return false;
+}
+
+/** 年齢未認証時にプロフィールページへリダイレクト（画面用） */
+function asobiRequireAgeVerified(): void {
+    asobiRequireLogin();
+    if (!asobiIsAgeVerified()) {
+        if (php_sapi_name() !== 'cli' && !headers_sent()) {
+            $back = (isset($_SERVER['HTTPS']) ? 'https' : 'http')
+                . '://' . ($_SERVER['HTTP_HOST'] ?? 'asobi.info')
+                . ($_SERVER['REQUEST_URI'] ?? '/');
+            header('Location: https://asobi.info/profile.php?age_verify=1&redirect=' . urlencode($back));
+            exit;
+        }
     }
 }
 

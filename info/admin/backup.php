@@ -11,8 +11,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'run')
 }
 
 // ─── ログ解析 ───
-$logFile = '/var/log/asobi_backup.log';
-$isRunning = (bool)shell_exec('pgrep -f backup.sh 2>/dev/null');
+$logFile  = '/var/log/asobi_backup.log';
+$lockFile = '/var/run/asobi_backup.lock';
+$isRunning = false;
+if (file_exists($lockFile)) {
+    $pid = trim(file_get_contents($lockFile));
+    $isRunning = $pid !== '' && file_exists("/proc/$pid");
+    if (!$isRunning) {
+        // 古いロックファイルを削除
+        @unlink($lockFile);
+    }
+}
 $history = [];
 
 if (file_exists($logFile)) {

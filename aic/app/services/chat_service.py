@@ -15,13 +15,22 @@ async def get_ai_settings(db: AsyncSession) -> AiSettings | None:
     return result.scalar_one_or_none()
 
 
-def build_system_prompt(character) -> str:
-    """キャラクター設定からシステムプロンプトを組み立てる"""
+def build_system_prompt(character, conv_state=None, state_enabled: bool = False) -> str:
+    """キャラクター設定からシステムプロンプトを組み立てる
+
+    Args:
+        character: Character モデル
+        conv_state: ConversationState モデル（ステータス機能ON時）
+        state_enabled: ステータス機能が有効かどうか
+    """
     parts = []
     if character.char_name:
         parts.append(f"あなたの名前は「{character.char_name}」です。")
     if character.char_age:
         parts.append(f"年齢は{character.char_age}です。")
+    if character.gender:
+        gender_map = {"female": "女性", "male": "男性", "other": "人外・性別なし"}
+        parts.append(f"性別は{gender_map.get(character.gender, character.gender)}です。")
     if character.profile:
         parts.append(f"プロフィール: {character.profile}")
     if character.private_profile:
@@ -54,7 +63,42 @@ def build_system_prompt(character) -> str:
     if kw:
         parts.append(f"キーワード: {', '.join(kw)}")
 
-    parts.append("キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。")
+    parts.append("キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。")
+
+    # ステータス機能が有効な場合
+    if state_enabled and conv_state:
+        status_section = (
+            "\n\n## 現在のステータス\n"
+            f"- キャラクターとの関係性: {conv_state.relationship or '初対面'}\n"
+            f"- キャラクターの気分: {conv_state.mood or '普通'}\n"
+            f"- 環境と場所: {conv_state.environment or '不明'}\n"
+            f"- 状況: {conv_state.situation or '特になし'}\n"
+            f"- 所持品: {conv_state.inventory or 'なし'}\n"
+            f"- 目標: {conv_state.goals or '特になし'}"
+        )
+        parts.append(status_section)
+
+        # 記憶
+        try:
+            memories = json.loads(conv_state.memories or "[]")
+        except:
+            memories = []
+        if memories:
+            mem_lines = "\n".join(f"- {m}" for m in memories)
+            parts.append(f"## 記憶\n{mem_lines}")
+
+        # 応答ルール
+        parts.append(
+            "## 応答ルール\n"
+            "通常の会話テキストを返した後、必ず以下の形式でステータスを返してください。\n"
+            "ステータスはキャラクターの性格に基づき、会話の流れに応じて自然に変化させてください。\n"
+            "記憶には会話の中で覚えておくべき重要事項を追加・削除してください。\n"
+            "各ステータスは短く簡潔に記述してください。\n\n"
+            "<<<STATE>>>\n"
+            '{"relationship":"...","mood":"...","environment":"...","situation":"...","inventory":"...","goals":"...","memories":["..."]}\n'
+            "<<</STATE>>>"
+        )
+
     return "\n\n".join(parts)
 
 

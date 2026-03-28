@@ -190,11 +190,13 @@ $voicevoxCheckUrl = $voicevoxUrl . '/version';
         <span><strong>ローカルURL:</strong> <?= $ltEndpoint ? '<code>' . htmlspecialchars($ltEndpoint) . '</code>' : '未設定' ?></span>
       </div>
       <?php if ($ltCheckUrl): ?>
-      <button class="btn-check" onclick="checkApi(this, <?= htmlspecialchars(json_encode($ltCheckUrl)) ?>)">接続テスト</button>
+      <button class="btn-check" onclick="checkApi(this, <?= htmlspecialchars(json_encode($ltCheckUrl)) ?>)">ローカルテスト</button>
       <div class="check-result"></div>
       <?php else: ?>
       <span style="font-size:0.8rem;color:#aaa;">ローカルエンドポイント未設定のためテスト不可</span>
       <?php endif; ?>
+      <button class="btn-check" style="margin-top:6px;" onclick="checkApi(this, 'https://libretranslate.com/languages', document.getElementById('lt-free-result'))">無料版テスト</button>
+      <div class="check-result" id="lt-free-result"></div>
     </div>
 
     <!-- VoiceVox -->
@@ -220,27 +222,43 @@ $voicevoxCheckUrl = $voicevoxUrl . '/version';
     · Stable Diffusion / LibreTranslate / Ollama の設定変更 →
       <a href="https://aic.asobi.info/admin.html" target="_blank" style="color:#3a4cc0;">aic 管理画面</a><br>
     · VoiceVox は固定URL（localhost:50021）のため設定変更不要<br>
-    · 接続テストはサーバーサイドからの疎通確認です（タイムアウト4秒）
+    · リモートURL: サーバーサイドから疎通確認（タイムアウト4秒）<br>
+    · ローカルURL（127.x / localhost）: ブラウザから直接確認（LibreTranslate / VOICEVOX）
   </div>
 
   <script>
-  async function checkApi(btn, url) {
+  async function checkApi(btn, url, resultEl) {
       const card = btn.closest('.api-card');
-      const resultEl = card.querySelector('.check-result');
+      resultEl = resultEl || card.querySelector('.check-result');
       btn.disabled = true;
       btn.textContent = '確認中...';
       resultEl.style.display = 'none';
 
+      const isLocal = /^https?:\/\/(127\.|localhost)/i.test(url);
       try {
-          const res = await fetch('/admin/api-status.php?check=1&url=' + encodeURIComponent(url));
-          const data = await res.json();
-          resultEl.className = 'check-result ' + (data.ok ? 'ok' : 'ng');
+          let ok, ms, detail;
+          if (isLocal) {
+              // ローカルエンドポイントはブラウザから直接チェック
+              const t0 = performance.now();
+              const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+              ms = Math.round(performance.now() - t0);
+              ok = res.ok;
+              detail = res.ok ? '' : 'HTTP ' + res.status;
+          } else {
+              const res = await fetch('/admin/api-status.php?check=1&url=' + encodeURIComponent(url));
+              const data = await res.json();
+              ok = data.ok; ms = data.ms; detail = data.detail;
+          }
+          resultEl.className = 'check-result ' + (ok ? 'ok' : 'ng');
           resultEl.style.display = 'block';
-          resultEl.textContent = data.ok ? '接続OK (' + data.ms + 'ms)' : 'エラー: ' + data.detail;
+          resultEl.textContent = ok ? '接続OK (' + ms + 'ms)' : 'エラー: ' + (detail || '接続できませんでした');
       } catch (e) {
           resultEl.className = 'check-result ng';
           resultEl.style.display = 'block';
-          resultEl.textContent = 'リクエストに失敗しました';
+          const msg = e.name === 'TimeoutError' ? 'タイムアウト（4秒）'
+                    : (isLocal ? 'CORS エラーまたは未起動（PC上で起動しているか確認してください）'
+                               : 'リクエストに失敗しました');
+          resultEl.textContent = msg;
       } finally {
           btn.disabled = false;
           btn.textContent = '接続テスト';

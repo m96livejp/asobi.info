@@ -30,7 +30,6 @@ const SettingsPage = {
                         <span style="font-size:11px;color:var(--text-secondary);word-break:break-all;">${App.user.id}</span>
                     </div>
                     <button class="btn btn-secondary btn-sm mt-8" id="terms-btn" style="width:100%;">利用規約</button>
-                    <button class="btn btn-secondary btn-sm mt-8" id="clear-cache-btn" style="width:100%;">🔄 アプリを最新版に更新</button>
                 </div>
             `;
 
@@ -93,9 +92,9 @@ const SettingsPage = {
             try {
                 await API.updateProfile({ display_name: name });
                 App.user.display_name = name;
-                alert('保存しました');
+                await UI.alert('保存しました');
             } catch (e) {
-                alert(e.message);
+                await UI.alert(e.message);
             }
         });
 
@@ -104,10 +103,10 @@ const SettingsPage = {
             if (!await UI.confirm('asobiアカウントの連携を解除しますか？\n\n解除後もこのアカウントの他の認証手段（デバイスIDなど）でログインできます。')) return;
             try {
                 await API.unlinkAccount('asobi');
-                alert('asobiアカウントの連携を解除しました');
+                await UI.alert('asobiアカウントの連携を解除しました');
                 App.navigate('settings');
             } catch (e) {
-                alert(e.message);
+                await UI.alert(e.message);
             }
         });
 
@@ -120,28 +119,12 @@ const SettingsPage = {
                 const { url } = await res.json();
                 location.href = url;
             } catch (e) {
-                alert(e.message);
+                await UI.alert(e.message);
             }
         });
 
         // 利用規約
         document.getElementById('terms-btn')?.addEventListener('click', () => App.navigate('terms'));
-
-        // キャッシュクリア・最新版更新
-        document.getElementById('clear-cache-btn')?.addEventListener('click', async () => {
-            if (!await UI.confirm('アプリを最新版に更新します。\nキャッシュをクリアしてリロードします。')) return;
-            try {
-                const registrations = await navigator.serviceWorker.getRegistrations();
-                for (const reg of registrations) {
-                    await reg.unregister();
-                }
-                const keys = await caches.keys();
-                await Promise.all(keys.map(k => caches.delete(k)));
-            } catch (e) {
-                // SW非対応環境でも続行
-            }
-            location.reload();
-        });
 
         if (isGuest) {
             // ─── ゲスト：データ削除 ───

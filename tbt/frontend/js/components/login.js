@@ -2,7 +2,22 @@
  * ログイン画面
  */
 const LoginPage = {
-    render(container) {
+    async render(container) {
+        container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+        // asobi セッション確認
+        let asobiUser = null;
+        try {
+            const res = await fetch('https://asobi.info/shared/assets/php/me.php', {
+                credentials: 'include',
+                cache: 'no-store',
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.loggedIn) asobiUser = data;
+            }
+        } catch {}
+
         container.innerHTML = `
             <div style="padding:24px 16px;max-width:360px;margin:0 auto;">
                 <div class="text-center mb-16">
@@ -25,40 +40,74 @@ const LoginPage = {
                     <span style="font-size:13px;color:var(--text-primary);font-weight:600;">利用規約に同意する</span>
                 </label>
 
-                <!-- はじめての方 -->
-                <div style="margin-bottom:20px;">
-                    <div style="font-size:13px;color:var(--text-secondary);text-align:center;margin-bottom:10px;">はじめての方</div>
-                    <button class="btn btn-primary btn-sm tos-btn" id="guest-start-btn" disabled
-                        style="width:100%;padding:12px;font-size:14px;opacity:0.5;transition:opacity 0.2s;">ゲストではじめる</button>
-                    <p style="font-size:11px;color:var(--text-secondary);text-align:center;margin-top:8px;">
-                        あとからasobiアカウントで連携できます
-                    </p>
-                </div>
-
-                <!-- 区切り -->
-                <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
-                    <div style="flex:1;height:1px;background:var(--text-secondary);opacity:0.3;"></div>
-                    <span style="font-size:12px;color:var(--text-secondary);">アカウントをお持ちの方</span>
-                    <div style="flex:1;height:1px;background:var(--text-secondary);opacity:0.3;"></div>
-                </div>
-
-                <!-- asobiログイン -->
-                <div style="display:flex;flex-direction:column;gap:10px;">
-                    <button class="btn btn-sm tos-btn" id="asobi-login-btn" disabled
-                        style="width:100%;padding:14px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;opacity:0.5;transition:opacity 0.2s;">
-                        asobiアカウントでログイン
-                    </button>
-                    <p style="font-size:11px;color:var(--text-secondary);text-align:center;margin-top:4px;">
-                        asobi.info のアカウントでログインします
-                    </p>
-                </div>
+                ${asobiUser ? this._renderAsobiStart(asobiUser) : this._renderGuestStart()}
             </div>
         `;
 
-        this.bindEvents();
+        this.bindEvents(asobiUser);
     },
 
-    bindEvents() {
+    // asobi ログイン済みの場合
+    _renderAsobiStart(asobiUser) {
+        const name = asobiUser.name || asobiUser.username || 'asobiユーザー';
+        return `
+            <div style="margin-bottom:20px;">
+                <div style="font-size:13px;color:var(--text-secondary);text-align:center;margin-bottom:6px;">はじめての方 / アカウントをお持ちの方</div>
+                <div style="font-size:12px;color:var(--text-secondary);text-align:center;margin-bottom:10px;">
+                    ログイン中: <strong>${this._escape(name)}</strong>
+                </div>
+                <button class="btn btn-primary btn-sm tos-btn" id="asobi-start-btn" disabled
+                    style="width:100%;padding:12px;font-size:14px;opacity:0.5;background:linear-gradient(135deg,#667eea,#764ba2);transition:opacity 0.2s;">
+                    asobiアカウントではじめる
+                </button>
+                <p style="font-size:11px;color:var(--text-secondary);text-align:center;margin-top:8px;">
+                    asobiアカウントに紐づけてゲームを開始します
+                </p>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+                <div style="flex:1;height:1px;background:var(--text-secondary);opacity:0.3;"></div>
+                <span style="font-size:11px;color:var(--text-secondary);">ゲストで遊ぶには</span>
+                <div style="flex:1;height:1px;background:var(--text-secondary);opacity:0.3;"></div>
+            </div>
+            <p style="font-size:11px;color:var(--text-secondary);text-align:center;">
+                <a href="https://asobi.info/logout.php?redirect=${encodeURIComponent('https://tbt.asobi.info/')}"
+                   style="color:var(--accent);">asobiアカウントからログアウト</a>してください
+            </p>
+        `;
+    },
+
+    // asobi 未ログインの場合
+    _renderGuestStart() {
+        const loginUrl = 'https://asobi.info/login.php?redirect=' + encodeURIComponent('https://tbt.asobi.info/');
+        return `
+            <div style="margin-bottom:20px;">
+                <div style="font-size:13px;color:var(--text-secondary);text-align:center;margin-bottom:10px;">はじめての方</div>
+                <button class="btn btn-primary btn-sm tos-btn" id="guest-start-btn" disabled
+                    style="width:100%;padding:12px;font-size:14px;opacity:0.5;transition:opacity 0.2s;">新規ではじめる</button>
+                <p style="font-size:11px;color:var(--text-secondary);text-align:center;margin-top:8px;">
+                    <a href="${loginUrl}" style="color:var(--accent);">asobiアカウント</a>でログイン後に始めるとデータが保護されます
+                </p>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <div style="flex:1;height:1px;background:var(--text-secondary);opacity:0.3;"></div>
+                <span style="font-size:12px;color:var(--text-secondary);">アカウントをお持ちの方</span>
+                <div style="flex:1;height:1px;background:var(--text-secondary);opacity:0.3;"></div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <button class="btn btn-sm tos-btn" id="asobi-login-btn" disabled
+                    style="width:100%;padding:14px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;opacity:0.5;transition:opacity 0.2s;">
+                    asobiアカウントではじめる
+                </button>
+                <p style="font-size:11px;color:var(--text-secondary);text-align:center;margin-top:4px;">
+                    asobi.info のアカウントでログインします
+                </p>
+            </div>
+        `;
+    },
+
+    bindEvents(asobiUser) {
         // 利用規約チェックボックス
         const tosCheckbox = document.getElementById('tos-agree');
         const tosBtns = document.querySelectorAll('.tos-btn');
@@ -69,9 +118,9 @@ const LoginPage = {
             });
         });
 
-        // asobiアカウントログイン
-        document.getElementById('asobi-login-btn')?.addEventListener('click', async () => {
-            const btn = document.getElementById('asobi-login-btn');
+        const startAsobi = async (btnId) => {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
             btn.disabled = true;
             try {
                 const res = await fetch('/api/auth/asobi/url');
@@ -79,19 +128,36 @@ const LoginPage = {
                 const { url } = await res.json();
                 location.href = url;
             } catch (e) {
-                alert(e.message);
+                await UI.alert(e.message);
                 btn.disabled = false;
+                // 利用規約に同意済みなら再度有効化
+                if (tosCheckbox?.checked) btn.disabled = false;
             }
-        });
+        };
 
-        // ゲスト開始
-        document.getElementById('guest-start-btn')?.addEventListener('click', async () => {
-            try {
-                await Auth.autoLogin();
-                location.reload();
-            } catch (e) {
-                alert(e.message);
-            }
-        });
+        if (asobiUser) {
+            document.getElementById('asobi-start-btn')?.addEventListener('click', () => startAsobi('asobi-start-btn'));
+        } else {
+            document.getElementById('asobi-login-btn')?.addEventListener('click', () => startAsobi('asobi-login-btn'));
+
+            document.getElementById('guest-start-btn')?.addEventListener('click', async () => {
+                const btn = document.getElementById('guest-start-btn');
+                btn.disabled = true;
+                try {
+                    await Auth.autoLogin();
+                    location.reload();
+                } catch (e) {
+                    await UI.alert(e.message);
+                    if (tosCheckbox?.checked) btn.disabled = false;
+                }
+            });
+        }
+    },
+
+    _escape(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
     },
 };

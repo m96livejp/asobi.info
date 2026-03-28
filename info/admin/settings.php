@@ -5,7 +5,23 @@ asobiRequireAdmin();
 $success = '';
 $error   = '';
 
-// 設定定義
+// セッション設定定義
+$sessionDefs = [
+    'session_cookie_lifetime' => [
+        'label'   => 'セッション有効期限（秒）',
+        'desc'    => 'ブラウザを閉じてもログイン状態を維持する期間。0 = ブラウザを閉じると期限切れ。',
+        'default' => '2592000',
+        'options' => [
+            '0'       => 'ブラウザを閉じると期限切れ',
+            '86400'   => '1日',
+            '604800'  => '7日',
+            '2592000' => '30日（推奨）',
+            '7776000' => '90日',
+        ],
+    ],
+];
+
+// メール認証 設定定義
 $settingDefs = [
     'email_verify_cooldown_minutes' => [
         'label' => '送信間隔（分）',
@@ -30,19 +46,122 @@ $settingDefs = [
     ],
 ];
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_settings') {
-    foreach ($settingDefs as $key => $def) {
-        $val = (int)($_POST[$key] ?? 0);
-        if ($val < $def['min'] || $val > $def['max']) {
-            $error = htmlspecialchars($def['label']) . ' は ' . $def['min'] . '〜' . $def['max'] . ' の範囲で入力してください';
-            break;
+// SMTP設定定義
+$smtpDefs = [
+    'smtp_host'     => ['label' => 'SMTPホスト',    'desc' => 'メール送信サーバーのホスト名', 'type' => 'text', 'placeholder' => 'sv6112.wpx.ne.jp'],
+    'smtp_port'     => ['label' => 'ポート',         'desc' => 'SMTP接続ポート（通常 587）',  'type' => 'number', 'placeholder' => '587'],
+    'smtp_user'     => ['label' => 'ユーザー名',     'desc' => 'SMTP認証のユーザー名',        'type' => 'text', 'placeholder' => 'noreply@asobi.info'],
+    'smtp_password' => ['label' => 'パスワード',     'desc' => 'SMTP認証のパスワード',        'type' => 'password', 'placeholder' => ''],
+    'smtp_from'     => ['label' => '送信元アドレス', 'desc' => 'Fromに使用するメールアドレス', 'type' => 'text', 'placeholder' => 'noreply@asobi.info'],
+];
+
+// msmtprc を更新する関数
+function updateMsmtprc(string $host, int $port, string $user, string $password, string $from): bool|string {
+    $conf = "# msmtp configuration for asobi.info (auto-generated)\n"
+          . "defaults\n"
+          . "auth           on\n"
+          . "tls            on\n"
+          . "tls_starttls   on\n"
+          . "tls_trust_file /etc/ssl/certs/ca-certificates.crt\n"
+          . "logfile        /var/log/msmtp.log\n\n"
+          . "account        default\n"
+          . "host           {$host}\n"
+          . "port           {$port}\n"
+          . "from           {$from}\n"
+          . "user           {$user}\n"
+          . "password       {$password}\n";
+    $path = '/etc/msmtprc';
+    if (@file_put_contents($path, $conf) === false) {
+        return 'msmtprc の書き込みに失敗しました';
+    }
+    chmod($path, 0640);
+    chgrp($path, 'www-data');
+    return true;
+}
+
+// ── POST 処理 ──
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+
+    if ($action === 'save_session') {
+        $key = 'session_cookie_lifetime';
+        $val = $_POST[$key] ?? '';
+        $allowed = array_keys($sessionDefs[$key]['options']);
+        if (!in_array($val, $allowed, true)) {
+            $error = '不正な値です';
+        } else {
+            asobiSetSetting($key, $val);
+            $success = 'セッション設定を保存しました';
         }
     }
-    if (!$error) {
+
+    if ($action === 'save_settings') {
+        // メール認証設定の保存
         foreach ($settingDefs as $key => $def) {
-            asobiSetSetting($key, (string)(int)$_POST[$key]);
+            $val = (int)($_POST[$key] ?? 0);
+            if ($val < $def['min'] || $val > $def['max']) {
+                $error = htmlspecialchars($def['label']) . ' は ' . $def['min'] . '〜' . $def['max'] . ' の範囲で入力してください';
+                break;
+            }
         }
-        $success = '設定を保存しました';
+        if (!$error) {
+            foreach ($settingDefs as $key => $def) {
+                asobiSetSetting($key, (string)(int)$_POST[$key]);
+            }
+            $success = 'メール認証設定を保存しました';
+        }
+    }
+
+    if ($action === 'save_smtp') {
+        $smtpHost = trim($_POST['smtp_host'] ?? '');
+        $smtpPort = (int)($_POST['smtp_port'] ?? 587);
+        $smtpUser = trim($_POST['smtp_user'] ?? '');
+        $smtpPass = $_POST['smtp_password'] ?? '';
+        $smtpFrom = trim($_POST['smtp_from'] ?? '');
+
+        if (!$smtpHost) { $error = 'SMTPホストを入力してください'; }
+        elseif ($smtpPort < 1 || $smtpPort > 65535) { $error = 'ポートは1〜65535の範囲で入力してください'; }
+        elseif (!$smtpUser) { $error = 'ユーザー名を入力してください'; }
+        elseif (!$smtpFrom) { $error = '送信元アドレスを入力してください'; }
+
+        if (!$error) {
+            // パスワード未入力なら既存値を維持
+            if ($smtpPass === '') {
+                $smtpPass = asobiGetSetting('smtp_password', '');
+            }
+            asobiSetSetting('smtp_host', $smtpHost);
+            asobiSetSetting('smtp_port', (string)$smtpPort);
+            asobiSetSetting('smtp_user', $smtpUser);
+            asobiSetSetting('smtp_password', $smtpPass);
+            asobiSetSetting('smtp_from', $smtpFrom);
+
+            // msmtprc を更新
+            $result = updateMsmtprc($smtpHost, $smtpPort, $smtpUser, $smtpPass, $smtpFrom);
+            if ($result === true) {
+                $success = 'SMTP設定を保存しました';
+            } else {
+                $error = $result;
+            }
+        }
+    }
+
+    if ($action === 'test_smtp') {
+        $testTo = trim($_POST['test_email'] ?? '');
+        if (!$testTo || !filter_var($testTo, FILTER_VALIDATE_EMAIL)) {
+            $error = '有効なメールアドレスを入力してください';
+        } else {
+            $subject = '=?UTF-8?B?' . base64_encode('【あそび】SMTP テスト送信') . '?=';
+            $body    = "このメールは asobi.info 管理画面から送信されたテストメールです。\r\n\r\n"
+                     . "送信日時: " . date('Y-m-d H:i:s') . "\r\n"
+                     . "SMTPホスト: " . asobiGetSetting('smtp_host', '(未設定)') . "\r\n";
+            $from    = asobiGetSetting('smtp_from', 'noreply@asobi.info');
+            $headers = "From: {$from}\r\nReply-To: {$from}\r\nContent-Type: text/plain; charset=UTF-8\r\n";
+            if (mail($testTo, $subject, $body, $headers, "-f {$from}")) {
+                $success = "{$testTo} にテストメールを送信しました";
+            } else {
+                $error = 'メールの送信に失敗しました。SMTP設定を確認してください';
+            }
+        }
     }
 }
 
@@ -50,6 +169,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
 $current = [];
 foreach ($settingDefs as $key => $def) {
     $current[$key] = asobiGetSetting($key);
+}
+$smtpCurrent = [];
+foreach ($smtpDefs as $key => $def) {
+    $smtpCurrent[$key] = asobiGetSetting($key, '');
+}
+
+// 最新のメール送信ログ
+$msmtpLog = '';
+if (is_readable('/var/log/msmtp.log')) {
+    $lines = file('/var/log/msmtp.log', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    $msmtpLog = implode("\n", array_slice($lines, -10));
 }
 
 $currentUser = asobiGetCurrentUser();
@@ -68,27 +198,9 @@ $currentUser = asobiGetCurrentUser();
       background: #f0f2f5;
       color: #1d2d3a;
       min-height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
-    .site-header { background: rgba(255,255,255,0.85); border-bottom: 1px solid #e0e0e0; }
-    .site-logo a { color: #1d1d1f; text-decoration: none; font-size: 1.5rem; font-weight: 700; }
-    .header-right { display: flex; align-items: center; gap: 24px; }
-    .site-nav ul { display: flex; list-style: none; gap: 24px; }
-    .site-nav a { color: #1d1d1f; font-weight: 500; font-size: 0.9rem; }
-    .admin-badge {
-      display: inline-block; font-size: 0.7rem; font-weight: 700;
-      padding: 2px 8px; background: linear-gradient(135deg, #e74c3c, #c0392b);
-      color: #fff; border-radius: 10px; margin-left: 6px; vertical-align: middle;
-    }
-    @media (max-width: 768px) {
-      .site-header .container { flex-direction: row; align-items: center; }
-      .site-nav { display: none; }
-    }
-
-    .admin-body { max-width: 720px; margin: 0 auto; padding: 40px 24px; }
-    .page-header { margin-bottom: 32px; }
-    .page-header h1 { font-size: 1.4rem; font-weight: 700; }
-    .page-header .breadcrumb { font-size: 0.82rem; color: #8a9bb0; margin-bottom: 8px; }
-    .page-header .breadcrumb a { color: #667eea; text-decoration: none; }
 
     .card {
       background: #fff;
@@ -120,19 +232,20 @@ $currentUser = asobiGetCurrentUser();
     .setting-desc { font-size: 0.78rem; color: #8a9bb0; }
     .input-with-unit { display: flex; align-items: center; gap: 8px; }
     .input-with-unit input[type=number] {
-      width: 90px;
-      padding: 8px 12px;
-      border: 2px solid #e0e4e8;
-      border-radius: 8px;
-      font-size: 0.95rem;
-      font-family: inherit;
-      color: #1d2d3a;
-      text-align: right;
-      outline: none;
-      transition: border-color 0.2s;
+      width: 90px; padding: 8px 12px; border: 2px solid #e0e4e8; border-radius: 8px;
+      font-size: 0.95rem; font-family: inherit; color: #1d2d3a; text-align: right;
+      outline: none; transition: border-color 0.2s;
     }
     .input-with-unit input[type=number]:focus { border-color: #667eea; }
     .input-with-unit .unit { font-size: 0.85rem; color: #637080; white-space: nowrap; }
+
+    .smtp-input {
+      width: 280px; padding: 8px 12px; border: 2px solid #e0e4e8; border-radius: 8px;
+      font-size: 0.9rem; font-family: inherit; color: #1d2d3a; outline: none;
+      transition: border-color 0.2s;
+    }
+    .smtp-input:focus { border-color: #667eea; }
+    .smtp-input[type=number] { width: 100px; text-align: right; }
 
     .message { padding: 12px 16px; border-radius: 10px; font-size: 0.875rem; margin-bottom: 20px; }
     .message.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
@@ -141,39 +254,44 @@ $currentUser = asobiGetCurrentUser();
     .btn-save {
       padding: 11px 28px;
       background: linear-gradient(135deg, #667eea, #764ba2);
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      font-size: 0.95rem;
-      font-weight: 700;
-      cursor: pointer;
-      font-family: inherit;
-      transition: opacity 0.2s;
+      color: #fff; border: none; border-radius: 10px;
+      font-size: 0.95rem; font-weight: 700; cursor: pointer;
+      font-family: inherit; transition: opacity 0.2s;
     }
     .btn-save:hover { opacity: 0.88; }
+
+    .btn-test {
+      padding: 8px 20px;
+      background: #fff; color: #667eea;
+      border: 2px solid #667eea; border-radius: 10px;
+      font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      font-family: inherit; transition: all 0.2s;
+    }
+    .btn-test:hover { background: #667eea; color: #fff; }
+
+    .test-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 16px 0 0; border-top: 1px solid #f0f2f5; margin-top: 8px;
+    }
+    .test-row input { flex: 1; max-width: 280px; }
+
+    .log-box {
+      background: #f8f9fb; border: 1px solid #e0e4e8; border-radius: 8px;
+      padding: 14px 16px; font-size: 0.78rem; font-family: 'SF Mono', Consolas, monospace;
+      color: #4a5568; white-space: pre-wrap; word-break: break-all;
+      max-height: 200px; overflow-y: auto; margin-top: 12px;
+    }
+
+    .password-hint {
+      font-size: 0.75rem; color: #8a9bb0; margin-top: 2px;
+    }
   </style>
 </head>
 <body>
-  <header class="site-header">
-    <div class="container">
-      <div class="site-logo"><a href="/admin/">あそび<span class="admin-badge">ADMIN</span></a></div>
-      <div class="header-right">
-        <nav class="site-nav">
-          <ul>
-            <li><a href="/">サイトトップ</a></li>
-            <li><a href="/admin/">ダッシュボード</a></li>
-            <li><a href="/admin/users.php">ユーザー管理</a></li>
-          </ul>
-        </nav>
-      </div>
-    </div>
-  </header>
+  <?php $adminActivePage = 'settings'; require __DIR__ . '/_sidebar.php'; ?>
 
-  <div class="admin-body">
-    <div class="page-header">
-      <div class="breadcrumb"><a href="/admin/">管理画面</a> &rsaquo; サイト設定</div>
-      <h1>サイト設定</h1>
-    </div>
+    <div style="max-width:720px;">
+    <h1 style="font-size:1.4rem;font-weight:700;margin-bottom:32px;">サイト設定</h1>
 
     <?php if ($success): ?>
       <div class="message success"><?= htmlspecialchars($success) ?></div>
@@ -182,11 +300,87 @@ $currentUser = asobiGetCurrentUser();
       <div class="message error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
+    <!-- セッション設定 -->
+    <form method="POST" action="">
+      <input type="hidden" name="action" value="save_session">
+      <div class="card">
+        <div class="card-title">🔐 セッション設定</div>
+        <?php
+        $key = 'session_cookie_lifetime';
+        $def = $sessionDefs[$key];
+        $curVal = asobiGetSetting($key, $def['default']);
+        ?>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label"><?= htmlspecialchars($def['label']) ?></div>
+            <div class="setting-desc"><?= htmlspecialchars($def['desc']) ?></div>
+          </div>
+          <select name="<?= $key ?>" style="padding:8px 12px;border:2px solid #e0e4e8;border-radius:8px;font-size:0.9rem;font-family:inherit;color:#1d2d3a;outline:none;cursor:pointer;">
+            <?php foreach ($def['options'] as $v => $label): ?>
+            <option value="<?= $v ?>" <?= $curVal === (string)$v ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div style="margin-top:16px;">
+          <button type="submit" class="btn-save">セッション設定を保存</button>
+        </div>
+      </div>
+    </form>
+
+    <!-- SMTP設定 -->
+    <form method="POST" action="">
+      <input type="hidden" name="action" value="save_smtp">
+      <div class="card">
+        <div class="card-title">📧 SMTP設定（メール送信）</div>
+
+        <?php foreach ($smtpDefs as $key => $def): ?>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label"><?= htmlspecialchars($def['label']) ?></div>
+            <div class="setting-desc"><?= htmlspecialchars($def['desc']) ?></div>
+            <?php if ($def['type'] === 'password' && $smtpCurrent[$key]): ?>
+              <div class="password-hint">※ 変更しない場合は空欄のまま</div>
+            <?php endif; ?>
+          </div>
+          <input class="smtp-input" type="<?= $def['type'] ?>"
+                 name="<?= $key ?>"
+                 value="<?= $def['type'] === 'password' ? '' : htmlspecialchars($smtpCurrent[$key]) ?>"
+                 placeholder="<?= htmlspecialchars($def['placeholder']) ?>"
+                 <?= $key === 'smtp_host' || $key === 'smtp_user' || $key === 'smtp_from' ? 'required' : '' ?>
+                 autocomplete="off">
+        </div>
+        <?php endforeach; ?>
+
+        <div style="margin-top:16px;">
+          <button type="submit" class="btn-save">SMTP設定を保存</button>
+        </div>
+      </div>
+    </form>
+
+    <!-- テスト送信 -->
+    <form method="POST" action="">
+      <input type="hidden" name="action" value="test_smtp">
+      <div class="card">
+        <div class="card-title">📨 テスト送信</div>
+        <div class="test-row">
+          <input class="smtp-input" type="email" name="test_email"
+                 placeholder="送信先メールアドレス" required>
+          <button type="submit" class="btn-test">テスト送信</button>
+        </div>
+        <?php if ($msmtpLog): ?>
+        <div style="margin-top:16px;">
+          <div class="setting-label">送信ログ（直近）</div>
+          <div class="log-box"><?= htmlspecialchars($msmtpLog) ?></div>
+        </div>
+        <?php endif; ?>
+      </div>
+    </form>
+
+    <!-- メール認証 送信制限 -->
     <form method="POST" action="">
       <input type="hidden" name="action" value="save_settings">
-
       <div class="card">
-        <div class="card-title">メール認証 送信制限</div>
+        <div class="card-title">⏱ メール認証 送信制限</div>
 
         <?php foreach ($settingDefs as $key => $def): ?>
         <div class="setting-row">
@@ -202,12 +396,16 @@ $currentUser = asobiGetCurrentUser();
           </div>
         </div>
         <?php endforeach; ?>
-      </div>
 
-      <button type="submit" class="btn-save">保存する</button>
+        <div style="margin-top:16px;">
+          <button type="submit" class="btn-save">送信制限を保存</button>
+        </div>
+      </div>
     </form>
+    </div>
+  </main>
   </div>
 
-  <script src="/assets/js/common.js?v=20260327e"></script>
+  <script src="/assets/js/common.js?v=20260327h"></script>
 </body>
 </html>

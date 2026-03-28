@@ -12,16 +12,28 @@ asobiRequireApiKey();
 $db = asobiUsersDb();
 $action = $_GET['action'] ?? '';
 
-$validSites = ['common','top','dbd','pkq','tbt','aic','game'];
-$siteLabels = [
-    'common' => '全サイト共通',
-    'top'    => 'asobi.info トップページ',
-    'dbd'    => 'Dead by Daylight',
-    'pkq'    => 'ポケモンクエスト',
-    'tbt'    => 'Tournament Battle',
-    'aic'    => 'AI チャット',
-    'game'   => 'レトロゲーム情報',
+$defaultSiteList = [
+    ['key' => 'common', 'label' => '全サイト共通'],
+    ['key' => 'top',    'label' => 'asobi.info トップページ'],
+    ['key' => 'dbd',    'label' => 'Dead by Daylight'],
+    ['key' => 'pkq',    'label' => 'ポケモンクエスト'],
+    ['key' => 'tbt',    'label' => 'Tournament Battle'],
+    ['key' => 'aic',    'label' => 'AI チャット'],
+    ['key' => 'game',   'label' => 'レトロゲーム情報'],
 ];
+$siteListJson = '';
+try {
+    $ss = $db->prepare("SELECT value FROM site_settings WHERE key = 'todo_sites'");
+    $ss->execute();
+    $ssRow = $ss->fetch();
+    if ($ssRow) $siteListJson = $ssRow['value'];
+} catch (Exception $e) {}
+$siteList = $siteListJson ? json_decode($siteListJson, true) : null;
+if (!is_array($siteList) || empty($siteList)) {
+    $siteList = $defaultSiteList;
+}
+$siteLabels = array_column($siteList, 'label', 'key');
+$validSites = array_column($siteList, 'key');
 
 // ─── GET: 一覧取得 ───
 if ($action === 'list' && $_SERVER['REQUEST_METHOD'] === 'GET') {

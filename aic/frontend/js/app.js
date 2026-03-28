@@ -1,11 +1,18 @@
 /* === aic.asobi.info フロントエンドJS === */
 
 const API_BASE = '/api';
-let token = localStorage.getItem('aic_token') || '';
 let currentUser = null;
 let currentConversationId = null;
 let currentCharacter = null;
 let isStreaming = false;
+let _convLoadId = 0;  // openConversation の世代管理（古いリクエスト無視用）
+let _chatVisMode = 0; // 0=全表示, 1=フェード, 2=非表示
+let _longPressTimer = null;
+
+// TTS（読み上げ）
+const TTS_API = 'https://asobi.info/voice/api/tts.php';
+let _ttsAudio = null;
+let _ttsPlayingBtn = null;
 
 // コミュニティ用キャッシュ
 let communityChars = [];
@@ -14,12 +21,40 @@ let communitySort = 'like';
 const LOGIN_URL = 'https://asobi.info/oauth/aic-login.php?callback=' +
   encodeURIComponent('https://aic.asobi.info/api/auth/asobi/callback');
 
+// === トークン永続化（localStorage + Cookie 二重保存） ===
+function _getCookie(name) {
+  const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _setCookie(name, value, days) {
+  const d = new Date(); d.setTime(d.getTime() + days * 86400000);
+  document.cookie = `${name}=${encodeURIComponent(value)};path=/;expires=${d.toUTCString()};SameSite=Lax;Secure`;
+}
+function _removeCookie(name) {
+  document.cookie = `${name}=;path=/;expires=Thu, 01 Jan 1970 00:00:00 GMT;SameSite=Lax;Secure`;
+}
+function saveToken(t) {
+  token = t;
+  localStorage.setItem('aic_token', t);
+  _setCookie('aic_token', t, 30);
+}
+function clearToken() {
+  token = '';
+  localStorage.removeItem('aic_token');
+  _removeCookie('aic_token');
+}
+// localStorage優先、なければCookieから復元
+let token = localStorage.getItem('aic_token') || _getCookie('aic_token') || '';
+if (token && !localStorage.getItem('aic_token')) {
+  localStorage.setItem('aic_token', token); // Cookieから復元
+}
+
 // === API呼び出し ===
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = 'Bearer ' + token;
   const res = await fetch(API_BASE + path, { ...opts, headers });
-  if (res.status === 401) { token = ''; localStorage.removeItem('aic_token'); currentUser = null; }
+  if (res.status === 401) { clearToken(); currentUser = null; }
   return res;
 }
 
@@ -35,8 +70,7 @@ async function initAuth() {
       return;
     }
     // トークン無効
-    token = '';
-    localStorage.removeItem('aic_token');
+    clearToken();
   }
 
   // asobi.info のセッションを確認（ログアウト後のみスキップ）
@@ -47,7 +81,7 @@ async function initAuth() {
         const me = await meRes.json();
         if (me.loggedIn) {
           // asobi.info でログイン済み → AIC へ自動ログイン
-          window.location.href = LOGIN_URL;
+          window.location.replace(LOGIN_URL);
           return;
         }
       }
@@ -63,13 +97,13 @@ async function initAuth() {
   const res = await api('/auth/guest', { method: 'POST', body: JSON.stringify({ device_id: deviceId, display_name: 'ゲスト' }) });
   if (res.ok) {
     const data = await res.json();
-    token = data.token;
     currentUser = data.user;
-    localStorage.setItem('aic_token', token);
-    updateUserInfo();
+    saveToken(data.token);
     const balRes = await api('/balance');
     if (balRes.ok) updateBalance(await balRes.json());
   }
+  // ゲスト成功・失敗どちらでもUI更新（未ログイン時はログインリンク表示）
+  updateUserInfo();
 }
 
 function updateUserInfo() {
@@ -85,23 +119,18 @@ function updateUserInfo() {
   });
   // ヘッダーユーザーエリア
   renderHeaderUser();
-  updateAdminLink();
-}
-
-function updateAdminLink() {
-  const el = document.getElementById('admin-link-section');
-  if (el && currentUser && currentUser.role === 'admin') el.style.display = 'block';
 }
 
 function renderHeaderUser() {
   const area = document.getElementById('header-user-area');
+  const chatArea = document.getElementById('chat-header-user');
   if (!area) return;
 
+  const loginSvg = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+
   if (!currentUser || currentUser.is_guest) {
-    area.innerHTML = `<a href="${LOGIN_URL}" class="header-btn-login">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-      ログイン
-    </a>`;
+    area.innerHTML = `<a href="${LOGIN_URL}" class="header-btn-login">${loginSvg} ログイン</a>`;
+    if (chatArea) chatArea.innerHTML = `<a href="${LOGIN_URL}">${loginSvg}</a>`;
     return;
   }
 
@@ -109,21 +138,38 @@ function renderHeaderUser() {
     ? `<img src="${esc(currentUser.avatar_url)}" alt="">`
     : esc((currentUser.display_name || '?')[0].toUpperCase());
 
-  const adminLink = currentUser.role === 'admin'
-    ? `<div class="hud-divider"></div>
-       <a href="/admin.html" class="hud-item">🛠 AIC管理画面</a>
-       <a href="https://asobi.info/admin/" class="hud-item" target="_blank">🛠 asobi.info管理画面</a>`
-    : '';
+  let menuItems = '';
+  // サイト固有
+  menuItems += '<button class="hud-item" onclick="navTo(\'home\'); closeUserMenu()">サイトに戻る</button>';
+  menuItems += '<button class="hud-item" onclick="navTo(\'profile\'); closeUserMenu()">プロフィール</button>';
+  if (currentUser.role === 'admin') {
+    menuItems += '<a class="hud-item" href="/admin.html">🔒 コンテンツ管理</a>';
+  }
+  menuItems += '<div class="hud-divider"></div>';
+  // asobi.info 共通
+  menuItems += '<a class="hud-item" href="https://asobi.info/">asobi.info TOP</a>';
+  if (currentUser.role === 'admin') {
+    menuItems += '<a class="hud-item" href="https://asobi.info/admin/">🔒 asobi.info 管理</a>';
+  }
 
   area.innerHTML = `
     <button class="hdr-user-trigger" onclick="toggleUserMenu(event)">
       <div class="hdr-user-avatar">${avatarHtml}</div>
     </button>
     <div class="hdr-user-dropdown">
-      <button class="hud-item" onclick="navTo('home'); closeUserMenu()">トップ</button>
-      <button class="hud-item" onclick="navTo('profile'); closeUserMenu()">プロフィール</button>
-      ${adminLink}
+      ${menuItems}
     </div>`;
+
+  // チャットヘッダーにもドロップダウン付きユーザーアイコン表示（メインと同じ構造）
+  if (chatArea) {
+    chatArea.innerHTML = `
+      <button class="hdr-user-trigger" onclick="toggleChatUserMenu(event)">
+        <div class="hdr-user-avatar">${avatarHtml}</div>
+      </button>
+      <div class="hdr-user-dropdown" id="chat-user-dropdown">
+        ${menuItems}
+      </div>`;
+  }
 }
 
 function toggleUserMenu(e) {
@@ -131,19 +177,27 @@ function toggleUserMenu(e) {
   document.getElementById('header-user-area').classList.toggle('open');
 }
 
+function toggleChatUserMenu(e) {
+  e.stopPropagation();
+  document.getElementById('chat-header-user').classList.toggle('open');
+}
+
 function closeUserMenu() {
   document.getElementById('header-user-area').classList.remove('open');
+  const chatMenu = document.getElementById('chat-header-user');
+  if (chatMenu) chatMenu.classList.remove('open');
 }
 
 // クリック外でドロップダウンを閉じる
 document.addEventListener('click', () => closeUserMenu());
 
 function updateBalance(bal) {
-  document.getElementById('balance-info').textContent = '💎 ' + bal.points + 'pt / ' + bal.crystals + 'クリスタル';
-  document.getElementById('header-balance').textContent = '💎 ' + bal.points + 'pt';
+  const el = document.getElementById('balance-info');
+  if (el) el.textContent = '💎 ' + bal.points + 'pt / ' + bal.crystals + 'クリスタル';
 }
 
 // === ナビゲーション ===
+
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + id).classList.add('active');
@@ -156,14 +210,21 @@ function showScreen(id) {
   document.querySelectorAll('.bnav-item').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.screen === navScreen);
   });
+
 }
+
+let _navReplace = false;  // replaceState モード（初回ロード・popstate用）
 
 function navTo(screen) {
   // URL ハッシュを更新（ブラウザバック・リロード対応）
   // chat は会話IDを持たないため chat-list として記録
   const hashTarget = screen === 'chat' ? 'chat-list' : screen;
   if (location.hash !== '#' + hashTarget) {
-    history.pushState(null, '', '#' + hashTarget);
+    if (_navReplace) {
+      history.replaceState(null, '', '#' + hashTarget);
+    } else {
+      history.pushState(null, '', '#' + hashTarget);
+    }
   }
 
   if (screen === 'create') {
@@ -288,8 +349,19 @@ function _formatChatTime(dateStr) {
 async function loadChatList() {
   const isGuest = !currentUser || currentUser.is_guest;
 
-  // 会話履歴
+  // 未ログイン時はログイン案内
   const convsEl = document.getElementById('chatlist-convs');
+  if (isGuest) {
+    convsEl.innerHTML = `
+      <div class="login-prompt" style="margin:40px 0 0;text-align:center">
+        <h3 style="margin-bottom:8px;color:var(--text)">チャット</h3>
+        <p>キャラクターとチャットするには<br>asobi.info アカウントでログインしてください</p>
+        <a class="btn btn-primary" onclick="location.href=LOGIN_URL">asobi.info でログイン</a>
+      </div>`;
+    return;
+  }
+
+  // 会話履歴
   if (token) {
     const convRes = await api('/conversations');
     if (convRes.ok) {
@@ -298,15 +370,21 @@ async function loadChatList() {
         convsEl.innerHTML = '<p class="chatlist-empty">まだ会話がありません</p>';
       } else {
         convsEl.innerHTML = convs.map(c => {
+          const isDeleted = c.character_is_deleted || 0;
           const avatarHtml = c.character_avatar
-            ? `<img src="${esc(c.character_avatar)}" alt="">`
+            ? `<img src="${esc(c.character_avatar)}" alt="" style="${isDeleted ? 'opacity:0.4;filter:grayscale(1)' : ''}">`
             : esc(c.character_name ? c.character_name[0] : '?');
           const timeStr = c.updated_at ? _formatChatTime(c.updated_at) : '';
-          return `<div class="chatlist-conv-item" onclick="openConversation(${c.id})">
+          const deletedBadge = isDeleted === 2
+            ? ' <span style="font-size:0.7rem;color:var(--accent);opacity:0.8">削除済み</span>'
+            : isDeleted === 1
+              ? ' <span style="font-size:0.7rem;color:var(--sub);opacity:0.8">削除済み</span>'
+              : '';
+          return `<div class="chatlist-conv-item" onclick="openConversation(${c.id})" style="${isDeleted ? 'opacity:0.7' : ''}">
             <div class="chatlist-conv-avatar">${avatarHtml}</div>
             <div class="chatlist-conv-info">
               <div class="chatlist-conv-top">
-                <div class="chatlist-conv-name">${esc(c.character_name)}</div>
+                <div class="chatlist-conv-name">${esc(c.character_name)}${deletedBadge}</div>
                 <div class="chatlist-conv-time">${esc(timeStr)}</div>
               </div>
               <div class="chatlist-conv-preview">${esc(c.last_message || '会話を始める')}</div>
@@ -339,6 +417,19 @@ function loadProfile() {
   const el = document.getElementById('profile-content');
   const isGuest = !currentUser || currentUser.is_guest;
 
+  // 名前編集セクション（共通）
+  const nameSection = `
+    <div class="profile-section">
+      <h3>表示名</h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="profile-name-input" class="search-input" style="margin-bottom:0;flex:1"
+               value="${esc(currentUser ? currentUser.display_name : '')}" maxlength="30"
+               placeholder="名前を入力...">
+        <button class="btn btn-primary btn-sm" onclick="saveProfileName()">保存</button>
+      </div>
+      <p class="inline-error" id="profile-name-error"></p>
+    </div>`;
+
   if (isGuest) {
     el.innerHTML = `
       <div class="profile-guest-box">
@@ -356,10 +447,15 @@ function loadProfile() {
           <div class="profile-balance" id="profile-balance-text"></div>
         </div>
       </div>
+      ${nameSection}
       <div class="profile-section">
         <h3>マイキャラクター</h3>
         <div id="profile-mine-chars" class="char-grid"></div>
         <button class="btn btn-outline" style="margin-top:12px" onclick="navTo('create')">＋ キャラクター作成</button>
+      </div>
+      <div class="profile-section" id="profile-public-section" style="display:none">
+        <h3>会話中の公開キャラクター</h3>
+        <div id="profile-public-chars" class="char-grid"></div>
       </div>
       <div class="profile-actions">
         <button class="btn btn-secondary" onclick="logout()">ログアウト</button>
@@ -380,13 +476,55 @@ function loadProfile() {
         if (el) renderCharCards('profile-mine-chars', chars);
       }
     });
+
+    // 会話中の公開キャラクター
+    api('/characters/chatting-public').then(r => r.ok && r.json()).then(chars => {
+      if (chars && chars.length) {
+        document.getElementById('profile-public-section').style.display = 'block';
+        renderCharCards('profile-public-chars', chars);
+      }
+    });
   }
 }
 
+async function saveProfileName() {
+  const input = document.getElementById('profile-name-input');
+  const name = (input?.value || '').trim();
+  if (!name) {
+    showInlineError('profile-name-error', '名前を入力してください', 'profile-name-input');
+    return;
+  }
+  clearInlineError('profile-name-error');
+  try {
+    const res = await api('/auth/profile', { method: 'PUT', body: JSON.stringify({ display_name: name }) });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showInlineError('profile-name-error', err.detail || '保存に失敗しました');
+      return;
+    }
+    const updated = await res.json();
+    currentUser.display_name = updated.display_name;
+    updateUserInfo();
+    showToast('名前を保存しました', 'success');
+    // プロフィールヘッダーも更新
+    const nameEl = document.querySelector('.profile-name');
+    if (nameEl) nameEl.textContent = updated.display_name;
+    const avatarEl = document.querySelector('.profile-avatar');
+    if (avatarEl) avatarEl.textContent = updated.display_name[0] || '?';
+  } catch (e) {
+    showInlineError('profile-name-error', '通信エラーが発生しました');
+  }
+}
+
+function isProfileNameSet() {
+  if (!currentUser) return false;
+  const name = currentUser.display_name;
+  return name && name !== 'ゲスト' && name.trim() !== '';
+}
+
 async function logout() {
-  token = '';
+  clearToken();
   currentUser = null;
-  localStorage.removeItem('aic_token');
   // ログアウト後は同一セッション内で自動ログインしない
   sessionStorage.setItem('aic_skip_auto_login', '1');
   closeUserMenu();
@@ -395,15 +533,171 @@ async function logout() {
 }
 
 // === キャラクターカード描画 ===
+// === キャラクター詳細画面 ===
+let _charDetailId = null;
+
+async function showCharDetail(charId) {
+  _charDetailId = charId;
+  showScreen('char-detail');
+  const el = document.getElementById('char-detail-content');
+  el.innerHTML = '<div class="loading" style="padding:60px 0"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+
+  try {
+    const res = await api('/characters/' + charId);
+    if (!res.ok) throw new Error('取得失敗');
+    const c = await res.json();
+
+    // 削除済みキャラクターの場合
+    if (c.is_deleted === 2) {
+      el.innerHTML = `
+        <div style="padding:60px 20px;text-align:center">
+          <div style="font-size:2rem;margin-bottom:12px">⚠</div>
+          <div style="font-size:1.1rem;font-weight:600;margin-bottom:8px">${esc(c.name)}</div>
+          <div style="color:var(--text-secondary)">このキャラクターは規約違反のため管理者により削除されました。</div>
+          <button class="btn" style="margin-top:24px" onclick="history.back()">戻る</button>
+        </div>`;
+      return;
+    }
+    if (c.is_deleted === 1 && !c.is_owner && !c.is_admin) {
+      el.innerHTML = `
+        <div style="padding:60px 20px;text-align:center">
+          <div style="font-size:2rem;margin-bottom:12px">📦</div>
+          <div style="font-size:1.1rem;font-weight:600;margin-bottom:8px">${esc(c.name)}</div>
+          <div style="color:var(--text-secondary)">このキャラクターは作成者により削除されました。</div>
+          <button class="btn" style="margin-top:24px" onclick="history.back()">戻る</button>
+        </div>`;
+      return;
+    }
+
+    const tags = [
+      ...(c.genre_personality || []),
+      ...(c.genre_story || []),
+      ...(c.genre_char_type || []),
+      ...(c.genre_era || []),
+    ];
+    const tagsHtml = tags.map(t => '<span class="cd-tag">' + esc(t) + '</span>').join('');
+
+    const heroImg = c.avatar_url
+      ? '<img src="' + esc(c.avatar_url) + '" alt="">'
+      : '<div style="width:100%;height:100%;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:4rem;color:var(--text-secondary)">' + esc((c.char_name || c.name || '?')[0]) + '</div>';
+
+    const charNameHtml = c.char_name
+      ? '<div class="cd-char-name">' + esc(c.char_name) + (c.char_age ? '（' + esc(c.char_age) + '）' : '') + '</div>'
+      : '';
+
+    const profileHtml = c.profile
+      ? '<div class="cd-profile">' + esc(c.profile) + '</div>'
+      : '';
+
+    const likedClass = c.liked ? ' active' : '';
+    const likedText = c.liked ? '❤ いいね済み' : '🤍 いいね';
+
+    const isLoggedIn = currentUser && !currentUser.is_guest;
+
+    // 作者 or 管理者なら編集リンク
+    const editHtml = (c.is_owner || c.is_admin)
+      ? '<div style="text-align:center"><span class="cd-edit-link" onclick="editCharFromDetail(' + c.id + ')">✏️ キャラクター編集</span></div>'
+      : '';
+
+    el.innerHTML = `
+      <div class="cd-hero">
+        ${heroImg}
+        <div class="cd-hero-gradient"></div>
+        <button class="cd-hero-back" onclick="history.back()">‹</button>
+      </div>
+      <div class="cd-body">
+        <div class="cd-name">${esc(c.name)}</div>
+        ${charNameHtml}
+        <div class="cd-stats">❤ ${c.like_count} 💬 ${c.use_count}</div>
+        ${tagsHtml ? '<div class="cd-tags">' + tagsHtml + '</div>' : ''}
+        ${profileHtml}
+        <div class="cd-actions">
+          <button class="btn cd-btn-chat" onclick="startChat(${c.id})">💬 このキャラクターとチャット</button>
+          ${isLoggedIn ? `
+            <div class="cd-action-row">
+              <button class="btn cd-btn-like${likedClass}" id="cd-like-btn" onclick="toggleCharLike(${c.id})">
+                ${likedText}
+              </button>
+            </div>
+            <button class="btn cd-btn-report" onclick="reportChar(${c.id})">⚠ 不正報告</button>
+          ` : `
+            <a class="btn cd-btn-like" onclick="location.href=LOGIN_URL">ログインしていいね・報告</a>
+          `}
+        </div>
+        ${editHtml}
+      </div>`;
+  } catch (e) {
+    el.innerHTML = '<p style="color:var(--accent);text-align:center;padding:40px">' + esc(e.message) + '</p>';
+  }
+}
+
+async function toggleCharLike(charId) {
+  const res = await api('/characters/' + charId + '/like', { method: 'POST' });
+  if (!res.ok) return;
+  const d = await res.json();
+  const btn = document.getElementById('cd-like-btn');
+  if (btn) {
+    btn.classList.toggle('active', d.liked);
+    btn.innerHTML = d.liked ? '❤ いいね済み' : '🤍 いいね';
+  }
+}
+
+function reportChar(charId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  const inputStyle = 'width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);font-family:inherit;font-size:0.85rem;';
+  overlay.innerHTML = `
+    <div class="confirm-box">
+      <p style="font-weight:600;margin-bottom:8px">不正報告</p>
+      <p style="font-size:0.85rem;margin-bottom:12px">このキャラクターに問題がありますか？</p>
+      <select id="report-category" style="${inputStyle}appearance:auto;margin-bottom:10px">
+        <option value="">-- 報告カテゴリを選択 --</option>
+        <option value="性的・公序良俗に反する内容">性的・公序良俗に反する内容</option>
+        <option value="知的財産の侵害">知的財産の侵害</option>
+        <option value="他人の差別に対する問題">他人の差別に対する問題</option>
+        <option value="法律違反・犯罪行為の助長">法律違反・犯罪行為の助長</option>
+        <option value="政治に関する内容">政治に関する内容</option>
+        <option value="その他">その他</option>
+      </select>
+      <textarea id="report-reason" rows="3" style="${inputStyle}resize:vertical" placeholder="報告理由を具体的に記載..."></textarea>
+      <div class="confirm-actions" style="margin-top:12px">
+        <button class="btn btn-ghost" data-act="cancel">キャンセル</button>
+        <button class="btn btn-danger" data-act="send">送信</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.onclick = async e => {
+    const act = e.target.dataset.act;
+    if (act === 'cancel' || e.target === overlay) { overlay.remove(); return; }
+    if (act === 'send') {
+      const category = document.getElementById('report-category').value;
+      const detail = document.getElementById('report-reason').value.trim();
+      if (!category) { showToast('カテゴリを選択してください', 'err'); return; }
+      const reason = category + (detail ? '\n' + detail : '');
+      const r = await api('/characters/' + charId + '/report', { method: 'POST', body: JSON.stringify({ reason }) });
+      overlay.remove();
+      if (r.ok) showToast('報告を送信しました');
+      else showToast('報告の送信に失敗しました', 'err');
+    }
+  };
+}
+
+function editCharFromDetail(charId) {
+  // TODO: キャラクター編集画面への遷移
+  showToast('編集機能は準備中です', 'info');
+}
+
 function renderCharCards(containerId, chars) {
   const el = document.getElementById(containerId);
   if (!el) return;
   if (!chars.length) { el.innerHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;grid-column:1/-1">まだありません</p>'; return; }
   el.innerHTML = chars.map(c => {
-    const avatar = c.char_name ? c.char_name[0] : c.name[0];
+    const avatarInner = c.avatar_url
+      ? '<img src="' + esc(c.avatar_url) + '" alt="">'
+      : esc(c.char_name ? c.char_name[0] : c.name[0]);
     const tags = (c.genre_personality || []).slice(0, 2).map(t => '<span class="char-card-tag">' + t + '</span>').join('');
-    return '<div class="char-card" onclick="startChat(' + c.id + ')">' +
-      '<div class="char-card-avatar">' + esc(avatar) + '</div>' +
+    return '<div class="char-card" onclick="showCharDetail(' + c.id + ')">' +
+      '<div class="char-card-avatar">' + avatarInner + '</div>' +
       '<div class="char-card-name">' + esc(c.name) + '</div>' +
       '<div class="char-card-desc">' + esc(c.profile || '') + '</div>' +
       '<div class="char-card-meta">' + tags + ' ❤ ' + c.like_count + ' 💬 ' + c.use_count + '</div>' +
@@ -413,6 +707,13 @@ function renderCharCards(containerId, chars) {
 
 // === 会話開始 ===
 async function startChat(charId) {
+  // 名前未設定の場合はプロフィール画面で設定を促す
+  if (!isProfileNameSet()) {
+    showToast('チャットを始める前に名前を設定してください', 'info');
+    navTo('profile');
+    setTimeout(() => document.getElementById('profile-name-input')?.focus(), 300);
+    return;
+  }
   const res = await api('/conversations', { method: 'POST', body: JSON.stringify({ character_id: charId }) });
   if (res.ok) {
     const conv = await res.json();
@@ -424,60 +725,319 @@ async function startChat(charId) {
 
 // === サイドバー会話一覧 ===
 async function loadConversations() {
+  const el = document.getElementById('conversation-list');
+  const section = el?.closest('.nav-section-title, .sidebar-conv-section') || el?.parentElement;
+  if (!currentUser || currentUser.is_guest) {
+    if (el) el.innerHTML = '';
+    if (section) section.style.display = 'none';
+    return;
+  }
+  if (section) section.style.display = '';
   const res = await api('/conversations');
   if (!res.ok) return;
-  const convs = await res.json();
-  const el = document.getElementById('conversation-list');
-  el.innerHTML = convs.map(c =>
-    '<div class="conv-item' + (c.id === currentConversationId ? ' active' : '') + '" onclick="openConversation(' + c.id + ')">' +
-    '<div class="conv-item-name">' + esc(c.character_name) + '</div>' +
-    '<div class="conv-item-preview">' + esc(c.last_message || '会話を始める') + '</div>' +
-    '</div>'
-  ).join('');
+  const convs = (await res.json()).slice(0, 5);
+  el.innerHTML = convs.map(c => {
+    const isDel = c.character_is_deleted || 0;
+    const avInner = c.character_avatar
+      ? '<img src="' + esc(c.character_avatar) + '" alt=""' + (isDel ? ' style="opacity:0.4;filter:grayscale(1)"' : '') + '>'
+      : esc(c.character_name ? c.character_name[0] : '?');
+    return '<div class="conv-item' + (c.id === currentConversationId ? ' active' : '') + '" onclick="openConversation(' + c.id + ')"' + (isDel ? ' style="opacity:0.7"' : '') + '>' +
+      '<div class="conv-item-avatar">' + avInner + '</div>' +
+      '<div class="conv-item-body">' +
+        '<div class="conv-item-name">' + esc(c.character_name) + '</div>' +
+        '<div class="conv-item-preview">' + esc(c.last_message || '会話を始める') + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 }
 
 // === 会話表示 ===
 async function openConversation(convId) {
   currentConversationId = convId;
+  const myLoadId = ++_convLoadId;  // このリクエストの世代ID
+
+  // URLハッシュに会話IDを保存（リロード復元用）
+  history.replaceState(null, '', '#chat/' + convId);
+
+  // 先にチャット画面に切り替え（ローディング表示）
+  showScreen('chat');
+  const el = document.getElementById('chat-messages');
+  el.innerHTML = '<div class="loading"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+
   const res = await api('/conversations/' + convId);
+  // 画面切り替え済みで別の会話が開かれていたら無視
+  if (myLoadId !== _convLoadId) return;
   if (!res.ok) return;
   const data = await res.json();
+  if (myLoadId !== _convLoadId) return;
+
   currentCharacter = data.character;
   document.getElementById('header-title').textContent = currentCharacter ? currentCharacter.name : 'チャット';
   document.getElementById('chat-header-name').textContent = currentCharacter ? currentCharacter.name : 'チャット';
 
-  // 背景にキャラクター画像
+  // 背景にキャラクター画像（上半身が見えるよう上寄り配置）
   const chatScreen = document.getElementById('screen-chat');
   if (currentCharacter?.avatar_url) {
     chatScreen.style.backgroundImage = `url('${currentCharacter.avatar_url}')`;
     chatScreen.style.backgroundSize = 'cover';
-    chatScreen.style.backgroundPosition = 'center';
+    chatScreen.style.backgroundPosition = 'center 15%';
   } else {
     chatScreen.style.backgroundImage = '';
   }
 
-  showScreen('chat');
+  const inputArea = document.querySelector('.chat-input-area');
+  const isDeleted = currentCharacter?.is_deleted || 0;
 
-  const el = document.getElementById('chat-messages');
-  el.innerHTML = data.messages.map(m =>
-    m.role === 'user'
-      ? '<div class="msg msg-user">' + esc(m.content) + '</div>'
-      : '<div class="msg msg-ai">' + esc(m.content) + '</div>'
-  ).join('');
+  if (isDeleted === 2) {
+    // 管理者削除: 履歴非表示、削除メッセージのみ
+    el.innerHTML = '<div class="chat-deleted-banner" style="padding:40px 20px;text-align:center;color:var(--sub)">'
+      + '<div style="font-size:1.5rem;margin-bottom:12px">⚠</div>'
+      + '<div style="font-weight:600;margin-bottom:6px">' + esc(currentCharacter.name) + '</div>'
+      + '<div>このキャラクターは規約違反のため管理者により削除されました。</div>'
+      + '</div>';
+    inputArea.style.display = 'none';
+  } else if (isDeleted === 1) {
+    // 作成者削除: 履歴は見える、入力不可
+    el.innerHTML = data.messages.map(m =>
+      m.role === 'user'
+        ? '<div class="msg msg-user" data-msg-id="' + m.id + '">' + esc(m.content) + '</div>'
+        : '<div class="msg msg-ai" data-msg-id="' + m.id + '">' + esc(m.content) + '<button class="tts-btn" onclick="ttsPlay(this)" title="読み上げ">\uD83D\uDD0A</button></div>'
+    ).join('');
+    el.innerHTML += '<div class="chat-deleted-banner" style="padding:16px 20px;text-align:center;color:var(--sub);border-top:1px solid rgba(255,255,255,0.1)">'
+      + 'このキャラクターは作成者により削除されました。新しいメッセージは送れません。'
+      + '</div>';
+    inputArea.style.display = 'none';
+  } else {
+    // 通常
+    el.innerHTML = data.messages.map(m =>
+      m.role === 'user'
+        ? '<div class="msg msg-user" data-msg-id="' + m.id + '">' + esc(m.content) + '</div>'
+        : '<div class="msg msg-ai" data-msg-id="' + m.id + '">' + esc(m.content) + '<button class="tts-btn" onclick="ttsPlay(this)" title="読み上げ">\uD83D\uDD0A</button></div>'
+    ).join('');
+    inputArea.style.display = '';
+  }
+
+  // 表示モードリセット & 長押し初期化
+  el.classList.remove('msg-masked');
+  el.style.removeProperty('-webkit-mask-size');
+  el.style.removeProperty('mask-size');
+  el.style.pointerEvents = '';
+  _chatVisMode = 0;
+  initMsgLongPress();
   el.scrollTop = el.scrollHeight;
 
-  document.getElementById('chat-input').focus();
+  if (!isDeleted) document.getElementById('chat-input').focus();
   loadConversations();
+}
+
+// === キャラクタープロフィール表示 ===
+async function openCharProfile() {
+  if (!currentCharacter) return;
+  const overlay = document.getElementById('char-profile-overlay');
+  const body = document.getElementById('char-profile-body');
+  body.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  overlay.classList.add('active');
+
+  try {
+    const res = await api('/characters/' + currentCharacter.id);
+    if (!res.ok) throw new Error('取得失敗');
+    const c = await res.json();
+
+    const tags = [
+      ...(c.genre_personality || []),
+      ...(c.genre_story || []),
+      ...(c.genre_char_type || []),
+      ...(c.genre_era || []),
+      ...(c.genre_base || []),
+    ];
+    const tagsHtml = tags.map(t => '<span class="cp-tag">' + esc(t) + '</span>').join('');
+
+    const avatarHtml = c.avatar_url
+      ? '<div class="cp-avatar"><img src="' + esc(c.avatar_url) + '" alt=""></div>'
+      : '';
+
+    let html = avatarHtml;
+    html += '<div class="cp-name">' + esc(c.name) + '</div>';
+    if (c.char_name) html += '<div class="cp-char-name">' + esc(c.char_name) + (c.char_age ? '（' + esc(c.char_age) + '）' : '') + '</div>';
+    if (tagsHtml) html += '<div class="cp-tags">' + tagsHtml + '</div>';
+    if (c.profile) html += '<div class="cp-section"><div class="cp-section-title">プロフィール</div><div class="cp-text">' + esc(c.profile) + '</div></div>';
+    if (c.private_profile) html += '<div class="cp-section"><div class="cp-section-title">非公開プロフィール</div><div class="cp-text">' + esc(c.private_profile) + '</div></div>';
+    if (c.first_message) html += '<div class="cp-section"><div class="cp-section-title">最初のメッセージ</div><div class="cp-text">' + esc(c.first_message) + '</div></div>';
+    html += '<div class="cp-meta">❤ ' + c.like_count + ' 💬 ' + c.use_count + '</div>';
+
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<p style="color:var(--accent);text-align:center;padding:20px">' + esc(e.message) + '</p>';
+  }
+}
+
+function closeCharProfile() {
+  document.getElementById('char-profile-overlay').classList.remove('active');
+}
+
+// 入力フォーカス時: ③(非表示)なら②(フェード)に戻す
+function onChatInputFocus() {
+  if (_chatVisMode !== 2) return;
+  const el = document.getElementById('chat-messages');
+  if (!el) return;
+  el.style.pointerEvents = '';
+  el.style.setProperty('-webkit-mask-size', '100% 100%');
+  el.style.setProperty('mask-size', '100% 100%');
+  _chatVisMode = 1;
+}
+
+// === チャット表示3段階切り替え（全表示→上半分フェード→非表示） ===
+function toggleChatVisibility() {
+  const el = document.getElementById('chat-messages');
+  if (!el) return;
+  _chatVisMode = (_chatVisMode + 1) % 3;
+  if (_chatVisMode === 1) {
+    // ①→②: マスク適用、250%(全可視)→100%(フェード) をゆっくり
+    el.classList.add('msg-masked');
+    el.style.setProperty('-webkit-mask-size', '100% 250%');
+    el.style.setProperty('mask-size', '100% 250%');
+    el.offsetHeight;
+    el.style.setProperty('-webkit-mask-size', '100% 100%');
+    el.style.setProperty('mask-size', '100% 100%');
+  } else if (_chatVisMode === 2) {
+    // ②→③: 100%→0% で上からゆっくり消える
+    el.style.setProperty('-webkit-mask-size', '100% 0%');
+    el.style.setProperty('mask-size', '100% 0%');
+    el.style.pointerEvents = 'none';
+  } else {
+    // ③→①: 0%→250% で下からゆっくり戻り、完了後マスク解除
+    el.style.pointerEvents = '';
+    el.style.setProperty('-webkit-mask-size', '100% 250%');
+    el.style.setProperty('mask-size', '100% 250%');
+    const onDone = () => {
+      el.removeEventListener('transitionend', onDone);
+      el.classList.remove('msg-masked');
+      el.style.removeProperty('-webkit-mask-size');
+      el.style.removeProperty('mask-size');
+    };
+    el.addEventListener('transitionend', onDone);
+  }
+}
+
+// === メッセージ長押し削除 ===
+function initMsgLongPress() {
+  const el = document.getElementById('chat-messages');
+  if (!el || el._longPressInit) return;
+  el._longPressInit = true;
+
+  let timer = null;
+  let startX = 0, startY = 0;
+
+  function getMsgEl(e) {
+    const t = e.target.closest('.msg[data-msg-id]');
+    return t;
+  }
+
+  function cancelTimer() { clearTimeout(timer); timer = null; }
+
+  el.addEventListener('touchstart', e => {
+    const msgEl = getMsgEl(e);
+    if (!msgEl) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    timer = setTimeout(() => {
+      timer = null;
+      const msgId = msgEl.dataset.msgId;
+      if (!msgId) return;
+      e.preventDefault();
+      showMsgMenu(msgId, msgEl);
+    }, 600);
+  }, { passive: false });
+
+  el.addEventListener('touchmove', e => {
+    if (!timer) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) cancelTimer();
+  });
+  el.addEventListener('touchend', cancelTimer);
+  el.addEventListener('touchcancel', cancelTimer);
+
+  // PC: 右クリックでも
+  el.addEventListener('contextmenu', e => {
+    const msgEl = getMsgEl(e);
+    if (!msgEl) return;
+    const msgId = msgEl.dataset.msgId;
+    if (!msgId) return;
+    e.preventDefault();
+    showMsgMenu(msgId, msgEl);
+  });
+}
+
+function showMsgMenu(msgId, msgEl) {
+  // 既存メニューを閉じる
+  document.getElementById('msg-ctx-menu')?.remove();
+
+  const isAi = msgEl.classList.contains('msg-ai');
+  // 最新のAIメッセージか判定
+  const chatEl = document.getElementById('chat-messages');
+  const lastAiEl = [...chatEl.querySelectorAll('.msg-ai[data-msg-id]')].pop();
+  const canRegen = isAi && lastAiEl && lastAiEl === msgEl && !isStreaming;
+
+  const menu = document.createElement('div');
+  menu.id = 'msg-ctx-menu';
+  menu.className = 'msg-ctx-menu';
+  menu.innerHTML =
+    (canRegen ? '<button class="msg-ctx-item" data-act="regen">再更新</button>' : '') +
+    '<button class="msg-ctx-item msg-ctx-delete" data-act="delete">削除</button>';
+
+  // メッセージ要素の位置に合わせて表示
+  const rect = msgEl.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top = (rect.bottom + 6) + 'px';
+  menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 160)) + 'px';
+  document.body.appendChild(menu);
+
+  // メニュー外クリックで閉じる
+  const close = (e) => {
+    if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('pointerdown', close, true); }
+  };
+  setTimeout(() => document.addEventListener('pointerdown', close, true), 10);
+
+  menu.onclick = async e => {
+    const act = e.target.dataset.act;
+    if (!act) return;
+    menu.remove();
+    document.removeEventListener('pointerdown', close, true);
+
+    if (act === 'delete') {
+      const r = await api('/chat/' + currentConversationId + '/messages/' + msgId, { method: 'DELETE' });
+      if (r.ok) {
+        msgEl.style.transition = 'opacity 0.25s, transform 0.25s';
+        msgEl.style.opacity = '0';
+        msgEl.style.transform = 'scale(0.9)';
+        setTimeout(() => msgEl.remove(), 250);
+      }
+    } else if (act === 'regen') {
+      // 最後のユーザーメッセージを取得して再送信
+      const userMsgs = [...chatEl.querySelectorAll('.msg-user[data-msg-id]')];
+      const lastUserEl = userMsgs[userMsgs.length - 1];
+      if (!lastUserEl) return;
+      const lastUserMsg = lastUserEl.textContent.trim();
+      // AI吹き出しをリセット
+      msgEl.innerHTML = '<div class="msg-typing"><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span></div>';
+      // まず古いAIメッセージをDB削除
+      await api('/chat/' + currentConversationId + '/messages/' + msgId, { method: 'DELETE' });
+      // 再送信
+      isStreaming = true;
+      document.getElementById('send-btn').disabled = true;
+      await _sendRequest(lastUserMsg, msgEl, chatEl);
+    }
+  };
 }
 
 // === メッセージ送信 ===
 async function sendMessage() {
   const input = document.getElementById('chat-input');
-  const msg = (input.textContent || input.value || '').trim();
+  const msg = (input.textContent || '').trim();
   if (!msg || isStreaming || !currentConversationId) return;
 
   input.textContent = '';
-  input.value = '';
   isStreaming = true;
   document.getElementById('send-btn').disabled = true;
 
@@ -490,6 +1050,10 @@ async function sendMessage() {
   chatEl.appendChild(aiMsg);
   chatEl.scrollTop = chatEl.scrollHeight;
 
+  await _sendRequest(msg, aiMsg, chatEl);
+}
+
+async function _sendRequest(msg, aiMsg, chatEl) {
   try {
     const res = await fetch(API_BASE + '/chat/' + currentConversationId, {
       method: 'POST',
@@ -499,7 +1063,7 @@ async function sendMessage() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      aiMsg.innerHTML = esc(err.detail || '送信に失敗しました');
+      _showRetryError(aiMsg, chatEl, msg, esc(err.detail || '送信に失敗しました'));
       return;
     }
 
@@ -518,10 +1082,19 @@ async function sendMessage() {
           const data = JSON.parse(line.slice(6));
           if (data.text) {
             aiText += data.text;
-            aiMsg.innerHTML = esc(aiText);
+            // STATEタグのフォールバック除去
+            const displayText = aiText.replace(/<<<STATE>>>[\s\S]*?<<\/STATE>>>/g, '').replace(/<<<STATE>>>[\s\S]*$/g, '');
+            aiMsg.innerHTML = esc(displayText);
             chatEl.scrollTop = chatEl.scrollHeight;
           }
           if (data.done) {
+            // 読み上げボタン追加
+            const ttsBtn = document.createElement('button');
+            ttsBtn.className = 'tts-btn';
+            ttsBtn.textContent = '\uD83D\uDD0A';
+            ttsBtn.title = '読み上げ';
+            ttsBtn.onclick = function() { ttsPlay(this); };
+            aiMsg.appendChild(ttsBtn);
             const balRes = await api('/balance');
             if (balRes.ok) updateBalance(await balRes.json());
           }
@@ -532,12 +1105,27 @@ async function sendMessage() {
       }
     }
   } catch (e) {
-    aiMsg.innerHTML = '<div class="msg-ai-name">エラー</div>通信エラーが発生しました';
+    _showRetryError(aiMsg, chatEl, msg, '通信エラーが発生しました');
   } finally {
     isStreaming = false;
     document.getElementById('send-btn').disabled = false;
     loadConversations();
   }
+}
+
+function _showRetryError(aiMsg, chatEl, msg, errText) {
+  aiMsg.innerHTML = '<div class="msg-ai-name">エラー</div>' + errText;
+  const retryBtn = document.createElement('button');
+  retryBtn.className = 'retry-btn';
+  retryBtn.textContent = 'リトライ';
+  retryBtn.onclick = () => {
+    isStreaming = true;
+    document.getElementById('send-btn').disabled = true;
+    aiMsg.innerHTML = '<div class="msg-typing"><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span></div>';
+    _sendRequest(msg, aiMsg, chatEl);
+  };
+  aiMsg.appendChild(document.createElement('br'));
+  aiMsg.appendChild(retryBtn);
 }
 
 // === キャラ作成 ===
@@ -570,6 +1158,7 @@ async function saveCharacter() {
     name: name,
     char_name: document.getElementById('cr-char-name').value.trim() || null,
     char_age: document.getElementById('cr-age').value.trim() || null,
+    gender: document.getElementById('cr-gender').value || null,
     profile: document.getElementById('cr-profile').value.trim() || null,
     private_profile: document.getElementById('cr-private').value.trim() || null,
     first_message: document.getElementById('cr-first-msg').value.trim() || null,
@@ -608,8 +1197,7 @@ async function checkSdStatus() {
       if (sec) sec.style.display = sdEnabled ? 'block' : 'none';
       // 生成画像の縦横比をCSS変数に反映
       if (d.width && d.height) {
-        const ratio = d.width / d.height;
-        document.documentElement.style.setProperty('--gen-img-ratio', ratio);
+        document.documentElement.style.setProperty('--gen-img-ratio', `${d.width}/${d.height}`);
       }
     }
   } catch (_) {}
@@ -622,14 +1210,18 @@ async function openGenerateScreen() {
   await loadPendingImages();
 }
 
-// SD ステータス取得（翻訳ボタン表示制御）
+// SD ステータス取得
 async function loadSdStatus() {
   try {
     const r = await api('/generate/sd-status');
     if (!r.ok) return;
     const d = await r.json();
-    const btnTl = document.getElementById('btn-translate');
-    if (btnTl) btnTl.style.display = d.lt_enabled ? '' : 'none';
+    sdEnabled = d.enabled;
+    const sec = document.getElementById('avatar-gen-section');
+    if (sec) sec.style.display = sdEnabled ? 'block' : 'none';
+    if (d.width && d.height) {
+      document.documentElement.style.setProperty('--gen-img-ratio', `${d.width}/${d.height}`);
+    }
   } catch(_) {}
 }
 
@@ -654,35 +1246,6 @@ async function loadSelectableModels() {
 function selectGenModel(btn) {
   document.querySelectorAll('#gen-models .gen-type-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-}
-
-// プロンプト翻訳（日→英）
-async function translatePrompt() {
-  const ta = document.getElementById('gen-main-prompt');
-  const statusEl = document.getElementById('gen-translate-status');
-  const btn = document.getElementById('btn-translate');
-  const text = ta?.value?.trim();
-  if (!text) return;
-  btn.disabled = true; btn.textContent = '翻訳中...';
-  if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '🌐 翻訳しています...'; }
-  try {
-    const r = await api('/generate/translate', {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    });
-    if (!r.ok) {
-      const e = await r.json().catch(() => ({}));
-      if (statusEl) statusEl.textContent = '❌ ' + (e.detail || '翻訳に失敗しました');
-      return;
-    }
-    const d = await r.json();
-    ta.value = d.translated_text;
-    if (statusEl) { statusEl.textContent = '✓ 翻訳しました'; setTimeout(() => { statusEl.style.display = 'none'; }, 3000); }
-  } catch(e) {
-    if (statusEl) statusEl.textContent = '❌ 通信エラー: ' + e.message;
-  } finally {
-    btn.disabled = false; btn.textContent = '🌐 日→英 翻訳';
-  }
 }
 
 // 選択中モデルIDを取得
@@ -714,13 +1277,17 @@ async function loadGenTemplates() {
     el._templates = templates;
     el.querySelectorAll('.gen-tmpl-btn').forEach(btn => {
       btn.addEventListener('click', function() {
+        const wasActive = this.classList.contains('active');
         el.querySelectorAll('.gen-tmpl-btn').forEach(b => b.classList.remove('active'));
+        if (wasActive) {
+          // 再クリックで解除
+          el.dataset.selectedId = '';
+          return;
+        }
         this.classList.add('active');
         const idx = parseInt(this.dataset.idx);
         const t = el._templates[idx];
-        const promptEl = document.getElementById('gen-main-prompt');
-        if (promptEl && t) promptEl.value = stripGenderKeywords(t.prompt);
-        // template_id を記録
+        // template_id を記録（プロンプト欄には入れない）
         el.dataset.selectedId = t ? t.id : '';
       });
     });
@@ -767,6 +1334,24 @@ function renderGenResults(imgs) {
   wrap.style.display = 'block';
 }
 
+// すべて選択 / すべて解除トグル
+function selectAllPending() {
+  const cards = document.querySelectorAll('.gen-img-card');
+  const btn = document.getElementById('btn-select-all');
+  const allSelected = cards.length > 0 && cards.length === selectedGenIds.size;
+  if (allSelected) {
+    selectedGenIds.clear();
+    cards.forEach(card => card.classList.remove('selected'));
+    if (btn) btn.textContent = '☐ すべて選択';
+  } else {
+    cards.forEach(card => {
+      const id = parseInt(card.dataset.id);
+      if (id) { selectedGenIds.add(id); card.classList.add('selected'); }
+    });
+    if (btn) btn.textContent = '☑ すべて選択';
+  }
+}
+
 // 画像を選択/解除（右下○タップ）
 function selectGenImage(id) {
   if (selectedGenIds.has(id)) {
@@ -787,14 +1372,14 @@ function openGenFullscreen(id) {
   const overlay = document.createElement('div');
   overlay.className = 'gen-fullscreen';
   overlay.innerHTML = `
-    <div class="gen-fs-img-wrap" onclick="this.parentElement.remove()">
-      <img src="${esc(url)}" alt="">
-    </div>
-    <div class="gen-fs-rating" data-id="${id}">
-      <button class="gen-rate-btn ${rating === -1 ? 'active-neg' : ''}" onclick="rateGenImage(${id},-1,this)" title="悪い">👎</button>
-      <button class="gen-rate-btn ${rating === 1 ? 'active-1' : ''}" onclick="rateGenImage(${id},1,this)">まあ良い</button>
-      <button class="gen-rate-btn ${rating === 2 ? 'active-2' : ''}" onclick="rateGenImage(${id},2,this)">良い</button>
-      <button class="gen-rate-btn ${rating === 3 ? 'active-3' : ''}" onclick="rateGenImage(${id},3,this)">凄く良い</button>
+    <div class="gen-fs-img-wrap">
+      <img src="${esc(url)}" alt="" onclick="this.closest('.gen-fullscreen').remove()">
+      <div class="gen-fs-rating" data-id="${id}">
+        <button class="gen-rate-btn ${rating === -1 ? 'active-neg' : ''}" onclick="event.stopPropagation();rateGenImage(${id},-1,this)">👎</button>
+        <button class="gen-rate-btn ${rating === 1 ? 'active-1' : ''}" onclick="event.stopPropagation();rateGenImage(${id},1,this)">いまいち</button>
+        <button class="gen-rate-btn ${rating === 2 ? 'active-2' : ''}" onclick="event.stopPropagation();rateGenImage(${id},2,this)">良い</button>
+        <button class="gen-rate-btn ${rating === 3 ? 'active-3' : ''}" onclick="event.stopPropagation();rateGenImage(${id},3,this)">凄く良い</button>
+      </div>
     </div>`;
   document.body.appendChild(overlay);
 }
@@ -821,9 +1406,6 @@ async function rateGenImage(id, rating, btnEl) {
     });
     _genImgRatings[id] = rating;
   } catch(_) {}
-
-  // 1.2秒後にフルスクリーンを閉じる
-  setTimeout(() => { if (overlay) overlay.remove(); }, 1200);
 }
 
 // マイナス評価フィードバックポップアップ
@@ -899,9 +1481,11 @@ function stripGenderKeywords(prompt) {
 }
 
 // キャラクタータイプ選択
+let _lastCharType = '';  // 最後に選択されたキャラタイプ（性別自動入力用）
 function selectCharType(btn) {
   document.querySelectorAll('#gen-char-type .gen-type-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  _lastCharType = btn.dataset.type || '';
 }
 
 // 選択中のキャラクタータイプキーワードを取得
@@ -992,23 +1576,28 @@ async function resumeQueue() {
 // 画像生成
 async function generateImages() {
   const basePrompt = document.getElementById('gen-main-prompt')?.value.trim();
-  if (!basePrompt) {
-    showInlineError('gen-prompt-error', 'プロンプトを入力してください', 'gen-main-prompt');
+  const tmplContainer = document.getElementById('gen-templates');
+  const templateId = tmplContainer?.dataset.selectedId ? parseInt(tmplContainer.dataset.selectedId) : null;
+  if (!basePrompt && !templateId) {
+    showInlineError('gen-prompt-error', 'プロンプトを入力するか、テンプレートを選択してください', 'gen-main-prompt');
     return;
   }
   clearInlineError('gen-prompt-error');
+  let tmplPrompt = '';
+  if (templateId && tmplContainer._templates) {
+    const tmpl = tmplContainer._templates.find(t => t.id === templateId);
+    if (tmpl) tmplPrompt = stripGenderKeywords(tmpl.prompt);
+  }
 
-  // キャラクタータイプキーワードをプロンプト先頭に付加
+  // キャラクタータイプキーワード + テンプレートプロンプト + ユーザープロンプトを結合
   const typeKeyword = getCharTypeKeyword();
-  const prompt = typeKeyword ? `${typeKeyword}, ${basePrompt}` : basePrompt;
+  const parts = [typeKeyword, tmplPrompt, basePrompt].filter(Boolean);
+  const prompt = parts.join(', ');
 
   const btn = document.getElementById('btn-gen-6');
   const status = document.getElementById('gen-main-status');
   btn.disabled = true; btn.textContent = '⏳ キューに追加中...';
   if (status) { status.style.display = 'block'; status.textContent = '⏳ キューに追加しています...'; }
-
-  const tmplContainer = document.getElementById('gen-templates');
-  const templateId = tmplContainer?.dataset.selectedId ? parseInt(tmplContainer.dataset.selectedId) : null;
 
   try {
     const r = await api('/generate/image', {
@@ -1333,6 +1922,13 @@ function goToCreateStep2() {
   document.getElementById('cr-step-ind-2').classList.add('active');
   // タグ初期化（まだなら）
   initTagSelects();
+  // 画像生成のキャラタイプから性別を自動セット
+  const activeType = document.querySelector('#gen-char-type .gen-type-btn.active');
+  const typeVal = activeType ? activeType.dataset.type : _lastCharType;
+  if (typeVal) {
+    const genderSel = document.getElementById('cr-gender');
+    if (genderSel) genderSel.value = typeVal;
+  }
   // 先頭にスクロール
   document.getElementById('create-form').scrollTop = 0;
   document.getElementById('cr-name').focus();
@@ -1364,6 +1960,67 @@ function closeSidebar() {
 function esc(s) {
   if (!s) return '';
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// === TTS読み上げ ===
+function ttsPlay(btn) {
+  // 再生中なら停止
+  if (_ttsAudio && _ttsPlayingBtn === btn) {
+    ttsStop();
+    return;
+  }
+  ttsStop(); // 他のメッセージが再生中なら停止
+
+  const msgEl = btn.closest('.msg-ai');
+  if (!msgEl) return;
+  // ボタン自身のテキストを除いたメッセージ本文を取得
+  const clone = msgEl.cloneNode(true);
+  clone.querySelectorAll('.tts-btn').forEach(el => el.remove());
+  const text = (clone.textContent || '').trim();
+  if (!text) return;
+
+  btn.classList.add('tts-loading');
+  btn.textContent = '...';
+
+  fetch(TTS_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ text: text.slice(0, 200) }),
+  })
+    .then(res => {
+      if (!res.ok) throw new Error('TTS error');
+      return res.blob();
+    })
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      _ttsAudio = new Audio(url);
+      _ttsPlayingBtn = btn;
+      btn.classList.remove('tts-loading');
+      btn.classList.add('tts-playing');
+      btn.textContent = '\u25A0'; // stop icon
+      _ttsAudio.onended = () => ttsStop();
+      _ttsAudio.onerror = () => ttsStop();
+      _ttsAudio.play();
+    })
+    .catch(() => {
+      btn.classList.remove('tts-loading');
+      btn.textContent = '\uD83D\uDD0A';
+      showToast('音声の生成に失敗しました', 'error');
+    });
+}
+
+function ttsStop() {
+  if (_ttsAudio) {
+    _ttsAudio.pause();
+    _ttsAudio.src = '';
+    _ttsAudio = null;
+  }
+  if (_ttsPlayingBtn) {
+    _ttsPlayingBtn.classList.remove('tts-playing');
+    _ttsPlayingBtn.textContent = '\uD83D\uDD0A';
+    _ttsPlayingBtn = null;
+  }
 }
 
 // 右下トースト通知（alert代替）
@@ -1414,29 +2071,67 @@ function clearInlineError(errorId) {
   if (el) { el.textContent = ''; el.classList.remove('show'); }
 }
 
-// === テキストエリア自動リサイズ ===
+// === contenteditable 高さ自動調整 ===
 document.addEventListener('DOMContentLoaded', () => {
-  const ta = document.getElementById('chat-input');
-  if (ta) {
-    ta.addEventListener('input', () => {
-      ta.style.height = 'auto';
-      ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+  const el = document.getElementById('chat-input');
+  if (el) {
+    el.addEventListener('input', () => {
+      // contenteditableは自動でサイズ調整されるが、max-heightをCSSで制限
+      // 空になったらプレースホルダー表示のためtrimチェック
+      if (!el.textContent.trim() && !el.querySelector('br')) {
+        el.innerHTML = '';
+      }
     });
   }
 });
 
 // ブラウザ戻る/進むでハッシュが変わったら画面を切り替える
+// popstate 時は pushState せず replaceState で対応（戻るループ防止）
 window.addEventListener('popstate', () => {
   const screen = location.hash.slice(1) || 'home';
+  _navReplace = true;
   navTo(screen);
+  _navReplace = false;
 });
 
 // === 初期化 ===
 (async () => {
   await initAuth();
-  // リロード・直リンク時はURLハッシュの画面を復元
-  const initScreen = location.hash.slice(1) || 'home';
-  const validScreens = ['home', 'community', 'chat-list', 'create', 'generate', 'profile'];
-  navTo(validScreens.includes(initScreen) ? initScreen : 'home');
+  // SD設定の縦横比を早期に取得（生成画像カードの比率に必要）
+  await loadSdStatus();
+  // リロード・直リンク時はURLハッシュの画面を復元（初回は replaceState で履歴を汚さない）
+  const hashVal = location.hash.slice(1) || 'home';
+  const chatMatch = hashVal.match(/^chat\/(\d+)$/);
+  _navReplace = true;
+  if (chatMatch) {
+    openConversation(parseInt(chatMatch[1]));
+  } else {
+    const validScreens = ['home', 'community', 'chat-list', 'create', 'generate', 'profile', 'char-detail'];
+    navTo(validScreens.includes(hashVal) ? hashVal : 'home');
+  }
+  _navReplace = false;
   await loadConversations();
+
+  // キーボード開閉時にチャット画面を調整（スマホ対応）
+  if (window.visualViewport) {
+    const fullH = window.innerHeight;
+    const onVVResize = () => {
+      const chatScreen = document.getElementById('screen-chat');
+      if (!chatScreen) return;
+      const vvH = window.visualViewport.height;
+      const ratio = vvH / fullH;
+      const kbOpen = ratio < 0.75;
+      // チャット画面の高さをビジュアルビューポートに合わせる
+      chatScreen.style.height = kbOpen ? vvH + 'px' : '';
+      // キーボードが開いたら背景画像を顔中心に（上端基準）
+      if (chatScreen.style.backgroundImage) {
+        chatScreen.style.backgroundPosition = kbOpen ? 'center top' : 'center 15%';
+        chatScreen.style.backgroundSize = kbOpen ? 'auto 100vh' : 'cover';
+      }
+      // body に kb-open クラスを付与（CSS連携用）
+      document.body.classList.toggle('kb-open', kbOpen);
+    };
+    window.visualViewport.addEventListener('resize', onVVResize);
+    window.visualViewport.addEventListener('scroll', onVVResize);
+  }
 })();

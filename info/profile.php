@@ -25,6 +25,7 @@ $profile = $stmt->fetch();
 
 $profileError = $profileSuccess = '';
 $pwError = $pwSuccess = '';
+$ageError = $ageSuccess = '';
 $msgMap = ['resent' => '確認メールを再送しました', 'cancel_email' => '確認待ちのメールアドレス変更をキャンセルしました'];
 $verifyMsg = $msgMap[$_GET['msg'] ?? ''] ?? (isset($_GET['msg']) ? htmlspecialchars($_GET['msg']) : '');
 
@@ -103,6 +104,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $pwSuccess = 'パスワードを変更しました';
         } else {
             $pwError = $result;
+        }
+    } elseif ($_POST['action'] === 'age_verify') {
+        $birthYear = (int)($_POST['birth_year'] ?? 0);
+        $ageError = $ageSuccess = '';
+        $currentYear = (int)date('Y');
+        $hasSocial = !empty($socialAccounts);
+        if (!$hasSocial) {
+            $ageError = '年齢認証にはGoogleまたはLINEなどのソーシャルアカウント連携が必要です';
+        } elseif ($birthYear < 1900 || $birthYear > $currentYear) {
+            $ageError = '正しい生まれ年を入力してください';
+        } elseif (($currentYear - $birthYear) < 18) {
+            $ageError = '18歳以上のユーザーのみ年齢認証を行えます';
+        } else {
+            $db->prepare("UPDATE users SET birth_year = ?, age_verified_at = datetime('now','localtime') WHERE id = ?")
+               ->execute([$birthYear, $user['id']]);
+            $_SESSION['asobi_age_verified'] = true;
+            $ageSuccess = '年齢認証が完了しました';
+            $stmt->execute([$user['id']]);
+            $profile = $stmt->fetch();
         }
     }
 }
@@ -367,6 +387,31 @@ $lastSentAt   = $pendingRow ? $pendingRow['last_sent_at'] : null;
       transition: opacity 0.2s;
     }
     .btn-resend:hover { opacity: 0.75; }
+    /* 年齢認証 */
+    .age-verify-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      margin-bottom: 16px;
+    }
+    .age-verify-status.verified   { background: #f0fdf4; border: 1px solid #bbf7d0; color: #16a34a; }
+    .age-verify-status.unverified { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+    input[type=number].birth-year-input {
+      width: 120px;
+      padding: 11px 14px;
+      background: #f9fafb;
+      color: #2d2d3a;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+    }
+    input[type=number].birth-year-input:focus { border-color: #a855f7; box-shadow: 0 0 0 3px rgba(168,85,247,0.1); background: #fff; }
   </style>
 </head>
 <body>
@@ -402,10 +447,11 @@ $lastSentAt   = $pendingRow ? $pendingRow['last_sent_at'] : null;
         <?= $profile['role'] === 'admin' ? '管理者' : 'ユーザー' ?>
       </span>
       <nav class="sidebar-links">
-        <a href="#profile"  class="nav-link">プロフィール編集</a>
-        <a href="#password" class="nav-link">パスワード変更</a>
-        <a href="#social"   class="nav-link">ソーシャル連携</a>
-        <a href="#account"  class="nav-link">アカウント情報</a>
+        <a href="#profile"    class="nav-link">プロフィール編集</a>
+        <a href="#password"   class="nav-link">パスワード変更</a>
+        <a href="#social"     class="nav-link">ソーシャル連携</a>
+        <a href="#age-verify" class="nav-link">年齢認証<?php if (empty($profile['age_verified_at'])): ?> <span style="color:#b45309;font-size:0.75em;">未認証</span><?php endif; ?></a>
+        <a href="#account"    class="nav-link">アカウント情報</a>
         <div class="sidebar-divider"></div>
         <?php if ($profile['role'] === 'admin'): ?>
           <a href="/admin/">管理画面</a>
@@ -571,6 +617,45 @@ $lastSentAt   = $pendingRow ? $pendingRow['last_sent_at'] : null;
         </div>
       </div>
 
+      <!-- 年齢認証 -->
+      <div class="section-card" id="age-verify">
+        <h2>年齢認証</h2>
+        <?php if (!empty($profile['age_verified_at'])): ?>
+          <div class="age-verify-status verified">
+            ✓ 認証済み（<?= htmlspecialchars($profile['age_verified_at']) ?>）
+          </div>
+          <p style="font-size:0.85rem;color:#6b7280;">年齢認証は完了しています。</p>
+        <?php else: ?>
+          <?php if (!empty($_GET['age_verify'])): ?>
+            <div class="message error" style="margin-bottom:16px;">
+              このコンテンツを利用するには年齢認証が必要です。
+            </div>
+          <?php endif; ?>
+          <div class="age-verify-status unverified">
+            未認証 — 18歳以上であることを確認します
+          </div>
+          <?php if ($ageError): ?><div class="message error"><?= htmlspecialchars($ageError) ?></div><?php endif; ?>
+          <?php if ($ageSuccess): ?><div class="message success"><?= htmlspecialchars($ageSuccess) ?></div><?php endif; ?>
+          <?php if (empty($socialAccounts)): ?>
+            <div class="message error" style="margin-bottom:16px;">
+              年齢認証にはソーシャルアカウント（Google・LINE等）の連携が必要です。<br>
+              先に「<a href="#social">ソーシャル連携</a>」セクションでアカウントを連携してください。
+            </div>
+          <?php else: ?>
+          <form method="POST" action="">
+            <input type="hidden" name="action" value="age_verify">
+            <div class="field-group">
+              <label for="birth_year">生まれ年</label>
+              <input type="number" id="birth_year" name="birth_year" class="birth-year-input"
+                     min="1900" max="<?= date('Y') ?>" placeholder="例: 1990" required>
+              <p class="hint">18歳未満の方は認証できません。</p>
+            </div>
+            <button type="submit">年齢認証する</button>
+          </form>
+          <?php endif; ?>
+        <?php endif; ?>
+      </div>
+
       <!-- アカウント情報 -->
       <div class="section-card" id="account">
         <h2>アカウント情報</h2>
@@ -591,7 +676,7 @@ $lastSentAt   = $pendingRow ? $pendingRow['last_sent_at'] : null;
       <p>&copy; 2026 あそび</p>
     </div>
   </footer>
-  <script src="/assets/js/common.js?v=20260327e"></script>
+  <script src="/assets/js/common.js?v=20260327h"></script>
   <?php if ($socialMsg): ?>
   <div id="toast" class="toast <?= in_array($socialMsg, ['linked', 'success']) ? 'success' : 'error' ?>">
     <?php
@@ -620,7 +705,7 @@ $lastSentAt   = $pendingRow ? $pendingRow['last_sent_at'] : null;
     }
 
     // サイドバー アクティブリンク
-    const sections = ['profile', 'password', 'social', 'account'];
+    const sections = ['profile', 'password', 'social', 'age-verify', 'account'];
     const navLinks = document.querySelectorAll('.nav-link');
     function updateActive() {
       let current = sections[0];
@@ -634,6 +719,12 @@ $lastSentAt   = $pendingRow ? $pendingRow['last_sent_at'] : null;
     }
     updateActive();
     window.addEventListener('scroll', updateActive, { passive: true });
+
+    <?php if (!empty($_GET['age_verify'])): ?>
+    setTimeout(() => {
+      document.getElementById('age-verify')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+    <?php endif; ?>
   </script>
 
   <!-- メールキャンセル確認モーダル -->
