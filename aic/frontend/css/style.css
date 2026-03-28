@@ -212,6 +212,7 @@ body {
   border-bottom-left-radius: 4px;
   position: relative;
   align-self: flex-start;
+  min-width: 84px;
 }
 .msg-ai-name { font-size: 0.84rem; color: var(--accent-light); margin-bottom: 4px; font-weight: 600; }
 
