@@ -1136,7 +1136,12 @@ function parseMessageSegments(text) {
 // TTS/SEマーカーを除去して表示用テキストを返す
 function getDisplayText(text) {
   if (!text) return '';
-  return text.replace(/\[[^\]]*\]/g, '').replace(/\{[^}]*\}/g, '').trim();
+  return text
+    .replace(/\[[^\]]*\]/g, '')   // 完結した [...]
+    .replace(/\[[^\]]*$/g, '')    // ストリーミング中の未完成 [...
+    .replace(/\{[^}]*\}/g, '')    // 完結した {...}
+    .replace(/\{[^}]*$/g, '')     // ストリーミング中の未完成 {...
+    .trim();
 }
 
 // === メッセージ長押し削除 ===
@@ -1343,8 +1348,11 @@ async function _sendRequest(msg, aiMsg, chatEl) {
           const data = JSON.parse(line.slice(6));
           if (data.text) {
             aiText += data.text;
-            // STATE・TTSマーカー除去して表示
-            const stripped = aiText.replace(/<<<STATE>>>[\s\S]*?<<\/STATE>>>/g, '').replace(/<<<STATE>>>[\s\S]*$/g, '');
+            // STATE・TTSマーカー除去して表示（未完成タグも除去）
+            const stripped = aiText
+              .replace(/<<<STATE>>>[\s\S]*?<<\/STATE>>>/g, '')  // 完結したSTATEブロック
+              .replace(/<<<STATE>>>[\s\S]*$/g, '')               // 未完成のSTATEブロック
+              .replace(/<<<[A-Z]*$/g, '');                       // <<< 途中のタグ
             aiMsg.innerHTML = esc(getDisplayText(stripped));
             chatEl.scrollTop = chatEl.scrollHeight;
           }
