@@ -1,4 +1,5 @@
 """会話API"""
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
@@ -145,7 +146,7 @@ async def get_conversation(conv_id: int, user: User = Depends(require_user), db:
             "id": char.id, "name": char.name, "avatar_url": char.avatar_url,
             "ai_model": char.ai_model, "is_deleted": char.is_deleted,
             "voice_model": char.voice_model,
-            "tts_styles": __import__("json").loads(char.tts_styles or "[]") if char.tts_styles else [],
+            "tts_styles": json.loads(char.tts_styles) if char.tts_styles else [],
         } if char else None,
         "title": conv.title,
         "messages": messages,
