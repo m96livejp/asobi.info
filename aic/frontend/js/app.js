@@ -1375,7 +1375,7 @@ async function sendMessage() {
 // ユーザーメッセージを1文字ずつ表示するアニメーション
 async function _typeUserMsg(el, text, chatEl) {
   const chars = [...text]; // Unicode（絵文字等）対応
-  const totalMs = Math.min(1000, Math.max(200, chars.length * 30));
+  const totalMs = Math.min(2500, Math.max(300, chars.length * 60));
   const perChar = totalMs / chars.length;
   let displayed = '';
   for (const char of chars) {
