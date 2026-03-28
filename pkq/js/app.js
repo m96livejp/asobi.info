@@ -321,7 +321,7 @@ const PQApp = {
                   ${uniqueIngs.map(iconHtml).join('')}
                 </div>`;
               })()}
-              <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.88rem;">
+              ${(g.ingredients && g.ingredients.length > 0) ? `<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.88rem;">
                 <div>
                   <span style="color:var(--accent);font-weight:600;">素材</span>
                   <span style="color:var(--text-secondary);margin-left:6px;">${escapeHtml(g.ingredient_hint || '—')}</span>
@@ -330,7 +330,7 @@ const PQApp = {
                   <span style="color:var(--accent);font-weight:600;">ポケモン</span>
                   <span style="color:var(--text-secondary);margin-left:6px;">${escapeHtml(g.pokemon_hint || '—')}</span>
                 </div>
-              </div>
+              </div>` : ''}
             </div>
           </div>
         </div>

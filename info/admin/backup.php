@@ -5,7 +5,7 @@ session_write_close();
 
 // ─── 手動バックアップ実行（HTML出力より前に処理） ───
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'run') {
-    shell_exec('nohup /opt/asobi/backup.sh >> /var/log/asobi_backup.log 2>&1 &');
+    shell_exec('nohup /opt/asobi/backup.sh > /dev/null 2>&1 &');
     header('Location: /admin/backup.php?started=1');
     exit;
 }

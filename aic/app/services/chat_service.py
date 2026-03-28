@@ -15,7 +15,7 @@ async def get_ai_settings(db: AsyncSession) -> AiSettings | None:
     return result.scalar_one_or_none()
 
 
-DEFAULT_RESPONSE_GUIDELINE = "キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。"
+DEFAULT_RESPONSE_GUIDELINE = "キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。返答は基本的に20〜70文字の短い返事を心がけてください。長い説明が必要な場合のみ例外的に長くしてください。箇条書きや見出しは使わず、会話調で答えてください。"
 
 
 def build_system_prompt(character, conv_state=None, state_enabled: bool = False, response_guideline: str | None = None, state_fields: list | None = None, tts_voice_params: str | None = None) -> str:
@@ -110,19 +110,20 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False,
             mem_lines = "\n".join(f"- {m}" for m in memories)
             parts.append(f"## 記憶\n{mem_lines}")
 
-        # STATE JSONテンプレートを動的生成
+        # STATE JSONテンプレートを動的生成（TTS指示の後に配置するため保持）
         state_template_keys = {f["key"]: "..." for f in active_fields}
         state_template_keys["memories"] = ["..."]
         state_template_str = json.dumps(state_template_keys, ensure_ascii=False)
-
-        parts.append(
-            "## 応答ルール\n"
-            "通常の会話テキストを返した後、必ず以下の形式でステータスを返してください。\n"
+        _state_instruction = (
+            "## STATEブロック（必須）\n"
+            "会話テキストを返した後、必ず以下の形式でステータスを返してください。\n"
             "ステータスはキャラクターの性格に基づき、会話の流れに応じて自然に変化させてください。\n"
             "記憶には会話の中で覚えておくべき重要事項を追加・削除してください。\n"
             "各ステータスは短く簡潔に記述してください。\n\n"
             f"<<<STATE>>>\n{state_template_str}\n<<</STATE>>>"
         )
+    else:
+        _state_instruction = None
 
     # TTS音声スタイル指示（キャラクターに音声設定がある場合）
     if character.voice_model and character.tts_styles:
@@ -156,6 +157,10 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False,
                     "例：[ドアをノックする]{元気}失礼します。{ノーマル}初めまして。\n"
                     "スタイルは全てのセグメントに必ず付けてください。"
                 )
+
+    # STATEブロック指示はTTS指示の後に配置（最後に置くことでAIが確実に従う）
+    if _state_instruction:
+        parts.append(_state_instruction)
 
     return "\n\n".join(parts)
 

@@ -6,6 +6,67 @@ session_write_close();
 $commonDb = new PDO('sqlite:/opt/asobi/data/users.sqlite');
 $commonDb->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
+// ─── API利用ログ: テーブル作成 & ログファイルインポート ───
+$commonDb->exec("CREATE TABLE IF NOT EXISTS api_usage_logs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts           TEXT NOT NULL,
+    user_id      INTEGER,
+    username     TEXT NOT NULL DEFAULT '',
+    char_name    TEXT NOT NULL DEFAULT '',
+    provider     TEXT NOT NULL DEFAULT '',
+    model        TEXT NOT NULL DEFAULT '',
+    input_chars  INTEGER NOT NULL DEFAULT 0,
+    output_chars INTEGER NOT NULL DEFAULT 0,
+    ip           TEXT NOT NULL DEFAULT '',
+    user_agent   TEXT NOT NULL DEFAULT '',
+    cost         INTEGER NOT NULL DEFAULT 0,
+    currency     TEXT NOT NULL DEFAULT 'points'
+)");
+
+$_logFile = '/opt/asobi/aic/data/api_usage.log';
+$_tmpFile = $_logFile . '.import_lock';
+if (file_exists($_logFile) && !file_exists($_tmpFile) && filesize($_logFile) > 0) {
+    if (@rename($_logFile, $_tmpFile)) {
+        $stmt = $commonDb->prepare(
+            "INSERT INTO api_usage_logs(ts,user_id,username,char_name,provider,model,input_chars,output_chars,ip,user_agent,cost,currency)
+             VALUES(:ts,:uid,:uname,:char,:prov,:model,:inc,:outc,:ip,:ua,:cost,:cur)"
+        );
+        $commonDb->beginTransaction();
+        $imported = 0;
+        foreach (file($_tmpFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            $d = @json_decode($line, true);
+            if (!$d) continue;
+            $stmt->execute([
+                ':ts'    => $d['ts']           ?? date('Y-m-d H:i:s'),
+                ':uid'   => $d['user_id']      ?? null,
+                ':uname' => $d['username']     ?? '',
+                ':char'  => $d['char_name']    ?? '',
+                ':prov'  => $d['provider']     ?? '',
+                ':model' => $d['model']        ?? '',
+                ':inc'   => (int)($d['input_chars']  ?? 0),
+                ':outc'  => (int)($d['output_chars'] ?? 0),
+                ':ip'    => $d['ip']           ?? '',
+                ':ua'    => $d['user_agent']   ?? '',
+                ':cost'  => (int)($d['cost']   ?? 0),
+                ':cur'   => $d['currency']     ?? 'points',
+            ]);
+            $imported++;
+        }
+        $commonDb->commit();
+        @unlink($_tmpFile);
+    }
+}
+
+// ─── API利用統計取得（直近30日）───
+$usageTotal  = (int)$commonDb->query("SELECT COUNT(*) FROM api_usage_logs WHERE ts >= datetime('now','localtime','-30 days')")->fetchColumn();
+$usageToday  = (int)$commonDb->query("SELECT COUNT(*) FROM api_usage_logs WHERE date(ts)=date('now','localtime')")->fetchColumn();
+$usageByUser = $commonDb->query("SELECT COALESCE(NULLIF(username,''),'(不明)') AS username, COUNT(*) AS cnt FROM api_usage_logs WHERE ts >= datetime('now','localtime','-30 days') GROUP BY username ORDER BY cnt DESC LIMIT 10")->fetchAll();
+$usageByModel= $commonDb->query("SELECT COALESCE(NULLIF(model,''),'(不明)') AS model, provider, COUNT(*) AS cnt FROM api_usage_logs WHERE ts >= datetime('now','localtime','-30 days') GROUP BY model,provider ORDER BY cnt DESC LIMIT 10")->fetchAll();
+$usageByDay  = $commonDb->query("SELECT date(ts) AS day, COUNT(*) AS cnt FROM api_usage_logs WHERE ts >= datetime('now','localtime','-29 days') GROUP BY day ORDER BY day")->fetchAll();
+$usageByDayMap = []; foreach($usageByDay as $r) $usageByDayMap[$r['day']] = (int)$r['cnt'];
+$usageDayLabels = $usageDayData = [];
+for($i=29;$i>=0;$i--){$d=date('Y-m-d',strtotime("-{$i} days"));$usageDayLabels[]=date('m/d',strtotime($d));$usageDayData[]=$usageByDayMap[$d]??0;}
+
 function getSetting(PDO $db, string $key, string $default = ''): string {
     $r = $db->prepare("SELECT value FROM site_settings WHERE key=?");
     $r->execute([$key]);
@@ -327,7 +388,7 @@ if ($ollamaEndpoint) {
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
         <button class="btn btn-primary" onclick="saveCard(this)">保存</button>
         <?php if ($ltCheckUrl): ?>
-        <button class="btn-check" onclick="checkApi(this, <?= htmlspecialchars(json_encode($ltCheckUrl)) ?>)">ローカル接続テスト</button>
+        <button class="btn-check" onclick="checkApi(this, <?= htmlspecialchars(json_encode($ltCheckUrl)) ?>)">ローカルテスト</button>
         <?php endif; ?>
         <button class="btn-check" onclick="checkApi(this, 'https://libretranslate.com/languages', document.getElementById('lt-free-result'))">無料版テスト</button>
       </div>
@@ -395,6 +456,63 @@ if ($ollamaEndpoint) {
       </div>
     </div>
 
+  </div>
+
+  <!-- ─── API利用状況 ─── -->
+  <hr style="border:none;border-top:1px solid #e0e4e8;margin:28px 0 22px">
+  <h2 style="font-size:1rem;font-weight:700;margin-bottom:16px;color:#1d2d3a;">📊 API利用状況</h2>
+
+  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+    <div style="background:#fff;border:1px solid #e0e4e8;border-radius:10px;padding:14px 22px;flex:1 1 120px;min-width:110px;">
+      <div style="font-size:0.72rem;color:#9ba8b5;margin-bottom:4px;">本日</div>
+      <div style="font-size:1.5rem;font-weight:700;color:#5567cc;"><?= number_format($usageToday) ?></div>
+    </div>
+    <div style="background:#fff;border:1px solid #e0e4e8;border-radius:10px;padding:14px 22px;flex:1 1 120px;min-width:110px;">
+      <div style="font-size:0.72rem;color:#9ba8b5;margin-bottom:4px;">直近30日</div>
+      <div style="font-size:1.5rem;font-weight:700;color:#1d2d3a;"><?= number_format($usageTotal) ?></div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <!-- 日別グラフ -->
+    <div style="grid-column:1/-1;background:#fff;border:1px solid #e0e4e8;border-radius:10px;padding:16px 18px;">
+      <div style="font-size:0.85rem;font-weight:600;color:#637080;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #f0f2f7;">日別チャット回数（直近30日）</div>
+      <div style="position:relative;height:160px;"><canvas id="usageDayChart"></canvas></div>
+    </div>
+    <!-- ユーザー別 -->
+    <div style="background:#fff;border:1px solid #e0e4e8;border-radius:10px;padding:16px 18px;">
+      <div style="font-size:0.85rem;font-weight:600;color:#637080;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f0f2f7;">ユーザー別（直近30日）</div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+        <thead><tr><th style="text-align:left;padding:4px 6px;color:#637080;font-size:0.74rem;">ユーザー</th><th style="text-align:right;padding:4px 6px;color:#637080;font-size:0.74rem;">回数</th></tr></thead>
+        <tbody>
+          <?php $maxU = max(1,(int)(($usageByUser[0]['cnt']??1)));
+          foreach($usageByUser as $r): $pct=round($r['cnt']/$maxU*100); ?>
+          <tr>
+            <td style="padding:4px 6px;"><?= htmlspecialchars($r['username']) ?><div style="background:#eef1fb;border-radius:3px;height:4px;margin-top:2px;"><div style="background:#7b8ed4;border-radius:3px;height:4px;width:<?=$pct?>%"></div></div></td>
+            <td style="text-align:right;padding:4px 6px;font-weight:600;color:#5567cc;"><?= number_format($r['cnt']) ?></td>
+          </tr>
+          <?php endforeach; ?>
+          <?php if(empty($usageByUser)): ?><tr><td colspan="2" style="padding:8px 6px;color:#9ba8b5;text-align:center;">データなし</td></tr><?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+    <!-- モデル別 -->
+    <div style="background:#fff;border:1px solid #e0e4e8;border-radius:10px;padding:16px 18px;">
+      <div style="font-size:0.85rem;font-weight:600;color:#637080;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f0f2f7;">モデル別（直近30日）</div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+        <thead><tr><th style="text-align:left;padding:4px 6px;color:#637080;font-size:0.74rem;">モデル</th><th style="text-align:right;padding:4px 6px;color:#637080;font-size:0.74rem;">回数</th></tr></thead>
+        <tbody>
+          <?php $maxM = max(1,(int)(($usageByModel[0]['cnt']??1)));
+          foreach($usageByModel as $r): $pct=round($r['cnt']/$maxM*100); ?>
+          <tr>
+            <td style="padding:4px 6px;"><?= htmlspecialchars($r['model'] ?: $r['provider'] ?: '(不明)') ?><div style="background:#eef1fb;border-radius:3px;height:4px;margin-top:2px;"><div style="background:#6edd8a;border-radius:3px;height:4px;width:<?=$pct?>%"></div></div></td>
+            <td style="text-align:right;padding:4px 6px;font-weight:600;color:#5567cc;"><?= number_format($r['cnt']) ?></td>
+          </tr>
+          <?php endforeach; ?>
+          <?php if(empty($usageByModel)): ?><tr><td colspan="2" style="padding:8px 6px;color:#9ba8b5;text-align:center;">データなし</td></tr><?php endif; ?>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <div class="save-toast" id="save-toast">保存しました</div>
@@ -627,6 +745,30 @@ if ($ollamaEndpoint) {
   }
 
   document.addEventListener('DOMContentLoaded', loadVvSpeakers);
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script>
+  new Chart(document.getElementById('usageDayChart'), {
+    type: 'bar',
+    data: {
+      labels: <?= json_encode($usageDayLabels, JSON_UNESCAPED_UNICODE) ?>,
+      datasets: [{
+        label: 'チャット回数',
+        data: <?= json_encode($usageDayData) ?>,
+        backgroundColor: 'rgba(101,120,210,0.7)',
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 15 }, grid: { display: false } },
+        y: { ticks: { font: { size: 10 } }, beginAtZero: true, grid: { color: '#f0f2f7' } }
+      }
+    }
+  });
   </script>
 
   <script src="/assets/js/common.js?v=20260327h"></script>

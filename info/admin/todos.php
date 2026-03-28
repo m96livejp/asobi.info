@@ -26,11 +26,12 @@ if (!is_array($siteList) || empty($siteList)) {
 $siteLabels = array_column($siteList, 'label', 'key');
 $areaLabels     = ['general' => '一般', 'admin' => '管理'];
 $priorityLabels = ['high' => '高', 'medium' => '中', 'low' => '低'];
-$statusPresets  = ['未着手', '対応中', '確認待ち', '完了', '再対応', '保留'];
+$statusPresets  = ['未着手', '対応中', '確認待ち', '完了', '保留'];
 
 // ステータスグループ定義
 $statusGroups = [
-    'active'  => ['label' => '処理中',  'statuses' => ['未着手', '対応中', '再対応']],
+    'pending' => ['label' => '処理前',  'statuses' => ['未着手']],
+    'active'  => ['label' => '処理中',  'statuses' => ['対応中']],
     'review'  => ['label' => '確認待ち', 'statuses' => ['確認待ち', '保留']],
     'done'    => ['label' => '完了',    'statuses' => ['完了']],
 ];
@@ -73,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'statu
     $status = trim($_POST['status'] ?? '');
     if ($id > 0 && $status !== '') {
         $extra = '';
-        if ($status === '対応中' || $status === '再対応') {
+        if ($status === '対応中') {
             $extra = ", started_at = COALESCE(started_at, datetime('now','localtime'))";
         } elseif ($status === '完了') {
             $extra = ", completed_at = datetime('now','localtime')";
@@ -102,9 +103,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hold_
     $id     = (int)($_POST['id'] ?? 0);
     $answer = trim($_POST['hold_answer'] ?? '');
     if ($id > 0 && $answer !== '') {
-        $db->prepare("UPDATE content_todos SET hold_answer = ?, status = '再対応', updated_at = datetime('now','localtime') WHERE id = ?")
+        $db->prepare("UPDATE content_todos SET hold_answer = ?, status = '未着手', updated_at = datetime('now','localtime') WHERE id = ?")
            ->execute([$answer, $id]);
-        $_SESSION['todo_msg'] = 'success:保留解除回答を記入し、ステータスを「再対応」に変更しました';
+        $_SESSION['todo_msg'] = 'success:保留解除回答を記入し、ステータスを「未着手」に変更しました';
         header('Location: /admin/todos.php?sel=' . $id); exit;
     }
 }
@@ -135,18 +136,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resul
                 $_SESSION['todo_msg'] = 'success:確認結果をOKに更新し、ステータスを「完了」に変更しました';
                 header('Location: /admin/todos.php'); exit;
             }
-            // 確認待ち + NG → 再対応（対応メモにNG理由を自動追記）
+            // 確認待ち + NG → 未着手（対応メモにNG理由を自動追記）
             if ($curRow && $curRow['status'] === '確認待ち' && str_starts_with($result, 'NG')) {
                 // 対応メモにNG理由を追記
                 $noteStmt = $db->prepare("SELECT status_note FROM content_todos WHERE id = ?");
                 $noteStmt->execute([$id]);
                 $noteRow = $noteStmt->fetch();
-                $currentNote = $noteRow['status_note'] ?? '';
-                $ngAppend = "\n\n【NG: " . date('m/d H:i') . '】' . ($ngReason ?: '理由なし');
-                $newNote = rtrim($currentNote) . $ngAppend;
-                $db->prepare("UPDATE content_todos SET status = '再対応', status_note = ?, result = '', updated_at = datetime('now','localtime') WHERE id = ?")
+                $currentNote = trim($noteRow['status_note'] ?? '');
+                $ngAppend = '【NG: ' . date('m/d H:i') . '】' . ($ngReason ?: '理由なし');
+                $newNote = $currentNote !== '' ? $currentNote . "\n\n" . $ngAppend : $ngAppend;
+                $db->prepare("UPDATE content_todos SET status = '未着手', status_note = ?, result = '', updated_at = datetime('now','localtime') WHERE id = ?")
                    ->execute([$newNote, $id]);
-                $_SESSION['todo_msg'] = 'success:確認結果をNGに更新し、ステータスを「再対応」に変更しました（対応メモにNG理由を追記）';
+                $_SESSION['todo_msg'] = 'success:確認結果をNGに更新し、ステータスを「未着手」に変更しました（対応メモにNG理由を追記）';
                 header('Location: /admin/todos.php'); exit;
             }
         }
@@ -467,130 +468,10 @@ function buildQuery(array $overrides): string {
       </div>
       <div class="sel-content"><?= htmlspecialchars($selItem['title']) ?></div>
 
-      <!-- ステータスフロー図 -->
-      <?php
-        $st = $selItem['status'];
-        $hasHold = ($selItem['hold_answer'] ?? '') !== '';
-        $hasNg   = str_starts_with($selItem['result'] ?? '', 'NG');
 
-        // メインフロー: [ラベル, 担当, ステータス値]
-        $mainSteps = [
-            ['未着手',   'ai',    '未着手'],
-            ['対応中',   'ai',    '対応中'],
-            ['確認待ち', 'admin', '確認待ち'],
-            ['完了',     '',      '完了'],
-        ];
-
-        // メインフローの現在位置
-        $mainIdx = -1;
-        $mainOrder = ['未着手' => 0, '対応中' => 1, '確認待ち' => 2, '完了' => 3];
-        if (isset($mainOrder[$st])) {
-            $mainIdx = $mainOrder[$st];
-        }
-        // 再対応は対応中の前段階扱い
-        if ($st === '再対応') $mainIdx = 1;
-
-        // 分岐フロー: 保留ルート
-        $holdBranch = [
-            ['保留',   'admin', '保留'],
-            ['再対応', 'ai',    '再対応'],
-        ];
-        $holdIdx = -1;
-        if ($st === '保留') $holdIdx = 0;
-        if ($st === '再対応' && $hasHold) $holdIdx = 1;
-        $showHold = ($st === '保留' || $hasHold);
-
-        // 分岐フロー: NGルート（保留と同じ構造）
-        $ngBranch = [
-            ['NG',     'admin', '_ng'],
-            ['再対応', 'ai',    '再対応'],
-        ];
-        $ngIdx = -1;
-        if ($st === '再対応' && $hasNg && !$hasHold) $ngIdx = 1;
-        $showNg = ($hasNg && !$showHold);
-      ?>
-      <div class="flow-chart">
-        <!-- メインフロー（上段） -->
-        <div class="flow-main">
-          <?php foreach ($mainSteps as $i => $step): ?>
-            <?php if ($i > 0): ?><span class="flow-arrow">→</span><?php endif; ?>
-            <?php
-              $cls = '';
-              if ($mainIdx >= 0 && $i < $mainIdx) $cls = 'done';
-              elseif ($mainIdx >= 0 && $i === $mainIdx) $cls = 'current';
-              // 保留中は確認待ち以降をスキップ表示
-              if ($st === '保留' && $i >= 2) $cls = 'skip';
-            ?>
-            <span class="flow-node <?= $cls ?>">
-              <?= $step[0] ?>
-              <?php if ($step[1]): ?>
-              <span class="flow-who <?= $step[1] ?>"><?= $step[1] === 'ai' ? 'AI' : '管理者' ?></span>
-              <?php endif; ?>
-            </span>
-          <?php endforeach; ?>
-        </div>
-
-        <?php if ($showHold || $showNg): ?>
-        <!-- 分岐フロー（下段） -->
-        <div class="flow-branches">
-          <?php if ($showHold): ?>
-          <div class="flow-branch">
-            <span class="flow-branch-label">保留ルート:</span>
-            <span class="flow-v-arrow">↓</span>
-            <?php foreach ($holdBranch as $i => $step): ?>
-              <?php if ($i > 0): ?><span class="flow-arrow">→</span><?php endif; ?>
-              <?php
-                $cls = '';
-                if ($holdIdx >= 0 && $i < $holdIdx) $cls = 'done';
-                elseif ($holdIdx >= 0 && $i === $holdIdx) $cls = 'current';
-                // 保留解除済みなら全部done
-                if ($hasHold && $st !== '保留' && $st !== '再対応') $cls = 'done';
-              ?>
-              <span class="flow-node <?= $cls ?>">
-                <?= $step[0] ?>
-                <span class="flow-who <?= $step[1] ?>"><?= $step[1] === 'ai' ? 'AI' : '管理者' ?></span>
-              </span>
-            <?php endforeach; ?>
-            <span class="flow-v-arrow">↑</span>
-            <span style="font-size:0.68rem;color:#9ba8b5;">対応中に戻る</span>
-          </div>
-          <?php endif; ?>
-
-          <?php if ($showNg): ?>
-          <div class="flow-branch">
-            <span class="flow-branch-label">NGルート:</span>
-            <span class="flow-v-arrow">↓</span>
-            <?php foreach ($ngBranch as $i => $step): ?>
-              <?php if ($i > 0): ?><span class="flow-arrow">→</span><?php endif; ?>
-              <?php
-                $cls = '';
-                if ($ngIdx >= 0 && $i < $ngIdx) $cls = 'done';
-                elseif ($ngIdx >= 0 && $i === $ngIdx) $cls = 'current';
-                // NG後に対応中以降に進んでいたら全done
-                if ($hasNg && in_array($st, ['対応中','確認待ち','完了'])) $cls = 'done';
-              ?>
-              <span class="flow-node <?= $cls ?>">
-                <?= $step[0] ?>
-                <span class="flow-who <?= $step[1] ?>"><?= $step[1] === 'ai' ? 'AI' : '管理者' ?></span>
-              </span>
-            <?php endforeach; ?>
-            <span class="flow-v-arrow">↑</span>
-            <span style="font-size:0.68rem;color:#9ba8b5;">対応中に戻る</span>
-          </div>
-          <?php endif; ?>
-        </div>
-        <?php endif; ?>
-
-        <div class="flow-legend">
-          <span><span class="flow-who ai">AI</span> Claude対応</span>
-          <span><span class="flow-who admin">管理者</span> あなたが対応</span>
-          <span style="color:#4338ca;">◉ 現在地</span>
-        </div>
-      </div>
-
-      <?php $isLocked = in_array($selItem['status'], ['対応中', '再対応']); ?>
+      <?php $isLocked = $selItem['status'] === '対応中'; ?>
       <?php if ($isLocked): ?>
-      <!-- 対応中/再対応: AI作業中のため編集不可 -->
+      <!-- 対応中: AI作業中のため編集不可 -->
       <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:16px 20px;margin-bottom:16px;">
         <div style="font-size:0.85rem;font-weight:600;color:#c2410c;margin-bottom:6px;">現在AIが対応中です</div>
         <div style="font-size:0.8rem;color:#9a3412;">ステータスが「<?= htmlspecialchars($selItem['status']) ?>」のため、管理者からの編集はできません。保留にする場合のみ変更可能です。</div>
@@ -612,10 +493,17 @@ function buildQuery(array $overrides): string {
         </div>
       </div>
       <?php else: ?>
+      <?php
+        $resultRaw = $selItem['result'] ?? '';
+        $isOk = $resultRaw === 'OK';
+        $isNg = str_starts_with($resultRaw, 'NG');
+        $ngReason = $isNg ? trim(substr($resultRaw, 2), ': ') : '';
+        $isAiNote = !$isOk && !$isNg && $resultRaw !== '';
+      ?>
       <div class="sel-actions">
-        <!-- 対応状況 -->
+        <!-- ① 対応状況 -->
         <div class="action-group">
-          <div class="action-group-title">対応状況</div>
+          <div class="action-group-title">① 対応状況</div>
           <form method="POST" action="" style="display:flex;gap:6px;align-items:center;margin-bottom:10px;">
             <input type="hidden" name="action" value="status">
             <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
@@ -623,7 +511,19 @@ function buildQuery(array $overrides): string {
               style="padding:7px 10px;border:2px solid #e0e4e8;border-radius:8px;font-size:0.85rem;font-family:inherit;width:120px;">
             <button type="submit" class="btn-save">保存</button>
           </form>
-          <div class="action-group-title">対応メモ</div>
+        </div>
+
+        <?php if ($isAiNote): ?>
+        <!-- ② AI対応内容（確認前に読む） -->
+        <div class="action-group">
+          <div class="action-group-title" style="color:#4338ca;">② AI対応内容</div>
+          <div style="background:#f0f4ff;border-left:3px solid #667eea;border-radius:0 8px 8px 0;padding:10px 14px;font-size:0.85rem;line-height:1.6;white-space:pre-wrap;"><?= htmlspecialchars($resultRaw) ?></div>
+        </div>
+        <?php endif; ?>
+
+        <!-- ③ 対応メモ -->
+        <div class="action-group">
+          <div class="action-group-title"><?= $isAiNote ? '③' : '②' ?> 対応メモ</div>
           <form method="POST" action="">
             <input type="hidden" name="action" value="status_note">
             <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
@@ -633,7 +533,7 @@ function buildQuery(array $overrides): string {
           </form>
         </div>
 
-        <!-- 保留解除回答 / 確認結果 -->
+        <!-- ④ 保留解除回答 / 確認結果 -->
         <div class="action-group">
           <?php $holdAnswer = $selItem['hold_answer'] ?? ''; ?>
           <?php if ($selItem['status'] === '保留'): ?>
@@ -644,7 +544,7 @@ function buildQuery(array $overrides): string {
             <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
             <textarea name="hold_answer" rows="3" placeholder="保留理由に対する回答を入力" required
               style="width:100%;padding:9px 12px;border:2px solid #e8a838;border-radius:8px;font-size:0.85rem;font-family:inherit;resize:vertical;line-height:1.6;margin-bottom:8px;"><?= htmlspecialchars($holdAnswer) ?></textarea>
-            <button type="submit" class="btn-save" style="background:linear-gradient(135deg,#e8a838,#d48820);">回答して再対応へ</button>
+            <button type="submit" class="btn-save" style="background:linear-gradient(135deg,#e8a838,#d48820);">回答して未着手へ</button>
           </form>
           <?php elseif ($holdAnswer !== ''): ?>
           <!-- 保留解除済み：回答表示 -->
@@ -652,13 +552,7 @@ function buildQuery(array $overrides): string {
           <div style="background:#fef9ee;border:1px solid #f0e0b8;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:0.85rem;line-height:1.6;white-space:pre-wrap;"><?= htmlspecialchars($holdAnswer) ?></div>
           <?php endif; ?>
 
-          <div class="action-group-title">確認結果</div>
-          <?php
-            $resultRaw = $selItem['result'] ?? '';
-            $isOk = $resultRaw === 'OK';
-            $isNg = str_starts_with($resultRaw, 'NG');
-            $ngReason = $isNg ? trim(substr($resultRaw, 2), ': ') : '';
-          ?>
+          <div class="action-group-title"><?= $isAiNote ? '④' : ($holdAnswer !== '' ? '③' : '②') ?> 確認結果</div>
           <?php if ($isNg): ?>
           <div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.85rem;line-height:1.6;">
             <span style="font-weight:600;color:#e11d48;">NG</span>
@@ -667,14 +561,6 @@ function buildQuery(array $overrides): string {
             <?php endif; ?>
           </div>
           <?php endif; ?>
-          <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px;">
-            <form method="POST" action="" style="margin:0;">
-              <input type="hidden" name="action" value="result">
-              <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
-              <input type="hidden" name="result_type" value="OK">
-              <button type="submit" class="btn-save" style="background:#388e3c;">✓ OK（完了）</button>
-            </form>
-          </div>
           <form method="POST" action="">
             <input type="hidden" name="action" value="result">
             <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
@@ -685,6 +571,14 @@ function buildQuery(array $overrides): string {
               <button type="submit" class="btn-save" style="background:#e74c3c;">✗ NG送信</button>
             </div>
           </form>
+          <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px;">
+            <form method="POST" action="" style="margin:0;">
+              <input type="hidden" name="action" value="result">
+              <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
+              <input type="hidden" name="result_type" value="OK">
+              <button type="submit" class="btn-save" style="background:#388e3c;">✓ OK（完了）</button>
+            </form>
+          </div>
 
           <!-- 削除 -->
           <div style="margin-top:20px;">
@@ -747,12 +641,12 @@ function buildQuery(array $overrides): string {
               <label>期日 <span style="color:#9ca3af;font-weight:400;">任意</span></label>
               <input type="date" name="due_date">
             </div>
-            <button type="submit" class="btn-primary">追加</button>
           </div>
           <div class="form-group" style="flex:2;min-width:320px;">
             <label>更新内容 <span style="color:#e74c3c;">*</span></label>
             <textarea name="title" rows="10" placeholder="修正・改善内容を入力（複数行可）" required
               style="width:100%;line-height:1.6;"></textarea>
+            <button type="submit" class="btn-primary" style="margin-top:10px;">追加</button>
           </div>
         </div>
       </form>
@@ -833,59 +727,52 @@ function buildQuery(array $overrides): string {
     <table class="todo-table">
       <thead>
         <tr style="cursor:default;">
-          <th>優先度</th>
-          <th>対象</th>
-          <th>更新内容</th>
-          <th>対応状況</th>
-          <th>NG理由</th>
-          <th>時間</th>
+          <th style="white-space:nowrap;">優先度/対象/ステータス</th>
+          <th>更新内容/対応メモ/NG理由</th>
         </tr>
       </thead>
       <tbody>
         <?php foreach ($todos as $t): ?>
         <tr class="<?= $selItem && $selItem['id'] == $t['id'] ? 'selected' : '' ?>"
             onclick="if(document.getElementById('todo-add-form').style.display!=='none')return;location.href='/admin/todos.php?sel=<?= $t['id'] ?>'">
-          <td><span class="badge badge-<?= $t['priority'] ?>"><?= $priorityLabels[$t['priority']] ?? $t['priority'] ?></span></td>
-          <td style="white-space:nowrap;">
-            <span class="badge badge-site"><?= htmlspecialchars($t['site']) ?></span><br>
-            <span class="badge badge-<?= $t['area'] ?? 'general' ?>" style="margin-top:3px;"><?= $areaLabels[$t['area'] ?? 'general'] ?></span>
+          <td style="vertical-align:top;white-space:nowrap;width:1%;">
+            <span class="badge badge-<?= $t['priority'] ?>"><?= $priorityLabels[$t['priority']] ?? $t['priority'] ?></span>
+            <div style="margin-top:4px;">
+              <span class="badge badge-site"><?= htmlspecialchars($t['site']) ?></span>
+              <span class="badge badge-<?= $t['area'] ?? 'general' ?>" style="margin-left:2px;"><?= $areaLabels[$t['area'] ?? 'general'] ?></span>
+            </div>
+            <div style="margin-top:5px;font-size:0.8rem;color:#1d2d3a;"><?= htmlspecialchars($t['status']) ?></div>
+            <div style="margin-top:6px;font-size:0.72rem;color:#9ba8b5;line-height:1.7;">
+              <?php
+                $due = $t['due_date'] ?? '';
+                if ($due) {
+                  $isOverdue = $due < date('Y-m-d') && !in_array($t['status'], ['完了', '保留'], true);
+                  echo '<div style="color:' . ($isOverdue ? '#e74c3c' : '#667eea') . ';">📅 ' . htmlspecialchars($due) . '</div>';
+                }
+              ?>
+              <div><?= substr($t['created_at'], 0, 10) ?> 登録</div>
+              <?php if (!empty($t['started_at'])): ?>
+              <div style="color:#667eea;"><?= substr($t['started_at'], 5, 11) ?> 開始</div>
+              <?php endif; ?>
+              <?php if (!empty($t['completed_at'])): ?>
+              <div style="color:#388e3c;"><?= substr($t['completed_at'], 5, 11) ?> 完了</div>
+              <?php endif; ?>
+            </div>
           </td>
-          <td>
+          <td style="vertical-align:top;">
             <span class="todo-title <?= $t['status'] === '完了' ? 'completed' : '' ?>"><?= htmlspecialchars($t['title']) ?></span>
             <?php if (($t['status_note'] ?? '') !== ''): ?>
             <div class="todo-note"><?= htmlspecialchars($t['status_note']) ?></div>
             <?php endif; ?>
-          </td>
-          <td style="white-space:nowrap;">
-            <?= htmlspecialchars($t['status']) ?>
-          </td>
-          <td>
             <?php
               $r = $t['result'] ?? '';
-              if (str_starts_with($r, 'NG')) {
+              if (str_starts_with($r, 'NG')):
                 $ngText = trim(substr($r, 2), ': ');
-                echo '<span style="color:#e74c3c;font-weight:600;" title="' . htmlspecialchars($ngText) . '">NG</span>';
-                if ($ngText) echo '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px;white-space:pre-wrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars(mb_substr($ngText, 0, 40)) . (mb_strlen($ngText) > 40 ? '…' : '') . '</div>';
-              } else {
-                echo '<span style="color:#ccc;">-</span>';
-              }
             ?>
-          </td>
-          <td style="font-size:0.72rem;white-space:nowrap;color:#9ba8b5;">
-            <?php
-              $due = $t['due_date'] ?? '';
-              if ($due) {
-                $isOverdue = $due < date('Y-m-d') && !in_array($t['status'], ['完了', '保留'], true);
-                $color = $isOverdue ? '#e74c3c' : '#667eea';
-                echo '<div style="color:' . $color . ';">📅 ' . htmlspecialchars($due) . ' 期限</div>';
-              }
-            ?>
-            <div><?= substr($t['created_at'], 0, 10) ?> 登録</div>
-            <?php if (!empty($t['started_at'])): ?>
-            <div style="color:#667eea;"><?= substr($t['started_at'], 5, 11) ?> 開始</div>
-            <?php endif; ?>
-            <?php if (!empty($t['completed_at'])): ?>
-            <div style="color:#388e3c;"><?= substr($t['completed_at'], 5, 11) ?> 完了</div>
+            <div style="margin-top:5px;padding:5px 9px;background:#fff1f2;border-left:3px solid #fca5a5;border-radius:4px;font-size:0.78rem;color:#e11d48;line-height:1.5;white-space:pre-wrap;">NG<?= $ngText ? ': ' . htmlspecialchars(mb_substr($ngText, 0, 80)) . (mb_strlen($ngText) > 80 ? '…' : '') : '' ?></div>
+            <?php elseif ($r !== '' && $r !== 'OK'): ?>
+            <!-- AI対応メモを一覧に表示（先頭100文字） -->
+            <div style="margin-top:5px;padding:5px 9px;background:#f0f4ff;border-left:3px solid #667eea;border-radius:4px;font-size:0.78rem;color:#3730a3;line-height:1.5;white-space:pre-wrap;"><?= htmlspecialchars(mb_substr($r, 0, 100)) . (mb_strlen($r) > 100 ? '…' : '') ?></div>
             <?php endif; ?>
           </td>
         </tr>
@@ -899,6 +786,50 @@ function buildQuery(array $overrides): string {
     <option value="<?= $sp ?>">
     <?php endforeach; ?>
   </datalist>
+
+  <!-- 対応フロー説明 -->
+  <div class="flow-chart" style="margin-top:32px;">
+    <div style="font-size:0.75rem;font-weight:600;color:#9ba8b5;margin-bottom:10px;">対応フロー</div>
+    <div class="flow-main">
+      <span class="flow-node">未着手 <span class="flow-who ai">AI</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-node">対応中 <span class="flow-who ai">AI</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-node">確認待ち <span class="flow-who admin">管理者</span></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-node">完了</span>
+    </div>
+    <div class="flow-branches">
+      <div class="flow-branch">
+        <span class="flow-branch-label">保留ルート:</span>
+        <span class="flow-v-arrow">↓</span>
+        <span class="flow-node">保留 <span class="flow-who admin">管理者</span></span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-node">未着手 <span class="flow-who ai">AI</span></span>
+        <span class="flow-v-arrow">↑</span>
+        <span style="font-size:0.68rem;color:#9ba8b5;">キューに戻る</span>
+      </div>
+      <div class="flow-branch">
+        <span class="flow-branch-label">NGルート:</span>
+        <span class="flow-v-arrow">↓</span>
+        <span class="flow-node">NG <span class="flow-who admin">管理者</span></span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-node">未着手 <span class="flow-who ai">AI</span></span>
+        <span class="flow-v-arrow">↑</span>
+        <span style="font-size:0.68rem;color:#9ba8b5;">キューに戻る</span>
+      </div>
+    </div>
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e0e4e8;font-size:0.72rem;color:#9ba8b5;line-height:1.6;">
+      <strong style="color:#637080;">ルール:</strong>
+      AI対応後は「対応メモ（result）」に変更内容の詳細を必ず記入すること。<br>
+      「OK」「完了」等の内容のないメモは禁止。ファイル名・変更箇所・実装内容を具体的に記述する。<br>
+      NGの場合は「未着手」に戻してキューに再投入（再対応ステータスは使わない）。
+    </div>
+    <div class="flow-legend">
+      <span><span class="flow-who ai">AI</span> Claude対応</span>
+      <span><span class="flow-who admin">管理者</span> あなたが対応</span>
+    </div>
+  </div>
 
   </main>
   </div>
