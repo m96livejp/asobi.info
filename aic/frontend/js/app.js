@@ -2703,6 +2703,8 @@ function editCurrentChar() {
 }
 
 function toggleAutoVoice() {
+  _chatMenuOpen = false;
+  document.getElementById('chat-menu-panel')?.classList.remove('open');
   _ttsAutoPlay = !_ttsAutoPlay;
   _updateAutoVoiceIcon();
   showToast(_ttsAutoPlay ? '自動音声をオンにしました' : '自動音声をオフにしました', 'info', 1500);
