@@ -727,6 +727,8 @@ async def list_all_images(
     db: AsyncSession = Depends(get_db),
     status: str | None = Query(None),
     user_id: int | None = Query(None),
+    rating: str | None = Query(None),   # "null"=未評価, "-1","1","2","3"=評価値
+    username: str | None = Query(None), # display_name 部分一致
     limit: int = Query(200, le=500),
     offset: int = Query(0, ge=0),
 ):
@@ -736,16 +738,34 @@ async def list_all_images(
         q = q.where(UserImage.status == status)
     if user_id:
         q = q.where(UserImage.user_id == user_id)
+    if rating == "null":
+        q = q.where(UserImage.rating == None)  # noqa: E711
+    elif rating is not None:
+        try:
+            q = q.where(UserImage.rating == int(rating))
+        except ValueError:
+            pass
+    if username:
+        q = q.where(User.display_name.ilike(f"%{username}%"))
     q = q.order_by(UserImage.id.desc()).limit(limit).offset(offset)
     result = await db.execute(q)
     rows = result.all()
 
     # total count
-    cq = select(func.count()).select_from(UserImage)
+    cq = select(func.count()).select_from(UserImage).join(User, User.id == UserImage.user_id, isouter=True)
     if status:
         cq = cq.where(UserImage.status == status)
     if user_id:
         cq = cq.where(UserImage.user_id == user_id)
+    if rating == "null":
+        cq = cq.where(UserImage.rating == None)  # noqa: E711
+    elif rating is not None:
+        try:
+            cq = cq.where(UserImage.rating == int(rating))
+        except ValueError:
+            pass
+    if username:
+        cq = cq.where(User.display_name.ilike(f"%{username}%"))
     total = (await db.execute(cq)).scalar()
 
     # SD設定から画像サイズ取得
@@ -767,6 +787,7 @@ async def list_all_images(
             "model": img.model,
             "seed": img.seed,
             "status": img.status,
+            "rating": img.rating,
             "is_deleted": img.is_deleted,
             "created_at": str(img.created_at) if img.created_at else "",
         } for img, display_name in rows],

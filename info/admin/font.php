@@ -194,5 +194,6 @@ function updatePreview() {
   document.getElementById('preview-box').style.fontFamily = "'PreviewFont', sans-serif";
 }
 </script>
+  <script src="/assets/js/common.js?v=20260327h"></script>
 </body>
 </html>

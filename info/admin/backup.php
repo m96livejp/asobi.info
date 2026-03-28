@@ -51,6 +51,13 @@ if (file_exists($logFile)) {
 $latest = $history[0] ?? null;
 $latestStatus = $isRunning ? 'running' : ($latest['status'] ?? null);
 $started = !empty($_GET['started']);
+
+// 当日バックアップ済みかチェック（完了ステータスかつ日付が今日）
+$todayDone = false;
+if (!$isRunning && $latest && $latest['status'] === 'ok') {
+    $latestDate = substr($latest['end'] ?? $latest['start'] ?? '', 0, 10);
+    $todayDone = ($latestDate === date('Y-m-d'));
+}
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -120,12 +127,17 @@ $started = !empty($_GET['started']);
         <strong>実行記録なし</strong>
       <?php endif; ?>
     </div>
-    <form method="post" style="margin-left:auto;">
-      <input type="hidden" name="action" value="run">
-      <button type="submit" class="btn-run" <?= $isRunning ? 'disabled' : '' ?>>
-        <?= $isRunning ? '実行中...' : '今すぐ実行' ?>
-      </button>
-    </form>
+    <div style="margin-left:auto;text-align:right;">
+      <?php if ($todayDone): ?>
+        <div style="font-size:0.78rem;color:#888;margin-bottom:6px;">当日分は完了済み</div>
+      <?php endif; ?>
+      <form method="post">
+        <input type="hidden" name="action" value="run">
+        <button type="submit" class="btn-run" <?= $isRunning ? 'disabled' : '' ?>>
+          <?= $isRunning ? '実行中...' : ($todayDone ? '再実行' : '今すぐ実行') ?>
+        </button>
+      </form>
+    </div>
   </div>
 
   <!-- 実行履歴 -->
@@ -177,5 +189,6 @@ $started = !empty($_GET['started']);
 
     </main>
   </div>
+  <script src="/assets/js/common.js?v=20260327h"></script>
 </body>
 </html>

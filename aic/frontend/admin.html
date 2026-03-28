@@ -722,6 +722,15 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           <option value="pending">Pending</option>
           <option value="discarded">破棄済み</option>
         </select>
+        <select id="img-filter-rating" onchange="loadImages()">
+          <option value="">全評価</option>
+          <option value="null">未評価</option>
+          <option value="3">⭐⭐⭐ 凄く良い</option>
+          <option value="2">⭐⭐ 良い</option>
+          <option value="1">⭐ まあ良い</option>
+          <option value="-1">👎 悪い</option>
+        </select>
+        <input type="text" id="img-filter-username" placeholder="ユーザー名で絞り込み" oninput="loadImages()" style="min-width:140px">
         <input type="number" id="img-filter-user" placeholder="ユーザーID" oninput="loadImages()">
         <button class="btn btn-ghost btn-sm" onclick="loadImages()">🔄 再読み込み</button>
         <span id="img-total" style="font-size:0.85rem;color:var(--sub)"></span>
@@ -1801,11 +1810,15 @@ const IMG_LIMIT = 48;
 
 async function loadImages(reset = true) {
   if (reset) imgOffset = 0;
-  const status = document.getElementById('img-filter-status').value;
-  const userId = document.getElementById('img-filter-user').value;
+  const status   = document.getElementById('img-filter-status').value;
+  const rating   = document.getElementById('img-filter-rating').value;
+  const username = document.getElementById('img-filter-username').value.trim();
+  const userId   = document.getElementById('img-filter-user').value;
   const params = new URLSearchParams({ limit: IMG_LIMIT, offset: imgOffset });
-  if (status) params.append('status', status);
-  if (userId) params.append('user_id', userId);
+  if (status)   params.append('status', status);
+  if (rating)   params.append('rating', rating);
+  if (username) params.append('username', username);
+  if (userId)   params.append('user_id', userId);
   const r = await api('/admin/images?' + params.toString());
   if (!r.ok) { toast('画像一覧の取得に失敗しました', 'err'); return; }
   const d = await r.json();
@@ -1828,6 +1841,8 @@ async function loadImages(reset = true) {
     const statusLabel = { saved:'保存済み', pending:'Pending', discarded:'破棄済み' }[img.status] || img.status;
     const statusClass = `badge-${img.status}`;
     const deletedBadge = img.is_deleted ? '<span class="badge" style="background:rgba(233,69,96,0.15);color:var(--accent-l)">削除済</span>' : '';
+    const ratingLabel = img.rating === 3 ? '⭐⭐⭐' : img.rating === 2 ? '⭐⭐' : img.rating === 1 ? '⭐' : img.rating === -1 ? '👎' : '';
+    const ratingBadge = ratingLabel ? `<span style="font-size:0.78rem" title="評価">${ratingLabel}</span>` : '';
     const date = img.created_at ? img.created_at.slice(0,16) : '';
     const prompt = esc(img.prompt || '');
     const modelName = img.model ? esc(img.model) : '';
@@ -1842,7 +1857,7 @@ async function loadImages(reset = true) {
           ${modelName ? `<div class="img-card-model">🎨 ${modelName}</div>` : ''}
           <div class="img-card-prompt" title="${prompt}">${prompt || '<span style="color:var(--sub);font-style:italic">プロンプトなし</span>'}</div>
           <div class="img-card-footer">
-            <span class="badge ${statusClass}">${statusLabel}</span>${deletedBadge}
+            <span class="badge ${statusClass}">${statusLabel}</span>${deletedBadge}${ratingBadge}
             <span class="img-card-date">${date}</span>
           </div>
           <div style="margin-top:6px">
