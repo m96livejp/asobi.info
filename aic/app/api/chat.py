@@ -1,17 +1,22 @@
 """チャットAPI（SSEストリーミング）"""
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from ..database import get_db
 from ..deps import get_current_user, require_user
 from ..models.user import User
 from ..models.character import Character
-from ..models.conversation import Conversation, Message
+from ..models.conversation import Conversation, Message, ConversationState, ConversationStateLog
 from ..models.balance import UserBalance, BalanceTransaction
+from ..models.settings import ChatStateConfig
 from ..services.chat_service import build_system_prompt, get_stream_func, get_ai_settings, get_cost_from_settings
 from pydantic import BaseModel
 import json
+
+# STATEタグのパターン
+_STATE_TAG_RE = re.compile(r'<<<STATE>>>(.*?)<<</STATE>>>', re.DOTALL)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -41,6 +46,10 @@ async def send_message(
     if not char:
         raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
 
+    # 削除済みキャラクターへのメッセージ送信を拒否
+    if char.is_deleted >= 1:
+        raise HTTPException(status_code=403, detail="このキャラクターは削除されたため、メッセージを送れません")
+
     # AI設定取得
     ai_settings = await get_ai_settings(db)
 
@@ -61,62 +70,194 @@ async def send_message(
     db.add(user_msg)
     await db.commit()
 
-    # 過去メッセージ取得（最新20件）
+    # 過去メッセージ取得（最新20件・ソフトデリート除外）
     result = await db.execute(
         select(Message)
-        .where(Message.conversation_id == conversation_id)
+        .where(Message.conversation_id == conversation_id, Message.is_deleted == 0)
         .order_by(Message.id.desc())
         .limit(20)
     )
     past_messages = list(reversed(result.scalars().all()))
     messages = [{"role": m.role, "content": m.content} for m in past_messages]
 
+    # ステータス機能の有効/無効チェック
+    state_enabled = False
+    conv_state = None
+    try:
+        cfg_result = await db.execute(select(ChatStateConfig).where(ChatStateConfig.id == 1))
+        cfg = cfg_result.scalar_one_or_none()
+        state_enabled = bool(cfg and cfg.enabled)
+    except Exception:
+        pass
+
+    if state_enabled:
+        state_result = await db.execute(
+            select(ConversationState).where(ConversationState.conversation_id == conversation_id)
+        )
+        conv_state = state_result.scalar_one_or_none()
+
     # システムプロンプト
-    system_prompt = build_system_prompt(char)
+    rg = (ai_settings.response_guideline if ai_settings and ai_settings.response_guideline is not None else None)
+    system_prompt = build_system_prompt(char, conv_state=conv_state, state_enabled=state_enabled, response_guideline=rg)
     provider = ai_settings.provider if ai_settings else char.ai_model
     stream_func = get_stream_func(provider)
 
     async def event_stream():
         full_response = ""
+        state_tag_started = False
+        buffer = ""
         try:
             async for chunk in stream_func(system_prompt, messages, ai_settings):
                 full_response += chunk
-                yield f"data: {json.dumps({'text': chunk}, ensure_ascii=False)}\n\n"
+
+                if state_enabled:
+                    # STATEタグのフィルタリング
+                    buffer += chunk
+                    if not state_tag_started:
+                        # <<<STATE>>> の開始を監視
+                        if "<<<STATE>>>" in buffer:
+                            # タグ前のテキストだけ送信
+                            before_tag = buffer.split("<<<STATE>>>")[0]
+                            if before_tag:
+                                yield f"data: {json.dumps({'text': before_tag}, ensure_ascii=False)}\n\n"
+                            state_tag_started = True
+                            buffer = ""
+                        elif "<<<" in buffer and len(buffer) < 20:
+                            # タグの途中かもしれない → バッファに溜める
+                            pass
+                        else:
+                            # タグなし → そのまま送信
+                            yield f"data: {json.dumps({'text': buffer}, ensure_ascii=False)}\n\n"
+                            buffer = ""
+                    # state_tag_started == True の場合はバッファに蓄積のみ（送信しない）
+                else:
+                    yield f"data: {json.dumps({'text': chunk}, ensure_ascii=False)}\n\n"
+
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
             return
 
+        # バッファに残りがあればフラッシュ（STATEタグが来なかった場合）
+        if state_enabled and buffer and not state_tag_started:
+            yield f"data: {json.dumps({'text': buffer}, ensure_ascii=False)}\n\n"
+
+        # STATEタグからステータスJSONを抽出
+        visible_text = full_response
+        if state_enabled:
+            match = _STATE_TAG_RE.search(full_response)
+            if match:
+                visible_text = _STATE_TAG_RE.sub("", full_response).strip()
+                try:
+                    state_json = json.loads(match.group(1).strip())
+                    # conversation_state を更新
+                    if conv_state:
+                        for key in ("relationship", "mood", "environment", "situation", "inventory", "goals"):
+                            if key in state_json:
+                                setattr(conv_state, key, str(state_json[key]))
+                        if "memories" in state_json and isinstance(state_json["memories"], list):
+                            conv_state.memories = json.dumps(state_json["memories"], ensure_ascii=False)
+                        # ログに記録
+                        log = ConversationStateLog(
+                            conversation_id=conversation_id,
+                            relationship=conv_state.relationship,
+                            mood=conv_state.mood,
+                            environment=conv_state.environment,
+                            situation=conv_state.situation,
+                            inventory=conv_state.inventory,
+                            goals=conv_state.goals,
+                            memories=conv_state.memories,
+                        )
+                        db.add(log)
+                except (json.JSONDecodeError, Exception) as e:
+                    import logging
+                    logging.getLogger("aic").warning(f"STATE parse error: {e}")
+
         # AIレスポンス保存 & ポイント消費（リトライ付き）
         currency = "points"
+        save_ok = False
         for _retry in range(3):
             try:
-                async with db.begin():
-                    ai_msg = Message(conversation_id=conversation_id, role="assistant", content=full_response)
-                    db.add(ai_msg)
+                ai_msg = Message(conversation_id=conversation_id, role="assistant", content=visible_text)
+                db.add(ai_msg)
 
-                    result2 = await db.execute(select(UserBalance).where(UserBalance.user_id == user.id))
-                    bal = result2.scalar_one()
-                    if bal.points >= cost:
-                        bal.points -= cost
-                        currency = "points"
-                    else:
-                        bal.crystals -= cost
-                        currency = "crystals"
+                result2 = await db.execute(select(UserBalance).where(UserBalance.user_id == user.id))
+                bal = result2.scalar_one()
+                if bal.points >= cost:
+                    bal.points -= cost
+                    currency = "points"
+                else:
+                    bal.crystals -= cost
+                    currency = "crystals"
 
-                    tx = BalanceTransaction(
-                        user_id=user.id, currency=currency, amount=-cost,
-                        type="chat", memo=f"{char.name} ({provider}:{ai_settings.model if ai_settings else char.ai_model})"
-                    )
-                    db.add(tx)
-
-                    result3 = await db.execute(select(Character).where(Character.id == char.id))
-                    c = result3.scalar_one()
-                    c.use_count += 1
+                tx = BalanceTransaction(
+                    user_id=user.id, currency=currency, amount=-cost,
+                    type="chat", memo=f"{char.name} ({provider}:{ai_settings.model if ai_settings else char.ai_model})"
+                )
+                db.add(tx)
+                await db.commit()
+                save_ok = True
                 break
-            except Exception:
-                import asyncio
+            except Exception as e:
+                import logging, asyncio
+                logging.getLogger("aic").error(f"Chat save retry {_retry}: {e}")
+                await db.rollback()
                 await asyncio.sleep(0.5)
+        if not save_ok:
+            import logging
+            logging.getLogger("aic").error(f"Chat save FAILED after 3 retries: conv={conversation_id}")
 
         yield f"data: {json.dumps({'done': True, 'cost': cost, 'currency': currency}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.patch("/{conversation_id}/messages/{message_id}/hide")
+async def soft_delete_message(
+    conversation_id: int,
+    message_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """メッセージのソフトデリート（AI送信履歴から除外）"""
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id, Conversation.user_id == user.id)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="会話が見つかりません")
+    result = await db.execute(
+        select(Message).where(Message.id == message_id, Message.conversation_id == conversation_id)
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=404, detail="メッセージが見つかりません")
+    msg.is_deleted = 1 - msg.is_deleted  # トグル
+    await db.commit()
+    return {"is_deleted": msg.is_deleted}
+
+
+@router.delete("/{conversation_id}/messages/{message_id}")
+async def delete_message(
+    conversation_id: int,
+    message_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """メッセージ削除（自分の会話のメッセージのみ）"""
+    # 会話の所有権確認
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id, Conversation.user_id == user.id)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="会話が見つかりません")
+
+    # メッセージ確認・削除
+    result = await db.execute(
+        select(Message).where(Message.id == message_id, Message.conversation_id == conversation_id)
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=404, detail="メッセージが見つかりません")
+
+    await db.delete(msg)
+    await db.commit()
+    return {"deleted": True}

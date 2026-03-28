@@ -119,6 +119,17 @@ if ($action === 'update_status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($status === '完了') {
         $extra = ", completed_at = datetime('now','localtime')";
     }
+
+    // status_note が同時に渡された場合は対応メモも更新（追記方式）
+    if (isset($input['status_note']) && trim($input['status_note']) !== '') {
+        $appendNote = trim($input['status_note']);
+        $noteRow = $db->prepare("SELECT status_note FROM content_todos WHERE id = ?");
+        $noteRow->execute([$id]);
+        $existing = $noteRow->fetchColumn() ?: '';
+        $newNote = $existing !== '' ? $existing . "\n\n" . $appendNote : $appendNote;
+        $extra .= ', status_note = ' . $db->quote($newNote);
+    }
+
     $db->prepare("UPDATE content_todos SET status = ?, updated_at = datetime('now','localtime'){$extra} WHERE id = ?")
        ->execute([$status, $id]);
 

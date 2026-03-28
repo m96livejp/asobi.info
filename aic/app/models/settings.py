@@ -67,4 +67,24 @@ class AiSettings(Base):
     model = Column(String, nullable=False, default="claude-sonnet-4-20250514")
     max_tokens = Column(Integer, nullable=False, default=1024)
     cost = Column(Integer, nullable=False, default=1)                 # 1メッセージあたりのポイントコスト
+    response_guideline = Column(Text, nullable=True)                  # レスポンス文字数・スタイルの指示文
+    voicevox_endpoint = Column(String, nullable=True)                 # VOICEVOX APIエンドポイント
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class TtsVoiceModel(Base):
+    """TTS音声モデル（管理者がVOICEVOXスピーカーに表示名・性別を設定）"""
+    __tablename__ = "tts_voice_models"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    speaker_uuid = Column(String, nullable=False)
+    speaker_name = Column(String, nullable=True)    # VOICEVOXのスピーカー名（管理用）
+    display_name = Column(String, nullable=False)   # 管理者が設定する表示名
+    genre = Column(String, nullable=True)           # ジャンル（例: 少女、大人女性、ロボット）
+    styles = Column(Text, nullable=True)            # JSON: [{id: int, name: str}]
+    show_female = Column(Integer, default=0)        # 女性キャラの選択肢に表示
+    show_male = Column(Integer, default=0)          # 男性キャラの選択肢に表示
+    show_other = Column(Integer, default=0)         # その他キャラの選択肢に表示
+    is_active = Column(Integer, default=1)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())

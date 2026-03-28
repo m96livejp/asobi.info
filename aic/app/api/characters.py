@@ -6,7 +6,8 @@ from sqlalchemy import select, or_
 from ..database import get_db
 from ..deps import get_current_user, require_user
 from ..models.user import User
-from ..models.character import Character, CharacterLike
+from ..models.character import Character, CharacterLike, CharacterReport
+from ..models.conversation import Conversation
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/characters", tags=["characters"])
@@ -16,8 +17,10 @@ class CharacterCreate(BaseModel):
     name: str
     ai_model: str = "claude"
     is_public: int = 0
+    avatar_url: str | None = None
     char_name: str | None = None
     char_age: str | None = None
+    gender: str | None = None
     profile: str | None = None
     private_profile: str | None = None
     first_message: str | None = None
@@ -27,6 +30,8 @@ class CharacterCreate(BaseModel):
     genre_era: list[str] = []
     genre_base: list[str] = []
     keywords: list[str] = []
+    voice_model: str | None = None
+    tts_styles: list = []
 
 
 class CharacterUpdate(CharacterCreate):
@@ -42,8 +47,11 @@ def char_to_dict(c: Character, hide_private: bool = False) -> dict:
         "ai_model": c.ai_model,
         "is_public": c.is_public,
         "is_sample": c.is_sample,
+        "is_deleted": c.is_deleted,
+        "review_status": c.review_status,
         "char_name": c.char_name,
         "char_age": c.char_age,
+        "gender": c.gender,
         "profile": c.profile,
         "first_message": c.first_message,
         "genre_story": json.loads(c.genre_story or "[]"),
@@ -54,6 +62,8 @@ def char_to_dict(c: Character, hide_private: bool = False) -> dict:
         "keywords": json.loads(c.keywords or "[]"),
         "like_count": c.like_count,
         "use_count": c.use_count,
+        "voice_model": c.voice_model,
+        "tts_styles": json.loads(c.tts_styles or "[]") if c.tts_styles else [],
     }
     if not hide_private:
         d["private_profile"] = c.private_profile
@@ -62,14 +72,20 @@ def char_to_dict(c: Character, hide_private: bool = False) -> dict:
 
 @router.get("/sample")
 async def list_sample(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Character).where(Character.is_sample == 1).order_by(Character.id))
+    result = await db.execute(
+        select(Character).where(Character.is_sample == 1, Character.is_deleted == 0).order_by(Character.id)
+    )
     return [char_to_dict(c, hide_private=True) for c in result.scalars()]
 
 
 @router.get("/public")
 async def list_public(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(Character).where(Character.is_public == 1).order_by(Character.like_count.desc(), Character.id.desc())
+        select(Character).where(
+            Character.is_public == 1,
+            Character.is_deleted == 0,
+            Character.review_status == "approved",
+        ).order_by(Character.like_count.desc(), Character.id.desc())
     )
     return [char_to_dict(c, hide_private=True) for c in result.scalars()]
 
@@ -79,7 +95,7 @@ async def list_liked(user: User = Depends(require_user), db: AsyncSession = Depe
     result = await db.execute(
         select(Character)
         .join(CharacterLike, CharacterLike.character_id == Character.id)
-        .where(CharacterLike.user_id == user.id)
+        .where(CharacterLike.user_id == user.id, CharacterLike.status >= 1, Character.is_deleted == 0)
         .order_by(CharacterLike.id.desc())
     )
     return [char_to_dict(c, hide_private=True) for c in result.scalars()]
@@ -88,9 +104,29 @@ async def list_liked(user: User = Depends(require_user), db: AsyncSession = Depe
 @router.get("/mine")
 async def list_mine(user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(Character).where(Character.creator_id == user.id).order_by(Character.id.desc())
+        select(Character).where(Character.creator_id == user.id, Character.is_deleted == 0).order_by(Character.id.desc())
     )
     return [char_to_dict(c) for c in result.scalars()]
+
+
+@router.get("/chatting-public")
+async def list_chatting_public(user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+    """会話中の公開キャラクター（自分が作成者でないもの）"""
+    conv_result = await db.execute(
+        select(Conversation.character_id).where(Conversation.user_id == user.id).distinct()
+    )
+    char_ids = [row[0] for row in conv_result.all()]
+    if not char_ids:
+        return []
+    # 公開キャラかつ自分が作成者でないもの（削除済み含む: フロントで表示制御）
+    result = await db.execute(
+        select(Character).where(
+            Character.id.in_(char_ids),
+            Character.creator_id != user.id,
+            or_(Character.is_public == 1, Character.is_sample == 1)
+        ).order_by(Character.name)
+    )
+    return [char_to_dict(c, hide_private=True) for c in result.scalars()]
 
 
 @router.get("/{char_id}")
@@ -100,9 +136,28 @@ async def get_character(char_id: int, user: User | None = Depends(get_current_us
     if not c:
         raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
     is_owner = user and user.id == c.creator_id
-    if not c.is_public and not c.is_sample and not is_owner:
+    is_admin = user and user.role == "admin"
+    # 削除済みキャラクター: オーナー・管理者以外にも is_deleted 情報は返す（フロントで表示制御）
+    if c.is_deleted >= 1 and not is_owner and not is_admin:
+        # 最低限の情報のみ返す（フロント側で削除メッセージ表示用）
+        return {
+            "id": c.id, "name": c.name, "avatar_url": c.avatar_url,
+            "is_deleted": c.is_deleted, "is_owner": False, "is_admin": False,
+        }
+    if not c.is_public and not c.is_sample and not is_owner and not is_admin:
         raise HTTPException(status_code=403, detail="非公開キャラクターです")
-    return char_to_dict(c, hide_private=not is_owner)
+    d = char_to_dict(c, hide_private=not is_owner and not is_admin)
+    d["is_owner"] = bool(is_owner)
+    d["is_admin"] = bool(is_admin)
+    # いいね状態
+    d["liked"] = False
+    if user:
+        lr = await db.execute(
+            select(CharacterLike).where(CharacterLike.user_id == user.id, CharacterLike.character_id == char_id)
+        )
+        like_row = lr.scalar_one_or_none()
+        d["liked"] = bool(like_row and like_row.status >= 1)
+    return d
 
 
 @router.post("")
@@ -110,10 +165,12 @@ async def create_character(req: CharacterCreate, user: User = Depends(require_us
     c = Character(
         creator_id=user.id,
         name=req.name,
+        avatar_url=req.avatar_url,
         ai_model=req.ai_model,
         is_public=req.is_public,
         char_name=req.char_name,
         char_age=req.char_age,
+        gender=req.gender,
         profile=req.profile,
         private_profile=req.private_profile,
         first_message=req.first_message,
@@ -123,6 +180,8 @@ async def create_character(req: CharacterCreate, user: User = Depends(require_us
         genre_era=json.dumps(req.genre_era, ensure_ascii=False),
         genre_base=json.dumps(req.genre_base, ensure_ascii=False),
         keywords=json.dumps(req.keywords[:5], ensure_ascii=False),
+        voice_model=req.voice_model,
+        tts_styles=json.dumps(req.tts_styles, ensure_ascii=False) if req.tts_styles else None,
     )
     db.add(c)
     await db.commit()
@@ -132,18 +191,33 @@ async def create_character(req: CharacterCreate, user: User = Depends(require_us
 
 @router.put("/{char_id}")
 async def update_character(char_id: int, req: CharacterUpdate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Character).where(Character.id == char_id, Character.creator_id == user.id))
+    result = await db.execute(select(Character).where(Character.id == char_id))
     c = result.scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
-    for field in ["name", "ai_model", "is_public", "char_name", "char_age", "profile", "private_profile", "first_message"]:
+    if c.creator_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="編集権限がありません")
+    for field in ["name", "avatar_url", "ai_model", "is_public", "char_name", "char_age", "gender", "profile", "private_profile", "first_message", "voice_model"]:
         setattr(c, field, getattr(req, field))
     for field in ["genre_story", "genre_char_type", "genre_personality", "genre_era", "genre_base"]:
         setattr(c, field, json.dumps(getattr(req, field), ensure_ascii=False))
     c.keywords = json.dumps(req.keywords[:5], ensure_ascii=False)
+    c.tts_styles = json.dumps(req.tts_styles, ensure_ascii=False) if req.tts_styles else None
     await db.commit()
     await db.refresh(c)
     return char_to_dict(c)
+
+
+@router.delete("/{char_id}")
+async def delete_character(char_id: int, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+    """作成者によるキャラクター削除（ソフトデリート）"""
+    result = await db.execute(select(Character).where(Character.id == char_id, Character.creator_id == user.id))
+    c = result.scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
+    c.is_deleted = 1
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post("/{char_id}/like")
@@ -151,18 +225,48 @@ async def like_character(char_id: int, user: User = Depends(require_user), db: A
     result = await db.execute(select(CharacterLike).where(CharacterLike.user_id == user.id, CharacterLike.character_id == char_id))
     existing = result.scalar_one_or_none()
     if existing:
-        await db.delete(existing)
-        await db.execute(select(Character).where(Character.id == char_id))
-        char = (await db.execute(select(Character).where(Character.id == char_id))).scalar_one_or_none()
-        if char:
-            char.like_count = max(0, char.like_count - 1)
-        await db.commit()
-        return {"liked": False}
+        if existing.status >= 1:
+            # お気に入り中 → 解除（status=-1、like_countは減らさない）
+            existing.status = -1
+            await db.commit()
+            return {"liked": False, "status": -1}
+        else:
+            # 解除済み → 再お気に入り（status=1、like_countは既に計上済みなので増やさない）
+            existing.status = 1
+            await db.commit()
+            return {"liked": True, "status": 1}
     else:
-        like = CharacterLike(user_id=user.id, character_id=char_id)
+        # 初めてのお気に入り → 新規レコード + like_count累計+1
+        like = CharacterLike(user_id=user.id, character_id=char_id, status=1)
         db.add(like)
         char = (await db.execute(select(Character).where(Character.id == char_id))).scalar_one_or_none()
         if char:
             char.like_count += 1
         await db.commit()
-        return {"liked": True}
+        return {"liked": True, "status": 1}
+
+
+class ReportRequest(BaseModel):
+    reason: str
+
+
+@router.post("/{char_id}/report")
+async def report_character(char_id: int, req: ReportRequest, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+    """キャラクター不正報告"""
+    import logging
+    # カテゴリと詳細を分離（改行区切り: 1行目=カテゴリ, 2行目以降=詳細）
+    lines = req.reason.strip().split('\n', 1)
+    category = lines[0] if lines else ""
+    detail = lines[1].strip() if len(lines) > 1 else ""
+    report = CharacterReport(
+        character_id=char_id,
+        user_id=user.id,
+        category=category,
+        reason=detail[:1000],
+    )
+    db.add(report)
+    await db.commit()
+    logging.getLogger("aic").warning(
+        f"Character report: char_id={char_id}, user_id={user.id}, category={category}, reason={detail[:500]}"
+    )
+    return {"ok": True}

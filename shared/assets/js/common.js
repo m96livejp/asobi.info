@@ -116,6 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
       menuItems += `<a href="https://asobi.info/">asobi.info TOP</a>`;
     } else {
       // asobi.info メインサイト
+      menuItems += `<a href="https://asobi.info/">トップ</a>`;
       menuItems += `<a href="https://asobi.info/profile.php">プロフィール</a>`;
     }
 

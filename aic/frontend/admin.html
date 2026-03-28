@@ -84,6 +84,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .test-status{display:inline-flex;align-items:center;gap:6px;font-weight:600;margin-bottom:8px}
 .test-status.ok{color:var(--ok)}
 .test-status.err{color:var(--accent)}
+.payload-item{margin-bottom:10px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.payload-header{display:flex;align-items:center;gap:10px;padding:6px 12px;background:var(--bg3);font-size:0.8rem}
+.payload-index{background:var(--border);color:var(--sub);border-radius:4px;padding:1px 7px;font-size:0.75rem}
+.payload-role{font-weight:700;font-size:0.85rem}
+.payload-chars{margin-left:auto;color:var(--sub);font-size:0.75rem}
+.payload-body{padding:10px 14px;font-size:0.8rem;line-height:1.6;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow-y:auto;background:var(--bg);color:var(--text);margin:0}
 .model-tbl{width:100%;border-collapse:collapse;margin-top:8px}
 .model-tbl th,.model-tbl td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);font-size:0.82rem}
 .model-tbl th{background:var(--bg);color:var(--sub)}
@@ -197,9 +203,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
   <nav class="sidebar-nav">
     <button class="nav-item active" onclick="showSection('dashboard')">📊 ダッシュボード</button>
     <button class="nav-item" onclick="showSection('ai')">🤖 AI設定チャット用</button>
+    <button class="nav-item" onclick="showSection('tts')">🔊 音声設定</button>
     <button class="nav-item" onclick="showSection('sd')">🎨 AI設定画像用</button>
     <button class="nav-item" onclick="showSection('users')">👥 ユーザー</button>
-    <button class="nav-item" onclick="showSection('conversations')">💬 会話管理</button>
     <button class="nav-item" onclick="showSection('characters')">✨ キャラクター</button>
     <button class="nav-item" onclick="showSection('queue')">📋 生成キュー</button>
     <button class="nav-item" onclick="showSection('images')">🖼 生成画像</button>
@@ -278,19 +284,45 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         <textarea id="response-guideline" rows="4" placeholder="例: キャラクターとして自然に会話してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。"></textarea>
         <div class="hint">空欄の場合はデフォルト指示文が使用されます。全キャラクター共通のシステムプロンプト末尾に追加されます。</div>
       </div>
+      <div class="form-group">
+        <label>VOICEVOX エンドポイント</label>
+        <input type="text" id="voicevox-endpoint" placeholder="http://127.0.0.1:50021">
+        <div class="hint">VOICEVOX Engine のURL（空欄=http://127.0.0.1:50021）</div>
+      </div>
       <button class="btn btn-primary" id="btn-save" onclick="saveAiSettings()">保存</button>
     </div>
 
     <div class="card" style="margin-top:20px">
       <div class="card-title">チャット用システムプロンプト</div>
-      <div id="chat-prompt-desc" style="font-size:0.85rem;line-height:1.7;color:var(--sub);white-space:pre-wrap;margin-bottom:16px">読み込み中...</div>
-      <div class="form-group">
-        <label>キャラクター選択でプレビュー</label>
+      <div style="font-size:0.78rem;color:var(--sub);margin-bottom:6px">全キャラクター共通</div>
+      <pre id="chat-prompt-common" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:0.82rem;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-all;margin-bottom:16px">読み込み中...</pre>
+      <div style="font-size:0.78rem;color:var(--sub);margin-bottom:6px">キャラクター固有部分のプレビュー（選択任意）</div>
+      <div class="form-group" style="margin-bottom:8px">
         <select id="prompt-preview-char" onchange="previewChatPrompt()">
           <option value="">-- キャラクターを選択 --</option>
         </select>
       </div>
       <pre id="chat-prompt-preview" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:0.82rem;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;display:none"></pre>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">送信内容確認</div>
+      <div style="font-size:0.85rem;color:var(--sub);margin-bottom:12px">会話を選択すると、AIに実際に送られる内容を順番どおりに表示します。</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="payload-user-select" style="flex:1" onchange="loadPayloadConvs()">
+          <option value="">-- ユーザーを選択 --</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <select id="payload-conv-select" style="flex:1">
+          <option value="">-- 会話を選択 --</option>
+        </select>
+        <button class="btn" onclick="loadPayloadPreview()">確認</button>
+      </div>
+      <div id="payload-preview" style="display:none">
+        <div id="payload-meta" style="font-size:0.8rem;color:var(--sub);margin-bottom:10px"></div>
+        <div id="payload-list"></div>
+      </div>
     </div>
 
     <div class="card" style="margin-top:20px">
@@ -327,31 +359,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
     </div>
   </div>
 
-  <!-- 会話管理 -->
-  <div id="sec-conversations" class="section">
-    <div class="section-title">💬 会話管理</div>
-    <div class="card">
-      <div class="card-title">ユーザーを選択</div>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-        <select id="conv-user-select" onchange="loadUserConversations()" style="flex:1">
-          <option value="">-- ユーザーを選択 --</option>
-        </select>
-        <label style="display:flex;align-items:center;gap:5px;font-size:0.83rem;cursor:pointer;white-space:nowrap">
-          <input type="checkbox" id="conv-show-deleted" onchange="loadUserConversations()"> 削除済み表示
-        </label>
-      </div>
-      <div id="conv-list" style="display:none">
-        <div class="card-title" id="conv-list-title">会話一覧</div>
-        <div style="overflow-x:auto">
-          <table class="tbl">
-            <thead><tr><th>ID</th><th>キャラクター</th><th>メッセージ数</th><th>更新日</th><th>操作</th></tr></thead>
-            <tbody id="conv-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- キャラクター管理 -->
   <div id="sec-characters" class="section">
     <div class="section-title">✨ キャラクター管理</div>
@@ -362,6 +369,56 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
             <th>ID</th><th>名前</th><th>作成者</th><th>❤</th><th>💬</th><th>作成日</th><th>操作</th>
           </tr></thead>
           <tbody id="char-tbody"><tr><td colspan="7" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- VOICEVOX音声モデル管理 -->
+  <div id="sec-tts" class="section">
+    <div class="section-title">🔊 音声設定（VOICEVOX）</div>
+
+    <!-- 音声モデル一覧 -->
+    <div class="card">
+      <div class="card-title">音声モデル管理</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <select id="tts-filter-gender" onchange="filterTtsModels()" style="min-width:120px">
+          <option value="">性別：すべて</option>
+          <option value="female">女性</option>
+          <option value="male">男性</option>
+          <option value="other">その他</option>
+        </select>
+        <input type="text" id="tts-filter-name" placeholder="表示名で検索" oninput="filterTtsModels()" style="flex:1;min-width:120px">
+        <input type="text" id="tts-filter-speaker" placeholder="モデル名で検索" oninput="filterTtsModels()" style="flex:1;min-width:120px">
+        <button class="btn btn-secondary btn-sm" onclick="loadTtsVoiceModels()">更新</button>
+        <button class="btn btn-info btn-sm" onclick="loadVvSpeakersForAdmin()">VOICEVOXから同期</button>
+      </div>
+      <div id="tts-vm-list" style="overflow-x:auto">
+        <table class="tbl" style="min-width:860px">
+          <thead><tr>
+            <th style="width:52px">表示順</th>
+            <th>モデル名（VOICEVOX）</th>
+            <th>表示名</th>
+            <th>ジャンル</th>
+            <th>スタイル</th>
+            <th style="width:110px">表示設定</th>
+            <th style="width:60px">有効</th>
+            <th style="width:40px">削除</th>
+          </tr></thead>
+          <tbody id="tts-vm-tbody"></tbody>
+        </table>
+      </div>
+      <div id="tts-vm-empty" style="display:none;padding:20px;text-align:center;color:var(--sub)">モデルなし。「VOICEVOXから同期」で登録してください。</div>
+    </div>
+
+    <!-- SEミスログ -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">SE未実装ログ <button class="btn btn-secondary btn-sm" onclick="loadSeMissLogs()" style="margin-left:8px">更新</button></div>
+      <div class="hint" style="margin-bottom:10px">AIが使用したがファイルが存在しないSE名の一覧。多いものから実装を検討してください。</div>
+      <div id="se-miss-list" style="overflow-x:auto">
+        <table class="data-table">
+          <thead><tr><th>SE名</th><th style="width:80px">回数</th><th>最終</th></tr></thead>
+          <tbody id="se-miss-tbody"></tbody>
         </table>
       </div>
     </div>
@@ -399,7 +456,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       <input type="hidden" id="sd-model">
       <div class="form-group">
         <label>ネガティブプロンプト</label>
-        <textarea id="sd-negative" rows="3" placeholder="lowres, bad anatomy..."></textarea>
+        <textarea id="sd-negative" rows="8" placeholder="lowres, bad anatomy..."></textarea>
         <div class="hint">生成時に除外する要素</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -505,7 +562,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           </div>
           <div class="form-group" style="margin:0">
             <label>ネガティブプロンプト <span style="font-weight:400;color:var(--sub)">（空欄でSD設定のデフォルト使用）</span></label>
-            <textarea id="new-tmpl-neg" rows="2" placeholder="空欄の場合はAI設定画像用のデフォルトを使用"></textarea>
+            <textarea id="new-tmpl-neg" rows="8" placeholder="空欄の場合はAI設定画像用のデフォルトを使用"></textarea>
           </div>
           <div class="form-group" style="margin:0">
             <label>表示順</label>
@@ -618,7 +675,46 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 
 <div class="toast" id="toast"></div>
 
+<!-- 音声モデル編集モーダル -->
 <!-- 確認ダイアログ -->
+<!-- ユーザー会話一覧モーダル -->
+<div id="user-conv-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;width:min(700px,95vw);max-height:85vh;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div id="user-conv-title" style="font-size:1rem;font-weight:700;flex:1"></div>
+      <label style="display:flex;align-items:center;gap:5px;font-size:0.83rem;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="user-conv-show-deleted" onchange="(async()=>{const o=document.getElementById('user-conv-overlay');await _loadUserConvList(parseInt(o.dataset.userId),this.checked)})()"> 削除済み表示
+      </label>
+      <button class="btn btn-ghost btn-sm" onclick="closeUserConversations()">✕</button>
+    </div>
+    <div style="overflow-y:auto;flex:1">
+      <table class="tbl">
+        <thead><tr><th>ID</th><th>キャラクター</th><th>メッセージ数</th><th>更新日</th><th>操作</th></tr></thead>
+        <tbody id="user-conv-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- キャラクター会話一覧モーダル -->
+<div id="char-conv-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;width:min(700px,95vw);max-height:85vh;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div id="char-conv-title" style="font-size:1rem;font-weight:700;flex:1"></div>
+      <label style="display:flex;align-items:center;gap:5px;font-size:0.83rem;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="char-conv-show-deleted" onchange="(async()=>{const o=document.getElementById('char-conv-overlay');await _loadCharConvList(parseInt(o.dataset.charId),this.checked)})()"> 削除済み表示
+      </label>
+      <button class="btn btn-ghost btn-sm" onclick="closeCharConversations()">✕</button>
+    </div>
+    <div style="overflow-y:auto;flex:1">
+      <table class="tbl">
+        <thead><tr><th>ID</th><th>ユーザー</th><th>メッセージ数</th><th>更新日</th><th>操作</th></tr></thead>
+        <tbody id="char-conv-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <div class="adm-confirm-overlay" id="adm-confirm-overlay">
   <div class="adm-confirm-box">
     <div class="adm-confirm-msg" id="adm-confirm-msg"></div>
@@ -786,13 +882,17 @@ async function loadAiSettings() {
   document.getElementById('max-tokens').value = d.max_tokens || 1024;
   document.getElementById('cost').value = d.cost ?? 1;
   document.getElementById('response-guideline').value = d.response_guideline || '';
+  document.getElementById('voicevox-endpoint').value = d.voicevox_endpoint || '';
   onProviderChange();
 
-  // チャットプロンプト情報ロード
+  // 共通プロンプト表示
+  const guideline = d.response_guideline || 'キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。';
+  document.getElementById('chat-prompt-common').textContent = guideline;
+
+  // キャラクター一覧ロード（固有プレビュー用）
   const r2 = await api('/admin/chat-prompt-info');
   if (r2.ok) {
     const info = await r2.json();
-    document.getElementById('chat-prompt-desc').textContent = info.template_description;
     const sel = document.getElementById('prompt-preview-char');
     sel.innerHTML = '<option value="">-- キャラクターを選択 --</option>';
     for (const c of info.characters) {
@@ -806,6 +906,61 @@ async function loadAiSettings() {
     const cfg = await r3.json();
     document.getElementById('chat-state-enabled').checked = !!cfg.enabled;
   }
+
+  // 送信内容確認：ユーザー一覧ロード
+  const r4 = await api('/admin/users');
+  if (r4.ok) {
+    const users = await r4.json();
+    const sel = document.getElementById('payload-user-select');
+    sel.innerHTML = '<option value="">-- ユーザーを選択 --</option>';
+    users.forEach(u => {
+      sel.innerHTML += `<option value="${u.id}">${esc(u.display_name)} (ID:${u.id})</option>`;
+    });
+  }
+}
+
+async function loadPayloadConvs() {
+  const uid = document.getElementById('payload-user-select').value;
+  const convSel = document.getElementById('payload-conv-select');
+  convSel.innerHTML = '<option value="">-- 会話を選択 --</option>';
+  document.getElementById('payload-preview').style.display = 'none';
+  if (!uid) return;
+  const r = await api(`/admin/users/${uid}/conversations`);
+  if (!r.ok) return;
+  const convs = await r.json();
+  convs.forEach(c => {
+    convSel.innerHTML += `<option value="${c.id}">#${c.id} ${esc(c.character_name || '')} (${c.message_count}件)</option>`;
+  });
+}
+
+async function loadPayloadPreview() {
+  const convId = document.getElementById('payload-conv-select').value;
+  if (!convId) return;
+  const previewDiv = document.getElementById('payload-preview');
+  const listDiv = document.getElementById('payload-list');
+  listDiv.innerHTML = '<div style="color:var(--sub);font-size:0.85rem">読み込み中...</div>';
+  previewDiv.style.display = 'block';
+
+  const r = await api(`/admin/chat-payload-preview/${convId}`);
+  if (!r.ok) { listDiv.innerHTML = '<div style="color:var(--warn)">取得に失敗しました</div>'; return; }
+  const d = await r.json();
+
+  document.getElementById('payload-meta').textContent =
+    `キャラクター: ${d.character_name} ／ プロバイダ: ${d.provider} ／ 履歴: ${d.history_count}件`;
+
+  const roleLabel = { system: 'SYSTEM', user: 'USER', assistant: 'AI' };
+  const roleColor = { system: '#5567cc', user: '#1e8449', assistant: 'var(--accent-l)' };
+
+  listDiv.innerHTML = d.payload.map((item, i) => `
+    <div class="payload-item">
+      <div class="payload-header">
+        <span class="payload-index">${i + 1}</span>
+        <span class="payload-role" style="color:${roleColor[item.role] || '#aaa'}">${roleLabel[item.role] || item.role}</span>
+        <span class="payload-chars">${item.content.length}文字</span>
+      </div>
+      <pre class="payload-body">${esc(item.content)}</pre>
+    </div>
+  `).join('');
 }
 
 async function saveChatStateConfig() {
@@ -840,6 +995,7 @@ async function saveAiSettings() {
     max_tokens: parseInt(document.getElementById('max-tokens').value) || 1024,
     cost: parseInt(document.getElementById('cost').value) ?? 1,
     response_guideline: document.getElementById('response-guideline').value || null,
+    voicevox_endpoint: document.getElementById('voicevox-endpoint').value || null,
   };
   const r = await api('/admin/ai-settings', { method: 'PUT', body: JSON.stringify(body) });
   btn.disabled = false; btn.textContent = '保存';
@@ -908,7 +1064,7 @@ function renderUsers() {
   tbody.innerHTML = users.map(u => {
     const lastActive = u.last_active ? u.last_active.slice(0, 16) : '-';
     const suspendedBadge = u.is_suspended ? ' <span style="background:#e74c3c;color:#fff;font-size:0.65rem;padding:1px 5px;border-radius:3px;vertical-align:middle">停止</span>' : '';
-    return `<tr${u.is_suspended ? ' style="opacity:0.6"' : ''}>
+    return `<tr${u.is_suspended ? ' style="opacity:0.6"' : ''} data-uid="${u.id}" data-uname="${esc(u.display_name)}">
       <td style="color:var(--sub)">${u.id}</td>
       <td>${esc(u.display_name)}${suspendedBadge}</td>
       <td><span class="badge badge-${u.role}">${u.role}</span></td>
@@ -950,104 +1106,137 @@ async function deleteUser(id, name) {
 }
 
 async function showUserConversations(userId) {
-  showSection('conversations');
-  await loadConvUsers(true);
-  const sel = document.getElementById('conv-user-select');
-  sel.value = String(userId);
-  loadUserConversations();
+  const overlay = document.getElementById('user-conv-overlay');
+  const title = document.getElementById('user-conv-title');
+  const tbody = document.getElementById('user-conv-tbody');
+  const chk = document.getElementById('user-conv-show-deleted');
+  // ユーザー名取得
+  const userRow = document.querySelector(`#user-tbody tr[data-uid="${userId}"]`);
+  const userName = userRow ? userRow.dataset.uname : `user#${userId}`;
+  title.textContent = `💬 ${userName} の会話一覧`;
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--sub);padding:16px">読み込み中...</td></tr>';
+  overlay.style.display = 'flex';
+  overlay.dataset.userId = userId;
+  chk.checked = false;
+  await _loadUserConvList(userId, false);
 }
 
-// ─── 会話管理 ───
-let _convUsersLoaded = false;
-
-async function loadConvUsers(force) {
-  if (_convUsersLoaded && !force) return;
-  const r = await api('/admin/users');
-  if (!r.ok) return;
-  const users = await r.json();
-  const sel = document.getElementById('conv-user-select');
-  sel.innerHTML = '<option value="">-- ユーザーを選択 --</option>';
-  users.forEach(u => {
-    const label = `${esc(u.display_name)} (ID:${u.id}${u.is_guest ? ' ゲスト' : ''})`;
-    sel.innerHTML += `<option value="${u.id}">${label}</option>`;
-  });
-  _convUsersLoaded = true;
-}
-
-async function loadUserConversations() {
-  const uid = document.getElementById('conv-user-select').value;
-  const listDiv = document.getElementById('conv-list');
-  if (!uid) { listDiv.style.display = 'none'; return; }
-  const showDeleted = document.getElementById('conv-show-deleted').checked;
-  const r = await api(`/admin/users/${uid}/conversations?include_deleted=${showDeleted ? 1 : 0}`);
-  if (!r.ok) { toast('会話の取得に失敗しました', 'err'); return; }
+async function _loadUserConvList(userId, includeDeleted) {
+  const tbody = document.getElementById('user-conv-tbody');
+  const r = await api(`/admin/users/${userId}/conversations?include_deleted=${includeDeleted ? 1 : 0}`);
+  if (!r.ok) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--accent);padding:16px;text-align:center">取得に失敗しました</td></tr>'; return; }
   const convs = await r.json();
-  listDiv.style.display = 'block';
-  const sel = document.getElementById('conv-user-select');
-  const userName = sel.options[sel.selectedIndex].textContent;
-  document.getElementById('conv-list-title').textContent = `${userName} の会話一覧 (${convs.length}件)`;
-  const tbody = document.getElementById('conv-tbody');
-  if (!convs.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--sub);padding:20px">会話がありません</td></tr>';
-    return;
-  }
+  if (!convs.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--sub);padding:16px">会話がありません</td></tr>'; return; }
   tbody.innerHTML = convs.map(c => {
     const avatar = c.character_avatar
-      ? `<img src="${esc(c.character_avatar)}" style="width:28px;height:28px;border-radius:50%;vertical-align:middle;margin-right:6px;object-fit:cover${c.is_deleted ? ';filter:grayscale(1);opacity:0.5' : ''}">`
-      : `<span style="display:inline-block;width:28px;height:28px;border-radius:50%;background:var(--bg3);vertical-align:middle;margin-right:6px;text-align:center;line-height:28px;font-size:14px">🤖</span>`;
-    const deletedBadge = c.is_deleted ? ' <span class="badge badge-danger" style="font-size:0.65rem">削除済</span>' : '';
-    const charDeletedBadge = c.character_is_deleted ? ' <span class="badge badge-pending">削除済</span>' : '';
-    return `<tr${c.is_deleted ? ' style="opacity:0.55"' : ''}>
-    <td style="color:var(--sub)">${c.id}</td>
-    <td>${avatar}${esc(c.character_name)}${charDeletedBadge}${deletedBadge}</td>
-    <td style="text-align:center">${c.message_count}</td>
-    <td style="color:var(--sub);font-size:0.78rem">${(c.updated_at || '').slice(0,16)}</td>
-    <td style="display:flex;gap:6px">
-      <button class="btn btn-sm btn-info" onclick="viewConversation(${c.id})">閲覧</button>
-      <button class="btn btn-sm ${c.is_deleted ? 'btn-ghost' : 'btn-danger'}" onclick="adminToggleConvDelete(${c.id},${c.is_deleted})">${c.is_deleted ? '復元' : '削除'}</button>
-    </td>
-  </tr>`;
+      ? `<img src="${esc(c.character_avatar)}" style="width:24px;height:24px;border-radius:50%;vertical-align:middle;margin-right:5px;object-fit:cover">`
+      : `<span style="display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--bg3);vertical-align:middle;margin-right:5px;align-items:center;justify-content:center;font-size:12px">🤖</span>`;
+    return `<tr${c.is_deleted ? ' style="opacity:0.5"' : ''}>
+      <td style="color:var(--sub)">${c.id}</td>
+      <td>${avatar}${esc(c.character_name)}</td>
+      <td>${c.message_count}</td>
+      <td style="color:var(--sub);font-size:0.78rem">${(c.updated_at||'').slice(0,16)}</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-sm btn-info" onclick="viewConversation(${c.id})">閲覧</button>
+        <button class="btn btn-sm ${c.is_deleted ? 'btn-ok' : 'btn-warn'}" onclick="adminToggleConvDeleteUser(${c.id},${c.is_deleted})">${c.is_deleted ? '復元' : '削除'}</button>
+      </td>
+    </tr>`;
   }).join('');
 }
 
-async function adminToggleConvDelete(convId, isDeleted) {
-  const msg = isDeleted ? 'この会話を復元しますか？' : 'この会話を削除しますか？（ソフトデリート）';
-  const label = isDeleted ? '復元する' : '削除する';
-  showConfirm(msg, async () => {
-    const r = await api(`/admin/conversations/${convId}/delete`, { method: 'PATCH' });
-    r.ok ? (toast(isDeleted ? '復元しました' : '削除しました'), loadUserConversations()) : toast('操作に失敗しました', 'err');
-  }, label);
+function closeUserConversations() {
+  document.getElementById('user-conv-overlay').style.display = 'none';
+}
+
+async function adminToggleConvDeleteUser(convId, isDeleted) {
+  const r = await api(`/admin/conversations/${convId}/delete`, { method: 'PATCH' });
+  if (!r.ok) { toast('操作に失敗しました', 'err'); return; }
+  const overlay = document.getElementById('user-conv-overlay');
+  await _loadUserConvList(
+    parseInt(overlay.dataset.userId),
+    document.getElementById('user-conv-show-deleted').checked
+  );
 }
 
 async function viewConversation(convId) {
-  const r = await api(`/admin/conversations/${convId}/messages`);
-  if (!r.ok) { toast('メッセージの取得に失敗しました', 'err'); return; }
-  const data = await r.json();
+  const [r1, r2] = await Promise.all([
+    api(`/admin/conversations/${convId}/messages`),
+    api(`/admin/conversations/${convId}/state-logs`),
+  ]);
+  if (!r1.ok) { toast('メッセージの取得に失敗しました', 'err'); return; }
+  const data = await r1.json();
+  const stateLogs = r2.ok ? await r2.json() : [];
   const conv = data.conversation;
 
-  const win = window.open('', `conv_${convId}`, 'width=500,height=720,resizable=yes,scrollbars=no');
+  const win = window.open('', `conv_${convId}`, 'width=560,height=780,resizable=yes,scrollbars=no');
   if (!win) { toast('ポップアップがブロックされています。ブラウザの設定をご確認ください', 'err'); return; }
 
   const avatarHtml = conv.character_avatar
     ? `<img src="${esc(conv.character_avatar)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0">`
     : `<span style="display:inline-flex;width:38px;height:38px;border-radius:50%;background:#0f3460;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🤖</span>`;
 
-  const messagesHtml = data.messages.length ? data.messages.map(m => {
-    const time = (m.created_at || '').slice(0, 16);
-    if (m.role === 'user') {
-      return `<div class="msg msg-user">${esc(m.content)}<div class="msg-meta">${time}</div></div>`;
+  // STATE差分生成（変化した項目だけ）
+  const stateFields = [
+    ['relationship','関係性'],['mood','気分'],['environment','環境'],
+    ['situation','状況'],['inventory','所持品'],['goals','目標'],
+  ];
+  function stateDiff(prev, curr) {
+    const changes = [];
+    for (const [key, label] of stateFields) {
+      const pv = prev ? (prev[key] || '') : '';
+      const cv = curr[key] || '';
+      if (cv !== pv) changes.push(`<span class="sd-label">${label}</span> <span class="sd-from">${escW(pv||'—')}</span> → <span class="sd-to">${escW(cv||'—')}</span>`);
     }
-    return `<div class="msg msg-ai"><div class="msg-ai-name">${esc(conv.character_name)}</div>${esc(m.content)}<div class="msg-meta">${time}</div></div>`;
+    // 記憶の差分
+    const pm = prev ? (prev.memories || []) : [];
+    const cm = curr.memories || [];
+    const added = cm.filter(m => !pm.includes(m));
+    const removed = pm.filter(m => !cm.includes(m));
+    if (added.length)   changes.push(`<span class="sd-label">記憶+</span> ${added.map(escW).join('、')}`);
+    if (removed.length) changes.push(`<span class="sd-label">記憶-</span> ${removed.map(escW).join('、')}`);
+    return changes;
+  }
+
+  // AIメッセージにSTATEログを対応付け（順番で N番目のAI返答 = N番目のlog）
+  let logIdx = 0;
+  let prevState = null;
+  const items = [];
+  for (const m of data.messages) {
+    items.push({ type: 'msg', msg: m });
+    if (m.role === 'assistant' && logIdx < stateLogs.length) {
+      const log = stateLogs[logIdx++];
+      const diff = stateDiff(prevState, log);
+      if (diff.length) items.push({ type: 'state', log, diff, time: log.created_at });
+      prevState = log;
+    }
+  }
+
+  function escW(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  const messagesHtml = items.length ? items.map(item => {
+    if (item.type === 'msg') {
+      const m = item.msg;
+      const time = (m.created_at || '').slice(0, 16);
+      if (m.role === 'user')
+        return `<div class="msg msg-user">${escW(m.content)}<div class="msg-meta">${time}</div></div>`;
+      return `<div class="msg msg-ai"><div class="msg-ai-name">${escW(conv.character_name)}</div>${escW(m.content)}<div class="msg-meta">${time}</div></div>`;
+    }
+    // STATE変更行
+    return `<div class="state-change"><div class="state-change-title">📊 ステータス変化 <span class="state-time">${item.time.slice(0,16)}</span></div><div class="state-diff">${item.diff.join('<br>')}</div></div>`;
   }).join('') : '<div style="text-align:center;color:#888;padding:40px">メッセージがありません</div>';
+
+  const bgStyle = conv.character_avatar
+    ? `background-image:url('${conv.character_avatar}');background-size:cover;background-position:center 15%;`
+    : '';
 
   win.document.write(`<!DOCTYPE html><html lang="ja"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>${esc(conv.user_name)} × ${esc(conv.character_name)}</title>
+<title>${escW(conv.user_name)} × ${escW(conv.character_name)}</title>
 <style>
 :root{--bg:#1a1a2e;--bg2:#16213e;--bg3:#0f3460;--text:#e0e0e0;--sub:#a0a0b0;--accent:#e94560;--border:#2a2a4a}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
-.chat-header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden;${bgStyle}}
+.chat-header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(22,33,62,0.92);border-bottom:1px solid var(--border);flex-shrink:0;backdrop-filter:blur(4px)}
 .header-info{flex:1;min-width:0}
 .header-char{font-weight:700;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .header-user{font-size:0.78rem;color:var(--sub);margin-top:2px}
@@ -1059,13 +1248,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans
 .msg-ai-name{font-size:0.8rem;color:#e94560;font-weight:600;margin-bottom:3px}
 .msg-meta{font-size:0.68rem;color:#888;margin-top:4px;text-align:right}
 .msg-ai .msg-meta{text-align:left}
-.conv-footer{padding:8px 16px;background:var(--bg2);border-top:1px solid var(--border);font-size:0.72rem;color:var(--sub);flex-shrink:0;text-align:center}
+.state-change{align-self:center;background:rgba(15,52,96,0.9);border:1px solid #1e4a8a;border-radius:10px;padding:8px 14px;font-size:0.78rem;max-width:90%;width:100%;backdrop-filter:blur(4px)}
+.state-change-title{font-weight:700;color:#7ab3ff;margin-bottom:4px}
+.state-time{font-weight:400;color:var(--sub);font-size:0.72rem;margin-left:6px}
+.state-diff{line-height:1.8;color:var(--text)}
+.sd-label{color:#a0c4ff;font-weight:600;margin-right:4px}
+.sd-from{color:#888;text-decoration:line-through}
+.sd-to{color:#7dffb3;font-weight:600}
+.conv-footer{padding:8px 16px;background:rgba(22,33,62,0.92);border-top:1px solid var(--border);font-size:0.72rem;color:var(--sub);flex-shrink:0;text-align:center;backdrop-filter:blur(4px)}
 </style></head><body>
 <div class="chat-header">
   ${avatarHtml}
   <div class="header-info">
-    <div class="header-char">${esc(conv.character_name)}</div>
-    <div class="header-user">👤 ${esc(conv.user_name)}</div>
+    <div class="header-char">${escW(conv.character_name)}</div>
+    <div class="header-user">👤 ${escW(conv.user_name)}</div>
   </div>
   <div class="header-count">${data.messages.length}件</div>
 </div>
@@ -1098,10 +1294,58 @@ async function loadCharacters() {
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem">
           <input type="checkbox" ${c.is_sample ? 'checked' : ''} onchange="setCharFlag(${c.id},{is_sample:this.checked?1:0})"> サンプル
         </label>
+        <button class="btn btn-sm btn-info" onclick="openCharConversations(${c.id},'${esc(c.name)}')">💬 会話</button>
         <button class="btn btn-sm btn-danger" onclick="deleteChar(${c.id},'${esc(c.name)}')">削除</button>
       </td>
     </tr>`;
   }).join('');
+}
+
+// ─── キャラクター会話一覧モーダル ───
+async function openCharConversations(charId, charName) {
+  const overlay = document.getElementById('char-conv-overlay');
+  const title = document.getElementById('char-conv-title');
+  const tbody = document.getElementById('char-conv-tbody');
+  const chk = document.getElementById('char-conv-show-deleted');
+  title.textContent = `💬 ${charName} の会話一覧`;
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--sub);padding:16px">読み込み中...</td></tr>';
+  overlay.style.display = 'flex';
+  overlay.dataset.charId = charId;
+  overlay.dataset.charName = charName;
+  chk.checked = false;
+  await _loadCharConvList(charId, false);
+}
+
+async function _loadCharConvList(charId, includeDeleted) {
+  const tbody = document.getElementById('char-conv-tbody');
+  const r = await api(`/admin/characters/${charId}/conversations?include_deleted=${includeDeleted ? 1 : 0}`);
+  if (!r.ok) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--accent);padding:16px;text-align:center">取得に失敗しました</td></tr>'; return; }
+  const convs = await r.json();
+  if (!convs.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--sub);padding:16px">会話がありません</td></tr>'; return; }
+  tbody.innerHTML = convs.map(c => `<tr${c.is_deleted ? ' style="opacity:0.5"' : ''}>
+    <td style="color:var(--sub)">${c.id}</td>
+    <td>${esc(c.user_name)}</td>
+    <td>${c.message_count}</td>
+    <td style="color:var(--sub);font-size:0.78rem">${(c.updated_at||'').slice(0,16)}</td>
+    <td style="display:flex;gap:6px">
+      <button class="btn btn-sm btn-info" onclick="viewConversation(${c.id})">閲覧</button>
+      <button class="btn btn-sm ${c.is_deleted ? 'btn-ok' : 'btn-warn'}" onclick="adminToggleConvDelete(${c.id},${c.is_deleted},this)">${c.is_deleted ? '復元' : '削除'}</button>
+    </td>
+  </tr>`).join('');
+}
+
+function closeCharConversations() {
+  document.getElementById('char-conv-overlay').style.display = 'none';
+}
+
+async function adminToggleConvDelete(convId, isDeleted, btn) {
+  const r = await api(`/admin/conversations/${convId}/delete`, { method: 'PATCH' });
+  if (!r.ok) { toast('操作に失敗しました', 'err'); return; }
+  const overlay = document.getElementById('char-conv-overlay');
+  await _loadCharConvList(
+    parseInt(overlay.dataset.charId),
+    document.getElementById('char-conv-show-deleted').checked
+  );
 }
 
 async function setCharFlag(id, body) {
@@ -1301,7 +1545,7 @@ async function loadTemplates() {
         <div style="display:flex;flex-direction:column;gap:8px">
           <div class="form-group" style="margin:0"><label>テンプレート名</label><input type="text" id="e-name-${t.id}" value="${esc(t.name)}"></div>
           <div class="form-group" style="margin:0"><label>プロンプト</label><textarea id="e-prompt-${t.id}" rows="3">${esc(t.prompt)}</textarea></div>
-          <div class="form-group" style="margin:0"><label>ネガティブプロンプト</label><textarea id="e-neg-${t.id}" rows="2">${esc(t.negative_prompt || '')}</textarea></div>
+          <div class="form-group" style="margin:0"><label>ネガティブプロンプト</label><textarea id="e-neg-${t.id}" rows="8">${esc(t.negative_prompt || '')}</textarea></div>
           <div class="form-group" style="margin:0"><label>表示順</label><input type="number" id="e-order-${t.id}" value="${t.sort_order}" style="width:100px"></div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-primary btn-sm" onclick="saveTemplate(${t.id})">保存</button>
@@ -1722,13 +1966,107 @@ async function clearQueueStatus(status) {
   }, '削除する');
 }
 
+// ─── TTS音声モデル管理（インライン編集） ───
+let _ttsVmAll = [];
+let _vvSpeakersCache = [];
+
+async function loadTtsVoiceModels() {
+  const r = await api('/tts/admin/voice-models');
+  if (!r.ok) { toast('音声モデルの取得に失敗しました', 'err'); return; }
+  _ttsVmAll = await r.json();
+  filterTtsModels();
+}
+
+function filterTtsModels() {
+  const gender = document.getElementById('tts-filter-gender')?.value || '';
+  const nameQ = (document.getElementById('tts-filter-name')?.value || '').toLowerCase();
+  const spkQ = (document.getElementById('tts-filter-speaker')?.value || '').toLowerCase();
+  const rows = _ttsVmAll.filter(m => {
+    if (gender === 'female' && !m.show_female) return false;
+    if (gender === 'male' && !m.show_male) return false;
+    if (gender === 'other' && !m.show_other) return false;
+    if (nameQ && !m.display_name.toLowerCase().includes(nameQ)) return false;
+    if (spkQ && !(m.speaker_name || '').toLowerCase().includes(spkQ)) return false;
+    return true;
+  });
+  const tbody = document.getElementById('tts-vm-tbody');
+  const empty = document.getElementById('tts-vm-empty');
+  if (!rows.length) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  const inpStyle = 'width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 7px;color:var(--text);font-family:inherit;font-size:0.85rem;';
+  tbody.innerHTML = rows.map(m => `<tr data-vmid="${m.id}">
+    <td><input type="number" min="0" max="999" value="${m.sort_order}" style="${inpStyle}width:50px;text-align:center" onchange="patchTtsVm(${m.id},{sort_order:parseInt(this.value)||0})"></td>
+    <td style="font-size:0.82rem;color:var(--sub)">${esc(m.speaker_name||'')}</td>
+    <td><input type="text" value="${esc(m.display_name)}" style="${inpStyle}" placeholder="表示名" onblur="if(this.value.trim())patchTtsVm(${m.id},{display_name:this.value.trim()})"></td>
+    <td><input type="text" value="${esc(m.genre||'')}" style="${inpStyle}" placeholder="例: 少女、大人女性" onblur="patchTtsVm(${m.id},{genre:this.value.trim()||''})"></td>
+    <td style="font-size:0.78rem;color:var(--sub)">${(m.styles||[]).map(s=>esc(s.name)).join(', ')}</td>
+    <td style="white-space:nowrap">
+      <label title="女性"><input type="checkbox" ${m.show_female?'checked':''} onchange="patchTtsVm(${m.id},{show_female:this.checked?1:0})"> 女</label>
+      <label title="男性" style="margin-left:4px"><input type="checkbox" ${m.show_male?'checked':''} onchange="patchTtsVm(${m.id},{show_male:this.checked?1:0})"> 男</label>
+      <label title="その他" style="margin-left:4px"><input type="checkbox" ${m.show_other?'checked':''} onchange="patchTtsVm(${m.id},{show_other:this.checked?1:0})"> 他</label>
+    </td>
+    <td style="text-align:center">
+      <button class="btn btn-sm ${m.is_active?'btn-ok':'btn-ghost'}" onclick="patchTtsVm(${m.id},{is_active:${m.is_active?0:1}},this)" style="min-width:44px">${m.is_active?'有効':'無効'}</button>
+    </td>
+    <td>
+      <button class="btn btn-sm btn-danger" onclick="deleteTtsVoiceModel(${m.id})">✕</button>
+    </td>
+  </tr>`).join('');
+}
+
+async function patchTtsVm(id, patch, btn) {
+  const r = await api('/tts/admin/voice-models/' + id, { method: 'PATCH', body: JSON.stringify(patch) });
+  if (!r.ok) { toast('更新に失敗しました', 'err'); return; }
+  // is_activeのトグルボタン表示を即座に更新
+  if (patch.is_active !== undefined && btn) {
+    const active = patch.is_active === 1;
+    btn.textContent = active ? '有効' : '無効';
+    btn.className = `btn btn-sm ${active ? 'btn-ok' : 'btn-ghost'}`;
+    btn.setAttribute('onclick', `patchTtsVm(${id},{is_active:${active?0:1}},this)`);
+    // キャッシュ更新
+    const m = _ttsVmAll.find(x => x.id === id);
+    if (m) m.is_active = patch.is_active;
+  }
+}
+
+async function loadVvSpeakersForAdmin() {
+  toast('VOICEVOXに接続中...', 'info');
+  const r = await api('/tts/admin/sync-speakers', { method: 'POST' });
+  if (!r.ok) { toast('VOICEVOX取得失敗: 接続設定を確認してください', 'err'); return; }
+  const d = await r.json();
+  toast(`同期完了: ${d.total}件（新規${d.added}件）`);
+  const r2 = await api('/tts/admin/speakers');
+  if (r2.ok) _vvSpeakersCache = await r2.json();
+  await loadTtsVoiceModels();
+}
+
+async function deleteTtsVoiceModel(id) {
+  showConfirm('この音声モデルを削除しますか？', async () => {
+    const r = await api('/tts/admin/voice-models/' + id, { method: 'DELETE' });
+    r.ok ? (toast('削除しました'), loadTtsVoiceModels()) : toast('削除失敗', 'err');
+  }, '削除する');
+}
+
+async function loadSeMissLogs() {
+  const r = await api('/tts/admin/se-miss-logs');
+  if (!r.ok) return;
+  const logs = await r.json();
+  const tbody = document.getElementById('se-miss-tbody');
+  if (!logs.length) { tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--sub)">ログなし</td></tr>'; return; }
+  tbody.innerHTML = logs.map(l => `<tr><td>${esc(l.se_name)}</td><td style="text-align:center">${l.count}</td><td style="font-size:0.82rem;color:var(--sub)">${(l.last_seen||'').slice(0,16)}</td></tr>`).join('');
+}
+
 // showSection の拡張（ハッシュ連動）
 const _sectionLoaders = {
   dashboard: () => loadStats(),
   ai: () => loadAiSettings(),
   users: () => loadUsers(),
-  conversations: () => loadConvUsers(),
   characters: () => loadCharacters(),
+  tts: () => { loadTtsVoiceModels(); loadSeMissLogs(); },
   sd: () => { loadSdSettings(); loadTemplates(); loadSelectableModels(); },
   queue: () => loadQueue(),
   images: () => loadImages(),

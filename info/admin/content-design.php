@@ -56,25 +56,11 @@ asobiRequireAdmin();
           <td><code>info/</code></td>
         </tr>
         <tr>
-          <td><a href="https://dbd.asobi.info/" target="_blank" style="color:#3498db;">dbd.asobi.info</a></td>
-          <td><span class="badge badge-info">情報サイト</span></td>
-          <td>Dead by Daylight 攻略情報。SEOで集客</td>
-          <td>HTML（静的）</td>
-          <td><code>dbd/</code></td>
-        </tr>
-        <tr>
-          <td><a href="https://pkq.asobi.info/" target="_blank" style="color:#3498db;">pkq.asobi.info</a></td>
-          <td><span class="badge badge-info">情報サイト</span></td>
-          <td>ポケモンクエスト情報。SEOで集客</td>
-          <td>HTML（静的）</td>
-          <td><code>pkq/</code></td>
-        </tr>
-        <tr>
-          <td><a href="https://game.asobi.info/" target="_blank" style="color:#3498db;">game.asobi.info</a></td>
-          <td><span class="badge badge-info">情報サイト</span></td>
-          <td>レトロゲーム情報DB（NES/SFC/PCE/MD/MSX）。SEOで集客</td>
-          <td>HTML（静的）+ PHP</td>
-          <td><code>game/</code></td>
+          <td><a href="https://aic.asobi.info/" target="_blank" style="color:#3498db;">aic.asobi.info</a></td>
+          <td><span class="badge badge-tools">ツール</span></td>
+          <td>AIチャット（Ollama連携）。画像生成・翻訳機能付き</td>
+          <td>SPA (JS) + FastAPI</td>
+          <td><code>aic/</code></td>
         </tr>
         <tr>
           <td><a href="https://tbt.asobi.info/" target="_blank" style="color:#3498db;">tbt.asobi.info</a></td>
@@ -84,11 +70,25 @@ asobiRequireAdmin();
           <td><code>tbt/</code></td>
         </tr>
         <tr>
-          <td><a href="https://aic.asobi.info/" target="_blank" style="color:#3498db;">aic.asobi.info</a></td>
-          <td><span class="badge badge-tools">ツール</span></td>
-          <td>AIチャット（Ollama連携）。画像生成・翻訳機能付き</td>
-          <td>SPA (JS) + FastAPI</td>
-          <td><code>aic/</code></td>
+          <td><a href="https://pkq.asobi.info/" target="_blank" style="color:#3498db;">pkq.asobi.info</a></td>
+          <td><span class="badge badge-info">情報サイト</span></td>
+          <td>ポケモンクエスト情報。SEOで集客</td>
+          <td>HTML（静的）</td>
+          <td><code>pkq/</code></td>
+        </tr>
+        <tr>
+          <td><a href="https://dbd.asobi.info/" target="_blank" style="color:#3498db;">dbd.asobi.info</a></td>
+          <td><span class="badge badge-info">情報サイト</span></td>
+          <td>Dead by Daylight 攻略情報。SEOで集客</td>
+          <td>HTML（静的）</td>
+          <td><code>dbd/</code></td>
+        </tr>
+        <tr>
+          <td><a href="https://game.asobi.info/" target="_blank" style="color:#3498db;">game.asobi.info</a></td>
+          <td><span class="badge badge-info">情報サイト</span></td>
+          <td>レトロゲーム情報DB（NES/SFC/PCE/MD/MSX）。SEOで集客</td>
+          <td>HTML（静的）+ PHP</td>
+          <td><code>game/</code></td>
         </tr>
       </tbody>
     </table>
@@ -98,7 +98,7 @@ asobiRequireAdmin();
     <h2>コンテンツ設計方針</h2>
     <ul class="policy-list">
       <li>
-        <strong>情報サイト（dbd / pkq / game）はSEO優先でHTMLを基本とする</strong><br>
+        <strong>情報サイト（pkq / dbd / game）はSEO優先でHTMLを基本とする</strong><br>
         ゲームデータはHTMLページとして出力。クローラーへの蓄積・インデックスに有利なため。
         JavaScriptで動的に生成するのではなく、可能な限り静的HTML（またはSSR PHP）で提供する。
       </li>

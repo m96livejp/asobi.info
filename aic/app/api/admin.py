@@ -66,6 +66,7 @@ class AiSettingsUpdate(BaseModel):
     max_tokens: int = 1024
     cost: int = 1
     response_guideline: str | None = None
+    voicevox_endpoint: str | None = None
 
 
 @router.get("/ai-settings")
@@ -73,7 +74,8 @@ async def get_ai_settings(admin: User = Depends(require_admin), db: AsyncSession
     s = await _get_or_create_settings(db)
     return {"provider": s.provider, "endpoint": s.endpoint, "api_key": s.api_key,
             "model": s.model, "max_tokens": s.max_tokens, "cost": s.cost,
-            "response_guideline": s.response_guideline or ""}
+            "response_guideline": s.response_guideline or "",
+            "voicevox_endpoint": s.voicevox_endpoint or ""}
 
 
 @router.put("/ai-settings")
@@ -82,6 +84,7 @@ async def update_ai_settings(req: AiSettingsUpdate, admin: User = Depends(requir
     s.provider = req.provider; s.endpoint = req.endpoint; s.api_key = req.api_key
     s.model = req.model; s.max_tokens = req.max_tokens; s.cost = req.cost
     s.response_guideline = req.response_guideline or None
+    s.voicevox_endpoint = req.voicevox_endpoint or None
     await db.commit()
     return {"ok": True}
 
@@ -331,6 +334,37 @@ async def list_all_characters(admin: User = Depends(require_admin), db: AsyncSes
 class CharacterUpdate(BaseModel):
     is_public: int | None = None
     is_sample: int | None = None
+
+
+@router.get("/characters/{char_id}/conversations")
+async def list_character_conversations(char_id: int, include_deleted: bool = Query(False),
+                                       admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """キャラクターと会話しているユーザー一覧と各会話情報"""
+    q = select(Conversation).where(Conversation.character_id == char_id)
+    if not include_deleted:
+        q = q.where(Conversation.is_deleted == 0)
+    result = await db.execute(q.order_by(Conversation.updated_at.desc()))
+    convs = result.scalars().all()
+    out = []
+    for c in convs:
+        ur = await db.execute(select(User.username, User.display_name, User.avatar_url).where(User.id == c.user_id))
+        user_row = ur.first()
+        mr = await db.execute(
+            select(func.count()).select_from(Message).where(Message.conversation_id == c.id)
+        )
+        msg_count = mr.scalar()
+        out.append({
+            "id": c.id,
+            "user_id": c.user_id,
+            "user_name": (user_row[1] or user_row[0]) if user_row else f"user#{c.user_id}",
+            "user_avatar": user_row[2] if user_row else None,
+            "title": c.title,
+            "message_count": msg_count,
+            "is_deleted": c.is_deleted,
+            "updated_at": str(c.updated_at),
+            "created_at": str(c.created_at),
+        })
+    return out
 
 
 @router.patch("/characters/{char_id}")
@@ -921,6 +955,101 @@ async def chat_prompt_preview(
 
     prompt = build_system_prompt(c)
     return {"character_name": c.name, "char_name": c.char_name, "prompt": prompt}
+
+
+# ─────────────────────────────────────────────
+# チャット送信ペイロード確認
+# ─────────────────────────────────────────────
+
+@router.get("/conversations/{conversation_id}/state-logs")
+async def get_state_logs(
+    conversation_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """会話のSTATE更新ログ一覧"""
+    from ..models.conversation import ConversationStateLog
+    result = await db.execute(
+        select(ConversationStateLog)
+        .where(ConversationStateLog.conversation_id == conversation_id)
+        .order_by(ConversationStateLog.id.asc())
+    )
+    logs = result.scalars().all()
+    return [
+        {
+            "id": l.id,
+            "relationship": l.relationship,
+            "mood": l.mood,
+            "environment": l.environment,
+            "situation": l.situation,
+            "inventory": l.inventory,
+            "goals": l.goals,
+            "memories": json.loads(l.memories or "[]"),
+            "created_at": l.created_at.strftime("%Y-%m-%d %H:%M:%S") if l.created_at else "",
+        }
+        for l in logs
+    ]
+
+
+@router.get("/chat-payload-preview/{conversation_id}")
+async def chat_payload_preview(
+    conversation_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """指定会話で実際にAIに送られる内容を順番どおりに返す"""
+    from ..models.conversation import Conversation, Message, ConversationState
+    from ..models.settings import AiSettings, ChatStateConfig
+    from ..services.chat_service import build_system_prompt, DEFAULT_RESPONSE_GUIDELINE
+
+    # 会話取得
+    conv_result = await db.execute(select(Conversation).where(Conversation.id == conversation_id))
+    conv = conv_result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=404, detail="会話が見つかりません")
+
+    # キャラクター
+    char_result = await db.execute(select(Character).where(Character.id == conv.character_id))
+    char = char_result.scalar_one_or_none()
+
+    # AI設定
+    ai_result = await db.execute(select(AiSettings).where(AiSettings.id == 1))
+    ai_settings = ai_result.scalar_one_or_none()
+
+    # ステータス機能
+    cfg_result = await db.execute(select(ChatStateConfig).where(ChatStateConfig.id == 1))
+    cfg = cfg_result.scalar_one_or_none()
+    state_enabled = bool(cfg and cfg.enabled)
+    conv_state = None
+    if state_enabled:
+        st_result = await db.execute(
+            select(ConversationState).where(ConversationState.conversation_id == conversation_id)
+        )
+        conv_state = st_result.scalar_one_or_none()
+
+    rg = (ai_settings.response_guideline if ai_settings and ai_settings.response_guideline is not None else None)
+    system_prompt = build_system_prompt(char, conv_state=conv_state, state_enabled=state_enabled, response_guideline=rg)
+
+    # 過去メッセージ最新20件（古い順）
+    msg_result = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.id.desc())
+        .limit(20)
+    )
+    past_messages = list(reversed(msg_result.scalars().all()))
+
+    payload = [{"index": 0, "role": "system", "content": system_prompt}]
+    for i, m in enumerate(past_messages, start=1):
+        payload.append({"index": i, "role": m.role, "content": m.content})
+
+    return {
+        "conversation_id": conversation_id,
+        "character_name": char.name if char else "?",
+        "provider": ai_settings.provider if ai_settings else "unknown",
+        "history_count": len(past_messages),
+        "payload": payload,
+    }
 
 
 # ─────────────────────────────────────────────

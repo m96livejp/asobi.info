@@ -15,13 +15,17 @@ async def get_ai_settings(db: AsyncSession) -> AiSettings | None:
     return result.scalar_one_or_none()
 
 
-def build_system_prompt(character, conv_state=None, state_enabled: bool = False) -> str:
+DEFAULT_RESPONSE_GUIDELINE = "キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。"
+
+
+def build_system_prompt(character, conv_state=None, state_enabled: bool = False, response_guideline: str | None = None) -> str:
     """キャラクター設定からシステムプロンプトを組み立てる
 
     Args:
         character: Character モデル
         conv_state: ConversationState モデル（ステータス機能ON時）
         state_enabled: ステータス機能が有効かどうか
+        response_guideline: レスポンス指示文（Noneの場合はデフォルト使用）
     """
     parts = []
     if character.char_name:
@@ -63,7 +67,9 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False)
     if kw:
         parts.append(f"キーワード: {', '.join(kw)}")
 
-    parts.append("キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。")
+    guideline = response_guideline if response_guideline is not None else DEFAULT_RESPONSE_GUIDELINE
+    if guideline:
+        parts.append(guideline)
 
     # ステータス機能が有効な場合
     if state_enabled and conv_state:
@@ -98,6 +104,25 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False)
             '{"relationship":"...","mood":"...","environment":"...","situation":"...","inventory":"...","goals":"...","memories":["..."]}\n'
             "<<</STATE>>>"
         )
+
+    # TTS音声スタイル指示（キャラクターに音声設定がある場合）
+    if character.voice_model and character.tts_styles:
+        try:
+            styles = json.loads(character.tts_styles or "[]")
+            style_names = [s["name"] for s in styles if "name" in s]
+        except Exception:
+            style_names = []
+        if style_names:
+            style_str = "、".join(style_names)
+            parts.append(
+                "## 音声スタイル指示\n"
+                "返答は以下の形式で記述してください：[SE名]{スタイル}テキスト\n"
+                "- [SE名]: 動作や効果音（例：[ドアをノックする]）。不要な場合は省略可。\n"
+                f"- {{スタイル}}: 次の中から必ず1つ選択: {style_str}\n"
+                "- テキスト: キャラクターのセリフ。\n"
+                "例：[ドアをノックする]{元気}失礼します。{ノーマル}初めまして。\n"
+                "スタイルは全てのセグメントに必ず付けてください。"
+            )
 
     return "\n\n".join(parts)
 
