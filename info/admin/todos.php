@@ -115,9 +115,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resul
     $id         = (int)($_POST['id'] ?? 0);
     $resultType = $_POST['result_type'] ?? '';
     $ngReason   = trim($_POST['ng_reason'] ?? '');
+    $okComment  = trim($_POST['ok_comment'] ?? '');
     $result     = '';
     if ($resultType === 'OK') {
-        $result = 'OK';
+        $result = $okComment ? 'OK: ' . $okComment : 'OK';
     } elseif ($resultType === 'NG') {
         $result = $ngReason ? 'NG: ' . $ngReason : 'NG';
     }
@@ -130,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resul
             $cur->execute([$id]);
             $curRow = $cur->fetch();
             // OK → 完了
-            if ($curRow && $result === 'OK') {
+            if ($curRow && str_starts_with($result, 'OK')) {
                 $db->prepare("UPDATE content_todos SET status = '完了', completed_at = datetime('now','localtime'), updated_at = datetime('now','localtime') WHERE id = ?")
                    ->execute([$id]);
                 $_SESSION['todo_msg'] = 'success:確認結果をOKに更新し、ステータスを「完了」に変更しました';
@@ -143,11 +144,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resul
                 $noteStmt->execute([$id]);
                 $noteRow = $noteStmt->fetch();
                 $currentNote = trim($noteRow['status_note'] ?? '');
-                $ngAppend = '【NG: ' . date('m/d H:i') . '】' . ($ngReason ?: '理由なし');
+                $ngAppend = '【再対応: ' . date('m/d H:i') . '】' . ($ngReason ?: '詳細なし');
                 $newNote = $currentNote !== '' ? $currentNote . "\n\n" . $ngAppend : $ngAppend;
                 $db->prepare("UPDATE content_todos SET status = '未着手', status_note = ?, result = '', updated_at = datetime('now','localtime') WHERE id = ?")
                    ->execute([$newNote, $id]);
-                $_SESSION['todo_msg'] = 'success:確認結果をNGに更新し、ステータスを「未着手」に変更しました（対応メモにNG理由を追記）';
+                $_SESSION['todo_msg'] = 'success:再対応に設定し、ステータスを「未着手」に変更しました（対応メモにコメントを追記）';
                 header('Location: /admin/todos.php'); exit;
             }
         }
@@ -495,7 +496,8 @@ function buildQuery(array $overrides): string {
       <?php else: ?>
       <?php
         $resultRaw = $selItem['result'] ?? '';
-        $isOk = $resultRaw === 'OK';
+        $isOk = str_starts_with($resultRaw, 'OK');
+        $okComment = ($isOk && strlen($resultRaw) > 2) ? trim(substr($resultRaw, 2), ': ') : '';
         $isNg = str_starts_with($resultRaw, 'NG');
         $ngReason = $isNg ? trim(substr($resultRaw, 2), ': ') : '';
         $isAiNote = !$isOk && !$isNg && $resultRaw !== '';
@@ -564,10 +566,16 @@ function buildQuery(array $overrides): string {
           <div class="action-group-title"><?= $circled[$n_result-1] ?> 確認結果</div>
           <?php if ($isNg): ?>
           <div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.85rem;line-height:1.6;">
-            <span style="font-weight:600;color:#e11d48;">NG</span>
+            <span style="font-weight:600;color:#e11d48;">再対応</span>
             <?php if ($ngReason): ?>
             <div style="margin-top:6px;white-space:pre-wrap;color:#64748b;"><?= htmlspecialchars($ngReason) ?></div>
             <?php endif; ?>
+          </div>
+          <?php endif; ?>
+          <?php if ($isOk && $okComment): ?>
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.85rem;line-height:1.6;">
+            <span style="font-weight:600;color:#16a34a;">OK</span>
+            <div style="margin-top:6px;white-space:pre-wrap;color:#64748b;"><?= htmlspecialchars($okComment) ?></div>
           </div>
           <?php endif; ?>
           <form method="POST" action="">
@@ -575,19 +583,21 @@ function buildQuery(array $overrides): string {
             <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
             <input type="hidden" name="result_type" value="NG">
             <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px;">
-              <textarea name="ng_reason" rows="3" placeholder="NG理由（詳細を記入）"
+              <textarea name="ng_reason" rows="3" placeholder="再対応コメント（詳細を記入）"
                 style="padding:7px 10px;border:2px solid #e0e4e8;border-radius:8px;font-size:0.85rem;font-family:inherit;flex:1;min-width:200px;resize:vertical;line-height:1.6;"><?= htmlspecialchars($ngReason) ?></textarea>
-              <button type="submit" class="btn-save" style="background:#e74c3c;">✗ NG送信</button>
+              <button type="submit" class="btn-save" style="background:#e74c3c;">↺ 再対応</button>
             </div>
           </form>
-          <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px;">
-            <form method="POST" action="" style="margin:0;">
-              <input type="hidden" name="action" value="result">
-              <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
-              <input type="hidden" name="result_type" value="OK">
+          <form method="POST" action="">
+            <input type="hidden" name="action" value="result">
+            <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
+            <input type="hidden" name="result_type" value="OK">
+            <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px;">
+              <textarea name="ok_comment" rows="2" placeholder="コメント（任意）"
+                style="padding:7px 10px;border:2px solid #e0e4e8;border-radius:8px;font-size:0.85rem;font-family:inherit;flex:1;min-width:200px;resize:vertical;line-height:1.6;"><?= htmlspecialchars($okComment) ?></textarea>
               <button type="submit" class="btn-save" style="background:#388e3c;">✓ OK（完了）</button>
-            </form>
-          </div>
+            </div>
+          </form>
 
           <!-- 削除 -->
           <div style="margin-top:20px;">
@@ -819,9 +829,9 @@ function buildQuery(array $overrides): string {
         <span style="font-size:0.68rem;color:#9ba8b5;">キューに戻る</span>
       </div>
       <div class="flow-branch">
-        <span class="flow-branch-label">NGルート:</span>
+        <span class="flow-branch-label">再対応ルート:</span>
         <span class="flow-v-arrow">↓</span>
-        <span class="flow-node">NG <span class="flow-who admin">管理者</span></span>
+        <span class="flow-node">再対応 <span class="flow-who admin">管理者</span></span>
         <span class="flow-arrow">→</span>
         <span class="flow-node">未着手 <span class="flow-who ai">AI</span></span>
         <span class="flow-v-arrow">↑</span>

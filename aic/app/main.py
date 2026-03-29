@@ -17,6 +17,9 @@ async def lifespan(app: FastAPI):
     # SD画像生成キューワーカー起動
     from .services.queue_worker import start_worker
     start_worker()
+    # デイリーポイント回復ワーカー起動
+    from .services.daily_recovery import start_recovery_worker
+    start_recovery_worker()
     yield
 
 app = FastAPI(title="aic.asobi.info", lifespan=lifespan)

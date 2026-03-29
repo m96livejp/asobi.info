@@ -280,6 +280,21 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         <input type="number" id="cost" value="1" min="0" max="100">
         <div class="hint">1メッセージあたりの消費ポイント（0 = 無料）</div>
       </div>
+      <div class="form-group" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <label style="font-weight:600;margin-bottom:8px;display:block">🔄 デイリーポイント回復</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+          <input type="checkbox" id="daily-recovery-enabled" onchange="saveDailyRecovery()" style="width:auto">
+          毎日ポイントが不足しているユーザーを回復する
+        </label>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+          <label style="white-space:nowrap">回復目標</label>
+          <input type="number" id="daily-recovery-threshold" min="1" max="99999" value="100" style="width:90px" onchange="saveDailyRecovery()">
+          <span style="font-size:0.82rem;color:var(--text-secondary)">pt 未満のとき、この値まで回復</span>
+        </div>
+        <div class="hint" style="margin-top:6px">例: 30pt → 100pt（100pt以上のユーザーは変化なし）<br>毎時チェックし、その日まだ実行されていなければ自動回復します。</div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="runDailyRecoveryNow()">今すぐ実行</button>
+        <span id="daily-recovery-result" style="margin-left:8px;font-size:0.82rem;color:var(--text-secondary)"></span>
+      </div>
       <div class="form-group">
         <label>レスポンス指示文</label>
         <textarea id="response-guideline" rows="4" placeholder="例: キャラクターとして自然に会話してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。"></textarea>
@@ -549,6 +564,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           <input type="number" id="sd-height" value="768" min="64" max="2048" step="64">
           <div class="hint">縦長: 512×768 / 576×1024 など</div>
         </div>
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label>最大保存枚数（ユーザーごと）</label>
+        <input type="number" id="sd-max-images" value="100" min="1" max="9999" style="width:100px">
+        <div class="hint">この枚数に達すると新規生成ボタンが押せなくなります。</div>
       </div>
       <button class="btn btn-primary" id="btn-sd-save" onclick="saveSdSettings()">保存</button>
     </div>
@@ -1017,6 +1037,9 @@ async function loadAiSettings() {
   // 画像変化設定ロード
   document.getElementById('image-change-enabled').checked = !!d.image_change_enabled;
   document.getElementById('image-change-revert-turns').value = d.image_change_revert_turns ?? 10;
+  // デイリーポイント回復設定ロード
+  document.getElementById('daily-recovery-enabled').checked = !!d.daily_point_recovery_enabled;
+  document.getElementById('daily-recovery-threshold').value = d.daily_point_recovery_threshold ?? 100;
 }
 
 async function loadPayloadConvs() {
@@ -1074,6 +1097,29 @@ async function saveImageChangeConfig() {
   const revert_turns = parseInt(document.getElementById('image-change-revert-turns').value) || 10;
   const r = await api('/admin/ai-settings', { method: 'PATCH', body: JSON.stringify({ image_change_enabled: enabled, image_change_revert_turns: revert_turns }) });
   if (r.ok) toast('画像変化設定を保存しました');
+}
+
+async function saveDailyRecovery() {
+  const enabled = document.getElementById('daily-recovery-enabled').checked ? 1 : 0;
+  const threshold = parseInt(document.getElementById('daily-recovery-threshold').value) || 100;
+  const r = await api('/admin/ai-settings', { method: 'PATCH', body: JSON.stringify({ daily_point_recovery_enabled: enabled, daily_point_recovery_threshold: threshold }) });
+  if (r.ok) toast('デイリー回復設定を保存しました');
+}
+
+async function runDailyRecoveryNow() {
+  const resultEl = document.getElementById('daily-recovery-result');
+  resultEl.textContent = '実行中...';
+  const r = await api('/admin/run-daily-recovery', { method: 'POST' });
+  if (r.ok) {
+    const d = await r.json();
+    if (d.skipped) {
+      resultEl.textContent = '⚠ 無効のためスキップされました';
+    } else {
+      resultEl.textContent = `✅ ${d.recovered}人のポイントを${d.threshold}ptに回復しました`;
+    }
+  } else {
+    resultEl.textContent = '❌ 失敗しました';
+  }
 }
 
 let _stateFields = [];
@@ -1677,6 +1723,7 @@ async function loadSdSettings() {
   document.getElementById('sd-lt-api-key').value = d.lt_api_key || '';
   // lt_mode: off / free / local / both
   document.getElementById('sd-lt-mode').value = d.lt_mode || 'off';
+  document.getElementById('sd-max-images').value = d.max_images ?? 100;
   updateLtModeUI();
   // 画像比率CSS変数を設定
   const w = d.width || 512, h = d.height || 512;
@@ -1698,6 +1745,7 @@ async function saveSdSettings() {
     lt_endpoint: document.getElementById('sd-lt-endpoint').value || null,
     lt_mode: document.getElementById('sd-lt-mode').value,
     lt_api_key: document.getElementById('sd-lt-api-key').value || null,
+    max_images: parseInt(document.getElementById('sd-max-images').value) || 100,
   };
   const r = await api('/admin/sd-settings', { method: 'PUT', body: JSON.stringify(body) });
   btn.disabled = false; btn.textContent = '保存';

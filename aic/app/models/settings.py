@@ -20,6 +20,7 @@ class SdSettings(Base):
     lt_endpoint      = Column(String, nullable=True)          # LibreTranslate ローカルエンドポイント（例: http://127.0.0.1:5000）
     lt_mode          = Column(String, nullable=False, default="off")  # off / free / local / both
     lt_api_key       = Column(String, nullable=True)          # libretranslate.com APIキー（無料登録で取得）
+    max_images       = Column(Integer, nullable=False, default=100)   # ユーザーごとの最大保存枚数
     updated_at       = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
@@ -93,6 +94,8 @@ class AiSettings(Base):
     tts_voice_params = Column(Text, nullable=True)                    # JSON: {"speed":{"min":0.8,"max":1.4},...} null=無効
     image_change_enabled = Column(Integer, nullable=False, default=0)        # 画像変化機能 0=OFF 1=ON
     image_change_revert_turns = Column(Integer, nullable=False, default=10)  # 元画像に戻すまでのターン数
+    daily_point_recovery_enabled   = Column(Integer, nullable=False, default=0)   # デイリーポイント回復 0=OFF 1=ON
+    daily_point_recovery_threshold = Column(Integer, nullable=False, default=100) # 回復閾値・目標値（これ未満なら回復）
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

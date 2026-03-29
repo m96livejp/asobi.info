@@ -1,15 +1,17 @@
 """会話API"""
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from ..database import get_db
 from ..deps import require_user
 from ..models.user import User
 from ..models.character import Character
-from ..models.conversation import Conversation, Message, ConversationState
-from ..models.settings import ChatStateConfig, AiSettings
+from ..models.conversation import Conversation, Message, ConversationState, ConversationStateLog
+from ..models.settings import ChatStateConfig, AiSettings, DEFAULT_STATE_FIELDS, STATE_BUILTIN_KEYS
 from pydantic import BaseModel
+
+MSG_PAGE_SIZE = 50  # 1ページあたりのメッセージ取得数
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
@@ -113,17 +115,27 @@ async def get_conversation(conv_id: int, user: User = Depends(require_user), db:
     if not conv:
         raise HTTPException(status_code=404, detail="会話が見つかりません")
 
-    result = await db.execute(
-        select(Message).where(Message.conversation_id == conv_id).order_by(Message.id)
+    # needs_retry: 最後のアクティブメッセージがuserかどうか
+    last_active_r = await db.execute(
+        select(Message).where(Message.conversation_id == conv_id, Message.is_deleted == 0)
+        .order_by(Message.id.desc()).limit(1)
     )
-    all_messages = result.scalars().all()
+    last_active = last_active_r.scalar_one_or_none()
+    needs_retry = bool(last_active and last_active.role == "user")
+
+    # 最新 MSG_PAGE_SIZE 件のみ取得（ページネーション）
+    msgs_r = await db.execute(
+        select(Message).where(Message.conversation_id == conv_id)
+        .order_by(Message.id.desc()).limit(MSG_PAGE_SIZE + 1)
+    )
+    msgs_desc = msgs_r.scalars().all()
+    has_more = len(msgs_desc) > MSG_PAGE_SIZE
+    msgs_desc = msgs_desc[:MSG_PAGE_SIZE]
+    msgs_desc.reverse()  # 昇順に戻す
+
     messages = [{"id": m.id, "role": m.role, "content": m.content,
                  "state_snapshot": m.state_snapshot,
-                 "is_deleted": m.is_deleted, "created_at": str(m.created_at)} for m in all_messages]
-
-    # 最後のアクティブ（非削除）メッセージがuserかどうか
-    active = [m for m in all_messages if not m.is_deleted]
-    needs_retry = bool(active and active[-1].role == "user")
+                 "is_deleted": m.is_deleted, "created_at": str(m.created_at)} for m in msgs_desc]
 
     result = await db.execute(select(Character).where(Character.id == conv.character_id))
     char = result.scalar_one_or_none()
@@ -148,11 +160,46 @@ async def get_conversation(conv_id: int, user: User = Depends(require_user), db:
             "ai_model": char.ai_model, "is_deleted": char.is_deleted,
             "voice_model": char.voice_model,
             "tts_styles": json.loads(char.tts_styles) if char.tts_styles else [],
+            "bgm_mode": char.bgm_mode or "none",
+            "bgm_track_id": char.bgm_track_id,
         } if char else None,
         "title": conv.title,
         "messages": messages,
+        "has_more": has_more,
         "needs_retry": needs_retry,
         "tts_available": tts_available,
+    }
+
+
+@router.get("/{conv_id}/messages")
+async def get_older_messages(
+    conv_id: int,
+    before_id: int = Query(..., description="このID未満のメッセージを取得"),
+    limit: int = Query(MSG_PAGE_SIZE, le=100),
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """古いメッセージのページネーション取得"""
+    conv = (await db.execute(
+        select(Conversation).where(Conversation.id == conv_id, Conversation.user_id == user.id)
+    )).scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=404, detail="会話が見つかりません")
+
+    msgs_r = await db.execute(
+        select(Message).where(Message.conversation_id == conv_id, Message.id < before_id)
+        .order_by(Message.id.desc()).limit(limit + 1)
+    )
+    msgs_desc = msgs_r.scalars().all()
+    has_more = len(msgs_desc) > limit
+    msgs_desc = msgs_desc[:limit]
+    msgs_desc.reverse()
+
+    return {
+        "messages": [{"id": m.id, "role": m.role, "content": m.content,
+                      "state_snapshot": m.state_snapshot,
+                      "is_deleted": m.is_deleted, "created_at": str(m.created_at)} for m in msgs_desc],
+        "has_more": has_more,
     }
 
 
@@ -213,3 +260,105 @@ async def delete_conversation(conv_id: int, user: User = Depends(require_user), 
     conv.is_deleted = 1
     await db.commit()
     return {"deleted": True}
+
+
+@router.delete("/{conv_id}/purge")
+async def purge_conversation(conv_id: int, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+    """会話・メッセージ・ステータスをDBから完全削除"""
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conv_id, Conversation.user_id == user.id)
+    )
+    conv = result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=404, detail="会話が見つかりません")
+
+    # ステータスログを削除
+    await db.execute(delete(ConversationStateLog).where(ConversationStateLog.conversation_id == conv_id))
+    # ステータスを削除
+    await db.execute(delete(ConversationState).where(ConversationState.conversation_id == conv_id))
+    # メッセージを削除
+    await db.execute(delete(Message).where(Message.conversation_id == conv_id))
+    # 会話を削除
+    await db.delete(conv)
+    await db.commit()
+    return {"purged": True}
+
+
+# ── ステータス取得（自分の会話のみ）
+@router.get("/{conv_id}/state")
+async def get_conversation_state(conv_id: int, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+    conv = (await db.execute(
+        select(Conversation).where(Conversation.id == conv_id, Conversation.user_id == user.id)
+    )).scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=404, detail="会話が見つかりません")
+
+    cfg = (await db.execute(select(ChatStateConfig).where(ChatStateConfig.id == 1))).scalar_one_or_none()
+    if not cfg or not cfg.enabled:
+        raise HTTPException(status_code=404, detail="ステータス機能は無効です")
+
+    state = (await db.execute(
+        select(ConversationState).where(ConversationState.conversation_id == conv_id)
+    )).scalar_one_or_none()
+    if not state:
+        raise HTTPException(status_code=404, detail="ステータスデータがありません")
+
+    fields_cfg = json.loads(cfg.fields_json) if cfg.fields_json else DEFAULT_STATE_FIELDS
+    extra = json.loads(state.extra_fields or "{}") if state.extra_fields else {}
+
+    fields = []
+    for f in fields_cfg:
+        if not f.get("enabled", True):
+            continue
+        key = f["key"]
+        label = f.get("label", key)
+        value = getattr(state, key, "") if key in STATE_BUILTIN_KEYS else extra.get(key, "")
+        fields.append({"key": key, "label": label, "value": value or ""})
+
+    memories = json.loads(state.memories or "[]") if state.memories else []
+
+    return {
+        "conv_id": conv_id,
+        "fields": fields,
+        "memories": memories,
+        "updated_at": str(state.updated_at) if state.updated_at else None,
+    }
+
+
+# ── ステータス更新（管理者のみ・自分の会話）
+class StateUpdateBody(BaseModel):
+    fields: dict = {}
+    memories: list[str] = []
+
+
+@router.put("/{conv_id}/state")
+async def update_conversation_state(
+    conv_id: int, body: StateUpdateBody,
+    user: User = Depends(require_user), db: AsyncSession = Depends(get_db)
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="管理者のみ編集できます")
+
+    conv = (await db.execute(
+        select(Conversation).where(Conversation.id == conv_id, Conversation.user_id == user.id)
+    )).scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=404, detail="会話が見つかりません")
+
+    state = (await db.execute(
+        select(ConversationState).where(ConversationState.conversation_id == conv_id)
+    )).scalar_one_or_none()
+    if not state:
+        raise HTTPException(status_code=404, detail="ステータスデータがありません")
+
+    extra = json.loads(state.extra_fields or "{}") if state.extra_fields else {}
+    for key, val in body.fields.items():
+        if key in STATE_BUILTIN_KEYS:
+            setattr(state, key, str(val))
+        else:
+            extra[key] = str(val)
+    state.extra_fields = json.dumps(extra, ensure_ascii=False)
+    state.memories = json.dumps(body.memories, ensure_ascii=False)
+
+    await db.commit()
+    return {"ok": True}

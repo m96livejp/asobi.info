@@ -2895,10 +2895,13 @@ async function loadGallery() {
     const d = await r.json();
     const imgs = d.images || [];
     const count = d.count || 0;
+    const maxImgs = d.max_images || 100;
     const badge = document.getElementById('gen-count-badge');
-    if (badge) badge.textContent = `📁 ${count} / 100枚`;
+    if (badge) badge.textContent = `📁 ${count} / ${maxImgs}枚`;
     const limitMsg = document.getElementById('gen-limit-msg');
-    if (limitMsg) limitMsg.style.display = count >= 100 ? 'block' : 'none';
+    if (limitMsg) limitMsg.style.display = count >= maxImgs ? 'block' : 'none';
+    const genBtn = document.getElementById('btn-gen-6');
+    if (genBtn && !genBtn.disabled) genBtn.disabled = count >= maxImgs;
     const el = document.getElementById('gen-gallery');
     if (!el) return;
     if (!imgs.length) {
@@ -3014,6 +3017,11 @@ async function loadCreateGallery() {
     if (!r.ok) return;
     const d = await r.json();
     const imgs = d.images || [];
+    const count = d.count || 0;
+    const maxImgs = d.max_images || 100;
+    // キャラクター作成画面のカウントバッジ更新
+    const crBadge = document.getElementById('cr-gallery-count-badge');
+    if (crBadge) crBadge.textContent = `📁 ${count} / ${maxImgs}枚`;
     if (imgs.length === 0) {
       if (section) section.style.display = 'none';
       if (emptyEl) emptyEl.style.display = 'block';
@@ -3605,6 +3613,34 @@ function resetConversation() {
       }
     },
     'リセット',
+    'btn-danger'
+  );
+}
+
+// 全会話完全削除（チャットメニューから）
+function purgeConversation() {
+  _chatMenuOpen = false;
+  document.getElementById('chat-menu-panel')?.classList.remove('open');
+  if (!currentConversationId) return;
+  showConfirm(
+    'この会話のすべてのメッセージ・ステータスをDBから完全削除します。\n元に戻すことは一切できません。',
+    async () => {
+      try {
+        const r = await api(`/conversations/${currentConversationId}/purge`, { method: 'DELETE' });
+        if (r.ok) {
+          _ttsCache.clear();
+          currentConversationId = null;
+          currentCharacter = null;
+          navTo('chat-list');
+          showToast('会話を完全削除しました', 'info', 2500);
+        } else {
+          showToast('削除に失敗しました', 'error');
+        }
+      } catch (e) {
+        showToast('削除に失敗しました', 'error');
+      }
+    },
+    '完全削除',
     'btn-danger'
   );
 }

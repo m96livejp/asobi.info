@@ -126,7 +126,10 @@
         <div id="cr-step-1">
           <!-- ギャラリーから選択 -->
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <p style="font-size:0.88rem;font-weight:600;color:var(--text)">生成済みギャラリー</p>
+            <div style="display:flex;align-items:center;gap:8px">
+              <p style="font-size:0.88rem;font-weight:600;color:var(--text)">生成済みギャラリー</p>
+              <span id="cr-gallery-count-badge" style="font-size:0.75rem;color:var(--text-secondary)"></span>
+            </div>
             <div id="avatar-gen-section">
               <button class="btn btn-secondary btn-sm" onclick="goToGenerate()">新規画像生成</button>
             </div>
@@ -299,6 +302,7 @@
           </button>
           <button class="chat-menu-item" id="chat-hide-btn" onclick="toggleChatHide()">💬 チャット非表示</button>
           <button class="chat-menu-item chat-menu-danger" onclick="resetConversation()">🔄 全会話リセット</button>
+          <button class="chat-menu-item chat-menu-danger" onclick="purgeConversation()">🗑️ 全会話完全削除</button>
           <button class="chat-menu-item" id="state-display-btn" onclick="toggleStateDisplay()" style="display:none">🧠 感情表示オン</button>
           <button class="chat-menu-item" id="state-change-btn" onclick="toggleStateChange()" style="display:none">📊 ステータス変化オン</button>
           <!-- BGMコントロール -->

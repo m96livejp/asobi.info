@@ -84,7 +84,9 @@ async def get_ai_settings(admin: User = Depends(require_admin), db: AsyncSession
             "tts_autoplay": s.tts_autoplay or 0,
             "tts_voice_params": s.tts_voice_params or None,
             "image_change_enabled": s.image_change_enabled or 0,
-            "image_change_revert_turns": s.image_change_revert_turns or 10}
+            "image_change_revert_turns": s.image_change_revert_turns or 10,
+            "daily_point_recovery_enabled": s.daily_point_recovery_enabled or 0,
+            "daily_point_recovery_threshold": s.daily_point_recovery_threshold or 100}
 
 
 @router.put("/ai-settings")
@@ -107,6 +109,8 @@ class AiSettingsPatch(BaseModel):
     tts_voice_params: str | None = None  # JSON文字列 or "" で削除
     image_change_enabled: int | None = None
     image_change_revert_turns: int | None = None
+    daily_point_recovery_enabled: int | None = None
+    daily_point_recovery_threshold: int | None = None
 
 
 @router.patch("/ai-settings")
@@ -129,8 +133,20 @@ async def patch_ai_settings(req: AiSettingsPatch, admin: User = Depends(require_
         s.image_change_enabled = req.image_change_enabled
     if req.image_change_revert_turns is not None:
         s.image_change_revert_turns = max(1, req.image_change_revert_turns)
+    if req.daily_point_recovery_enabled is not None:
+        s.daily_point_recovery_enabled = req.daily_point_recovery_enabled
+    if req.daily_point_recovery_threshold is not None:
+        s.daily_point_recovery_threshold = max(1, req.daily_point_recovery_threshold)
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/run-daily-recovery")
+async def run_daily_recovery_now(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """デイリーポイント回復を今すぐ手動実行（テスト用）"""
+    from ..services.daily_recovery import run_recovery
+    result = await run_recovery(db)
+    return result
 
 
 @router.get("/state-fields")
@@ -587,6 +603,7 @@ class SdSettingsUpdate(BaseModel):
     lt_endpoint: str | None = None
     lt_mode: str = "off"  # off / free / local / both
     lt_api_key: str | None = None
+    max_images: int = 100
 
 
 @router.get("/sd-settings")
@@ -600,6 +617,7 @@ async def get_sd_settings(admin: User = Depends(require_admin), db: AsyncSession
         "lt_endpoint": s.lt_endpoint,
         "lt_mode": s.lt_mode or "off",
         "lt_api_key": s.lt_api_key or "",
+        "max_images": s.max_images if s.max_images is not None else 100,
     }
 
 
@@ -612,6 +630,7 @@ async def update_sd_settings(req: SdSettingsUpdate, admin: User = Depends(requir
     s.lt_endpoint = req.lt_endpoint or None
     s.lt_mode = req.lt_mode if req.lt_mode in ("off", "free", "local", "both") else "off"
     s.lt_api_key = req.lt_api_key or None
+    s.max_images = max(1, req.max_images) if req.max_images else 100
     await db.commit()
     return {"ok": True}
 

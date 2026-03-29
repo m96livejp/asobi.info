@@ -68,13 +68,14 @@ async def generate_image(
     if existing_job > 0:
         raise HTTPException(status_code=409, detail="処理中のジョブがあります。完了をお待ちください。")
 
-    # 保存済み画像数チェック
+    # 保存済み画像数チェック（SD設定の max_images を使用）
+    max_imgs = sd.max_images if sd.max_images is not None else MAX_SAVED_IMAGES
     saved_count = (await db.execute(
         select(func.count()).select_from(UserImage)
         .where(UserImage.user_id == user.id, UserImage.status == "saved", UserImage.is_deleted == 0)
     )).scalar()
-    if saved_count >= MAX_SAVED_IMAGES:
-        raise HTTPException(status_code=429, detail=f"画像の保存上限（{MAX_SAVED_IMAGES}枚）に達しています。ギャラリーから削除してください。")
+    if saved_count >= max_imgs:
+        raise HTTPException(status_code=429, detail=f"画像の保存上限（{max_imgs}枚）に達しています。ギャラリーから削除してください。")
 
     # キュー停止中チェック
     if queue_worker.is_stopped():
@@ -363,7 +364,9 @@ async def get_my_images(
     db: AsyncSession = Depends(get_db),
 ):
     if not user or user.asobi_user_id is None:
-        return {"images": [], "count": 0}
+        return {"images": [], "count": 0, "max_images": MAX_SAVED_IMAGES}
+    sd = await _get_sd_settings(db)
+    max_imgs = (sd.max_images if sd and sd.max_images is not None else MAX_SAVED_IMAGES)
     result = await db.execute(
         select(UserImage)
         .where(UserImage.user_id == user.id, UserImage.status == "saved", UserImage.is_deleted == 0)
@@ -373,6 +376,7 @@ async def get_my_images(
     return {
         "images": [{"id": img.id, "url": img.url, "prompt": img.prompt, "is_favorite": img.is_favorite, "seed": img.seed} for img in imgs],
         "count": len(imgs),
+        "max_images": max_imgs,
     }
 
 
