@@ -4,6 +4,22 @@ from sqlalchemy.sql import func
 from ..database import Base
 
 
+class SceneImageTask(Base):
+    """チャット中のステータス変化で生成する一時シーン画像タスク"""
+    __tablename__ = "scene_image_tasks"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(Integer, nullable=False, index=True)
+    message_id      = Column(Integer, nullable=True)   # AIメッセージID
+    status          = Column(String,  nullable=False, default="pending", index=True)
+    # pending / processing / done / failed
+    prompt_used     = Column(Text, nullable=True)      # 実際に使ったプロンプト
+    image_url       = Column(Text, nullable=True)      # 生成画像のURL
+    error_message   = Column(Text, nullable=True)
+    created_at      = Column(Text, nullable=False, server_default=func.now())
+    completed_at    = Column(Text, nullable=True)
+
+
 class ImageFeedback(Base):
     """マイナス評価時のフィードバック"""
     __tablename__ = "image_feedbacks"

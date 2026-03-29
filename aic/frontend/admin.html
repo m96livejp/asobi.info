@@ -204,6 +204,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
     <button class="nav-item active" onclick="showSection('dashboard')">📊 ダッシュボード</button>
     <button class="nav-item" onclick="showSection('ai')">🤖 AI設定チャット用</button>
     <button class="nav-item" onclick="showSection('tts')">🔊 音声設定</button>
+    <button class="nav-item" onclick="showSection('bgm')">🎵 BGM管理</button>
     <button class="nav-item" onclick="showSection('sd')">🎨 AI設定画像用</button>
     <button class="nav-item" onclick="showSection('users')">👥 ユーザー</button>
     <button class="nav-item" onclick="showSection('characters')">✨ キャラクター</button>
@@ -311,6 +312,22 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         </div>
       </div>
     </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">画像変化機能</div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="image-change-enabled" onchange="saveImageChangeConfig()" style="width:auto">
+          ステータス変化時に一時画像を生成する
+        </label>
+        <div class="hint">有効時、会話のSTATE変化でSDがキャラクター一時画像を生成しフェード表示します（SD設定・キャラのSDプロンプト設定が必要）。</div>
+      </div>
+      <div class="form-group" style="margin-top:8px">
+        <label>元画像に戻すまでのターン数</label>
+        <input type="number" id="image-change-revert-turns" min="1" max="999" value="10" style="width:100px" onchange="saveImageChangeConfig()">
+        <div class="hint">一時画像を表示してから元のアバター画像に戻るまでのAI返答回数。</div>
+      </div>
+    </div>
   </div>
 
   <!-- ユーザー管理 -->
@@ -339,6 +356,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
   <div id="sec-characters" class="section">
     <div class="section-title">✨ キャラクター管理</div>
     <div class="card">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.83rem;cursor:pointer;color:var(--sub)">
+          <input type="checkbox" id="char-show-deleted" onchange="loadCharacters()"> 削除済みを表示
+        </label>
+      </div>
       <div style="overflow-x:auto">
         <table class="tbl" id="char-table">
           <thead><tr>
@@ -415,16 +437,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         <table class="tbl" style="max-width:360px">
           <thead><tr><th>パラメータ</th><th>最低値</th><th>最高値</th></tr></thead>
           <tbody>
-            <tr><td>速度</td>
+            <tr><td>速度<br><span class="hint" style="font-size:0.75rem">設定可能: 0.5〜2.0</span></td>
               <td><input type="number" id="vp-speed-min" step="0.05" min="0.5" max="2.0" value="0.80" style="width:72px"></td>
               <td><input type="number" id="vp-speed-max" step="0.05" min="0.5" max="2.0" value="1.40" style="width:72px"></td></tr>
-            <tr><td>ピッチ</td>
+            <tr><td>ピッチ<br><span class="hint" style="font-size:0.75rem">設定可能: −0.15〜0.15</span></td>
               <td><input type="number" id="vp-pitch-min" step="0.01" min="-0.15" max="0.15" value="-0.10" style="width:72px"></td>
               <td><input type="number" id="vp-pitch-max" step="0.01" min="-0.15" max="0.15" value="0.10" style="width:72px"></td></tr>
-            <tr><td>抑揚</td>
+            <tr><td>抑揚<br><span class="hint" style="font-size:0.75rem">設定可能: 0〜2.0</span></td>
               <td><input type="number" id="vp-intonation-min" step="0.1" min="0" max="2.0" value="0.70" style="width:72px"></td>
               <td><input type="number" id="vp-intonation-max" step="0.1" min="0" max="2.0" value="1.50" style="width:72px"></td></tr>
-            <tr><td>音量</td>
+            <tr><td>音量<br><span class="hint" style="font-size:0.75rem">設定可能: 0〜2.0</span></td>
               <td><input type="number" id="vp-volume-min" step="0.05" min="0" max="2.0" value="0.90" style="width:72px"></td>
               <td><input type="number" id="vp-volume-max" step="0.05" min="0" max="2.0" value="1.10" style="width:72px"></td></tr>
           </tbody>
@@ -740,6 +762,30 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
     </div>
   </div>
 
+  <!-- BGM管理セクション -->
+  <div id="sec-bgm" class="section">
+    <div class="section-title">🎵 BGM管理</div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">BGMファイルのアップロード</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="flex:1;min-width:160px;margin:0">
+          <label class="form-label">表示名</label>
+          <input type="text" id="bgm-name" class="form-control" placeholder="例: 落ち着いたBGM" style="width:100%">
+        </div>
+        <div class="form-group" style="flex:2;min-width:200px;margin:0">
+          <label class="form-label">ファイル（MP3/OGG/WAV/M4A/WebM）</label>
+          <input type="file" id="bgm-file" accept=".mp3,.ogg,.wav,.m4a,.webm" style="width:100%">
+        </div>
+        <button class="btn btn-primary" onclick="uploadBgm()">アップロード</button>
+      </div>
+      <div id="bgm-upload-msg" style="margin-top:8px;font-size:0.85rem"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">BGMトラック一覧</div>
+      <div id="bgm-list">読み込み中...</div>
+    </div>
+  </div>
+
 </main>
 </div><!-- layout-body -->
 </div><!-- layout -->
@@ -962,6 +1008,10 @@ async function loadAiSettings() {
     const cfg = await r2.json();
     document.getElementById('chat-state-enabled').checked = !!cfg.enabled;
   }
+
+  // 画像変化設定ロード
+  document.getElementById('image-change-enabled').checked = !!d.image_change_enabled;
+  document.getElementById('image-change-revert-turns').value = d.image_change_revert_turns ?? 10;
 }
 
 async function loadPayloadConvs() {
@@ -1012,6 +1062,13 @@ async function saveChatStateConfig() {
   const enabled = document.getElementById('chat-state-enabled').checked ? 1 : 0;
   const r = await api('/admin/chat-state-config', { method: 'PUT', body: JSON.stringify({ enabled }) });
   if (r.ok) toast('ステータス設定を保存しました');
+}
+
+async function saveImageChangeConfig() {
+  const enabled = document.getElementById('image-change-enabled').checked ? 1 : 0;
+  const revert_turns = parseInt(document.getElementById('image-change-revert-turns').value) || 10;
+  const r = await api('/admin/ai-settings', { method: 'PATCH', body: JSON.stringify({ image_change_enabled: enabled, image_change_revert_turns: revert_turns }) });
+  if (r.ok) toast('画像変化設定を保存しました');
 }
 
 let _stateFields = [];
@@ -1325,6 +1382,22 @@ async function viewConversation(convId) {
   }
 
   function escW(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function escAttr(s) { return escW(s).replace(/"/g,'&quot;'); }
+  function _fmtState(raw) {
+    try {
+      const s = JSON.parse(raw);
+      const lm = {relationship:'関係性',mood:'気分',environment:'環境と場所',situation:'状況',inventory:'所持品',goals:'目標'};
+      const lines = [];
+      for (const [k, v] of Object.entries(s)) {
+        if (k === 'memories') continue;
+        const val = Array.isArray(v) ? (v.join(', ') || 'なし') : (v || 'なし');
+        lines.push(`${lm[k] || k}: ${val}`);
+      }
+      if (s.memories && Array.isArray(s.memories) && s.memories.length > 0)
+        lines.push('記憶:\n  ' + s.memories.join('\n  '));
+      return lines.join('\n') || raw;
+    } catch(e) { return raw; }
+  }
 
   const messagesHtml = items.length ? items.map(item => {
     if (item.type === 'msg') {
@@ -1332,7 +1405,9 @@ async function viewConversation(convId) {
       const time = (m.created_at || '').slice(0, 16);
       if (m.role === 'user')
         return `<div class="msg msg-user">${escW(m.content)}<div class="msg-meta">${time}</div></div>`;
-      return `<div class="msg msg-ai"><div class="msg-ai-name">${escW(conv.character_name)}</div>${escW(m.content)}<div class="msg-meta">${time}</div></div>`;
+      const snapHtml = m.state_snapshot ? `<div class="state-badge" style="display:none">${escW(_fmtState(m.state_snapshot))}</div>` : '';
+      const ttsBtn = `<button class="tts-play-btn" style="display:none" onclick="playTts(this)" title="音声再生">▶</button>`;
+      return `<div class="msg msg-ai" data-content="${escAttr(m.content)}">${ttsBtn}${escW(m.content)}${snapHtml}<div class="msg-meta">${time}</div></div>`;
     }
     // STATE変更行
     return `<div class="state-change"><div class="state-change-title">📊 ステータス変化 <span class="state-time">${item.time.slice(0,16)}</span></div><div class="state-diff">${item.diff.join('<br>')}</div></div>`;
@@ -1355,12 +1430,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans
 .header-user{font-size:0.78rem;color:var(--sub);margin-top:2px}
 .header-count{font-size:0.72rem;color:var(--sub);white-space:nowrap}
 .chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
-.msg{max-width:80%;padding:10px 14px;border-radius:16px;font-size:0.95rem;line-height:1.7;word-break:break-word;white-space:pre-wrap}
+.msg{max-width:80%;padding:10px 14px;border-radius:16px;font-size:0.95rem;line-height:1.7;word-break:break-word;white-space:pre-wrap;position:relative}
 .msg-user{background:rgba(253,208,228,0.92);color:#222;align-self:flex-end;border-bottom-right-radius:4px}
 .msg-ai{background:rgba(255,249,251,0.92);color:#222;border:1px solid #2a2a4a;align-self:flex-start;border-bottom-left-radius:4px}
-.msg-ai-name{font-size:0.8rem;color:#e94560;font-weight:600;margin-bottom:3px}
-.msg-meta{font-size:0.68rem;color:#888;margin-top:4px;text-align:right}
-.msg-ai .msg-meta{text-align:left}
+.msg-meta{font-size:0.68rem;color:#888;margin-top:4px;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:4px}
+.msg-ai .msg-meta{justify-content:flex-start}
+.tts-play-btn{position:absolute;top:-11px;left:0;min-width:22px;height:22px;border-radius:11px;background:#e94560;border:none;cursor:pointer;font-size:0.62rem;color:#fff;opacity:0.45;padding:0 6px;display:inline-flex;align-items:center;justify-content:center;gap:3px;white-space:nowrap;transition:opacity 0.15s;z-index:1}
+.msg-ai:hover .tts-play-btn{opacity:0.85}
+.tts-play-btn:hover{opacity:1!important}
+.tts-play-btn:disabled{opacity:0.3;cursor:default}
+.state-badge{margin-top:6px;padding:5px 9px;background:rgba(45,90,123,0.07);border:1px solid rgba(45,90,123,0.22);border-radius:8px;font-size:0.7rem;font-family:'Menlo','Consolas',monospace;color:#7ab3ff;word-break:break-all;line-height:1.6;white-space:pre-wrap}
 .state-change{align-self:center;background:rgba(15,52,96,0.9);border:1px solid #1e4a8a;border-radius:10px;padding:8px 14px;font-size:0.78rem;max-width:90%;width:100%;backdrop-filter:blur(4px)}
 .state-change-title{font-weight:700;color:#7ab3ff;margin-bottom:4px}
 .state-time{font-weight:400;color:var(--sub);font-size:0.72rem;margin-left:6px}
@@ -1368,7 +1447,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans
 .sd-label{color:#a0c4ff;font-weight:600;margin-right:4px}
 .sd-from{color:#888;text-decoration:line-through}
 .sd-to{color:#7dffb3;font-weight:600}
-.conv-footer{padding:8px 16px;background:rgba(22,33,62,0.92);border-top:1px solid var(--border);font-size:0.72rem;color:var(--sub);flex-shrink:0;text-align:center;backdrop-filter:blur(4px)}
+.conv-footer{padding:8px 16px;background:rgba(22,33,62,0.92);border-top:1px solid var(--border);font-size:0.72rem;color:var(--sub);flex-shrink:0;display:flex;align-items:center;gap:12px;backdrop-filter:blur(4px)}
+.footer-checks{display:flex;gap:10px;align-items:center;flex-shrink:0}
+.footer-checks label{display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap}
+.footer-id{flex:1;text-align:right}
 </style></head><body>
 <div class="chat-header">
   ${avatarHtml}
@@ -1379,30 +1461,79 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans
   <div class="header-count">${data.messages.length}件</div>
 </div>
 <div class="chat-messages" id="msgs">${messagesHtml}</div>
-<div class="conv-footer">会話ID: ${conv.id} ／ ${(conv.created_at || '').slice(0, 16)} ～ ${(conv.updated_at || '').slice(0, 16)}</div>
-<script>document.getElementById('msgs').scrollTop=999999;<\/script>
+<div class="conv-footer">
+  <div class="footer-checks">
+    <label><input type="checkbox" id="chk-badge" onchange="toggleBadge(this.checked)"> 感情</label>
+    <label><input type="checkbox" id="chk-state" checked onchange="toggleState(this.checked)"> ステータス変化</label>
+  </div>
+  <div class="footer-id">会話ID: ${conv.id} ／ ${(conv.created_at || '').slice(0, 16)} ～ ${(conv.updated_at || '').slice(0, 16)}</div>
+</div>
+<script>
+const _baseUrl = '${window.location.origin}';
+const _ttsStyles = ${JSON.stringify(conv.tts_styles || [])};
+const _defStyleId = _ttsStyles.length ? _ttsStyles[0].id : null;
+
+async function playTts(btn) {
+  if (!_defStyleId) return;
+  const text = btn.closest('.msg').dataset.content;
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  try {
+    const res = await fetch(_baseUrl + '/api/tts/admin/test-synthesis', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({style_id: _defStyleId, text: text.slice(0, 100)})
+    });
+    if (!res.ok) throw new Error();
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    btn.textContent = '⏹';
+    const reset = () => { URL.revokeObjectURL(url); btn.textContent = '▶'; btn.disabled = false; btn.onclick = () => playTts(btn); };
+    audio.onended = reset;
+    btn.onclick = () => { audio.pause(); reset(); };
+    audio.play();
+  } catch(e) {
+    btn.textContent = '✗';
+    setTimeout(() => { btn.textContent = '▶'; btn.disabled = false; }, 2000);
+  }
+}
+function toggleBadge(on) {
+  document.querySelectorAll('.state-badge').forEach(el => el.style.display = on ? '' : 'none');
+}
+function toggleState(on) {
+  document.querySelectorAll('.state-change').forEach(el => el.style.display = on ? '' : 'none');
+}
+// 音声設定がある場合のみ再生ボタンを表示
+if (_defStyleId) {
+  document.querySelectorAll('.tts-play-btn').forEach(b => b.style.display = '');
+}
+document.getElementById('msgs').scrollTop = 999999;
+<\/script>
 </body></html>`);
   win.document.close();
 }
 
 // ─── キャラクター管理 ───
 async function loadCharacters() {
-  const r = await api('/admin/characters');
+  const showDeleted = document.getElementById('char-show-deleted')?.checked ? 1 : 0;
+  const r = await api('/admin/characters?include_deleted=' + showDeleted);
   if (!r.ok) return;
   const chars = await r.json();
   const tbody = document.getElementById('char-tbody');
-  if (!chars.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--sub);padding:20px">キャラクターがいません</td></tr>'; return; }
+  if (!chars.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:20px">キャラクターがいません</td></tr>'; return; }
   tbody.innerHTML = chars.map(c => {
-    return `<tr>
-      <td style="color:var(--sub)">${c.id}</td>
-      <td>${esc(c.name)}</td>
-      <td style="color:var(--sub)">${c.creator_id}</td>
-      <td>${c.like_count}</td>
-      <td title="ユニークユーザー数">${c.use_count}</td>
-      <td title="AIメッセージ総数">${c.msg_count}</td>
-      <td style="color:var(--sub);font-size:0.78rem">${c.created_at.slice(0,10)}</td>
-      <td style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem">
+    const isDeleted = c.is_deleted > 0;
+    const rowStyle = isDeleted ? ' style="opacity:0.5"' : '';
+    const deletedBadge = c.is_deleted === 2
+      ? '<span style="font-size:0.72rem;background:var(--danger);color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px">管理者削除</span>'
+      : c.is_deleted === 1
+        ? '<span style="font-size:0.72rem;background:var(--warn);color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px">作成者削除</span>'
+        : '';
+    const actionBtns = isDeleted
+      ? `<button class="btn btn-sm btn-ok" onclick="restoreChar(${c.id},'${esc(c.name)}')">復元</button>`
+      : `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem">
           <input type="checkbox" ${c.is_public ? 'checked' : ''} onchange="setCharFlag(${c.id},{is_public:this.checked?1:0})"> 公開
         </label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem">
@@ -1415,8 +1546,16 @@ async function loadCharacters() {
           <input type="checkbox" ${c.is_recommended ? 'checked' : ''} onchange="setCharFlag(${c.id},{is_recommended:this.checked?1:0})"> おすすめ
         </label>
         <button class="btn btn-sm btn-info" onclick="openCharConversations(${c.id},'${esc(c.name)}')">💬 会話</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteChar(${c.id},'${esc(c.name)}')">削除</button>
-      </td>
+        <button class="btn btn-sm btn-danger" onclick="deleteChar(${c.id},'${esc(c.name)}')">削除</button>`;
+    return `<tr${rowStyle}>
+      <td style="color:var(--sub)">${c.id}</td>
+      <td>${esc(c.name)}${deletedBadge}</td>
+      <td style="color:var(--sub)">${c.creator_id}</td>
+      <td>${c.like_count}</td>
+      <td title="ユニークユーザー数">${c.use_count}</td>
+      <td title="AIメッセージ総数">${c.msg_count}</td>
+      <td style="color:var(--sub);font-size:0.78rem">${c.created_at.slice(0,10)}</td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${actionBtns}</td>
     </tr>`;
   }).join('');
 }
@@ -1478,6 +1617,13 @@ async function deleteChar(id, name) {
     const r = await api(`/admin/characters/${id}`, { method: 'DELETE' });
     r.ok ? (toast('削除しました'), loadCharacters()) : toast('削除に失敗しました', 'err');
   }, '削除する');
+}
+
+async function restoreChar(id, name) {
+  showConfirm(`「${name}」を復元しますか？`, async () => {
+    const r = await api(`/admin/characters/${id}/restore`, { method: 'PUT' });
+    r.ok ? (toast('復元しました'), loadCharacters()) : toast('復元に失敗しました', 'err');
+  }, '復元する');
 }
 
 // ─── SD設定 ───
@@ -2368,7 +2514,66 @@ const _sectionLoaders = {
   images: () => loadImages(),
   feedbacks: () => loadFeedbacks(),
   reports: () => loadReports(),
+  bgm: () => loadBgmList(),
 };
+
+// ─── BGM管理 ───
+async function loadBgmList() {
+  const listEl = document.getElementById('bgm-list');
+  if (!listEl) return;
+  listEl.innerHTML = '読み込み中...';
+  const res = await api('/bgm');
+  if (!res.ok) { listEl.innerHTML = '<span style="color:var(--accent)">取得失敗</span>'; return; }
+  const tracks = await res.json();
+  if (!tracks.length) { listEl.innerHTML = '<p style="color:var(--sub)">BGMトラックがありません。上のフォームからアップロードしてください。</p>'; return; }
+  listEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+    <thead><tr>
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #333;color:var(--sub)">名前</th>
+      <th style="padding:6px 10px;border-bottom:1px solid #333;color:var(--sub)">プレビュー</th>
+      <th style="padding:6px 10px;border-bottom:1px solid #333;color:var(--sub)">操作</th>
+    </tr></thead>
+    <tbody>` +
+    tracks.map(t => `<tr>
+      <td style="padding:8px 10px">${esc(t.name)}</td>
+      <td style="padding:8px 10px"><audio controls src="${esc(t.url)}" style="height:28px;max-width:180px"></audio></td>
+      <td style="padding:8px 10px"><button class="btn btn-danger btn-sm" onclick="deleteBgm(${t.id},this)">削除</button></td>
+    </tr>`).join('') +
+    '</tbody></table>';
+}
+
+async function uploadBgm() {
+  const name = document.getElementById('bgm-name').value.trim();
+  const file = document.getElementById('bgm-file').files[0];
+  const msgEl = document.getElementById('bgm-upload-msg');
+  if (!name) { msgEl.style.color = 'var(--accent)'; msgEl.textContent = '名前を入力してください'; return; }
+  if (!file)  { msgEl.style.color = 'var(--accent)'; msgEl.textContent = 'ファイルを選択してください'; return; }
+  msgEl.style.color = 'var(--sub)'; msgEl.textContent = 'アップロード中...';
+  const fd = new FormData();
+  fd.append('name', name);
+  fd.append('file', file);
+  // multipartはContent-Typeを自動設定させる（api()は強制json）
+  const h = {};
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  const res = await fetch(API + '/bgm/upload', { method: 'POST', headers: h, body: fd });
+  if (res.ok) {
+    msgEl.style.color = '#3cb371'; msgEl.textContent = 'アップロードしました';
+    document.getElementById('bgm-name').value = '';
+    document.getElementById('bgm-file').value = '';
+    loadBgmList();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    msgEl.style.color = 'var(--accent)'; msgEl.textContent = err.detail || 'アップロード失敗';
+  }
+}
+
+async function deleteBgm(id, btn) {
+  const name = btn.closest('tr').querySelector('td').textContent;
+  showConfirm(`「${name}」を削除しますか？<br><small style="color:var(--sub)">このBGMを使用しているキャラクターのBGM設定はなしに変更されます。</small>`, async () => {
+    const res = await api('/bgm/' + id, { method: 'DELETE' });
+    if (res.ok) { toast('削除しました', 'ok'); loadBgmList(); }
+    else toast('削除失敗', 'err');
+  });
+}
 
 const _origShowSection = showSection;
 showSection = function(id, fromHash) {

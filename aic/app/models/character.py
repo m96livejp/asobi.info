@@ -47,6 +47,16 @@ class Character(Base):
     init_inventory = Column(Text, default="")
     init_goals = Column(Text, default="")
 
+    # Stable Diffusion 設定（画像変化機能用）
+    sd_prompt    = Column(Text, nullable=True)    # 元画像生成時のプロンプト
+    sd_neg_prompt = Column(Text, nullable=True)   # ネガティブプロンプト
+    sd_seed      = Column(Integer, nullable=True) # 元画像生成時のシード値
+    sd_model     = Column(String, nullable=True)  # 使用したSDモデル名
+
+    # BGM設定
+    bgm_mode = Column(String, default="none")  # none / manual / auto
+    bgm_track_id = Column(Integer, nullable=True)  # FK: bgm_tracks.id (manual時)
+
     # 管理者フラグ
     is_recommended = Column(Integer, default=0)  # おすすめ表示
 
@@ -56,6 +66,16 @@ class Character(Base):
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class BgmTrack(Base):
+    """BGM音楽トラック"""
+    __tablename__ = "bgm_tracks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)        # 表示名
+    file_path = Column(String, nullable=False)   # /bgm/xxx.mp3 形式（frontend相対）
+    created_at = Column(DateTime, server_default=func.now())
 
 
 class CharacterLike(Base):

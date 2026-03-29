@@ -81,7 +81,9 @@ async def get_ai_settings(admin: User = Depends(require_admin), db: AsyncSession
             "tts_emotion": s.tts_emotion or 0,
             "tts_se": s.tts_se or 0,
             "tts_autoplay": s.tts_autoplay or 0,
-            "tts_voice_params": s.tts_voice_params or None}
+            "tts_voice_params": s.tts_voice_params or None,
+            "image_change_enabled": s.image_change_enabled or 0,
+            "image_change_revert_turns": s.image_change_revert_turns or 10}
 
 
 @router.put("/ai-settings")
@@ -102,6 +104,8 @@ class AiSettingsPatch(BaseModel):
     tts_se: int | None = None
     tts_autoplay: int | None = None
     tts_voice_params: str | None = None  # JSON文字列 or "" で削除
+    image_change_enabled: int | None = None
+    image_change_revert_turns: int | None = None
 
 
 @router.patch("/ai-settings")
@@ -120,6 +124,10 @@ async def patch_ai_settings(req: AiSettingsPatch, admin: User = Depends(require_
         s.tts_autoplay = req.tts_autoplay
     if req.tts_voice_params is not None:
         s.tts_voice_params = req.tts_voice_params or None
+    if req.image_change_enabled is not None:
+        s.image_change_enabled = req.image_change_enabled
+    if req.image_change_revert_turns is not None:
+        s.image_change_revert_turns = max(1, req.image_change_revert_turns)
     await db.commit()
     return {"ok": True}
 
@@ -364,7 +372,9 @@ async def get_conversation_messages(conv_id: int, admin: User = Depends(require_
         select(Message).where(Message.conversation_id == conv_id).order_by(Message.id)
     )
     messages = [{
-        "id": m.id, "role": m.role, "content": m.content, "created_at": str(m.created_at)
+        "id": m.id, "role": m.role, "content": m.content,
+        "state_snapshot": m.state_snapshot if hasattr(m, 'state_snapshot') else None,
+        "created_at": str(m.created_at)
     } for m in result.scalars()]
 
     return {
@@ -376,6 +386,7 @@ async def get_conversation_messages(conv_id: int, admin: User = Depends(require_
             "character_id": conv.character_id,
             "character_name": char.name if char else "不明",
             "character_avatar": char.avatar_url if char else None,
+            "tts_styles": json.loads(char.tts_styles or "[]") if char and char.tts_styles else [],
             "created_at": str(conv.created_at),
             "updated_at": str(conv.updated_at),
         },
@@ -383,13 +394,31 @@ async def get_conversation_messages(conv_id: int, admin: User = Depends(require_
     }
 
 
+@router.delete("/messages/{msg_id}")
+async def admin_delete_message(msg_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """メッセージをDBから完全削除（管理者専用）"""
+    msg = (await db.execute(select(Message).where(Message.id == msg_id))).scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=404, detail="メッセージが見つかりません")
+    await db.delete(msg)
+    await db.commit()
+    return {"ok": True}
+
+
 # ─────────────────────────────────────────────
 # キャラクター管理
 # ─────────────────────────────────────────────
 
 @router.get("/characters")
-async def list_all_characters(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Character).order_by(Character.id.desc()))
+async def list_all_characters(
+    include_deleted: bool = Query(False),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(Character).order_by(Character.id.desc())
+    if not include_deleted:
+        q = q.where(Character.is_deleted == 0)
+    result = await db.execute(q)
     chars = result.scalars().all()
     # キャラIDごとのAIメッセージ数（role=assistant, 非削除）を一括取得
     msg_q = await db.execute(
@@ -403,6 +432,7 @@ async def list_all_characters(admin: User = Depends(require_admin), db: AsyncSes
         "id": c.id,
         "name": c.name,
         "creator_id": c.creator_id,
+        "is_deleted": c.is_deleted,
         "is_public": c.is_public,
         "is_sample": c.is_sample,
         "review_status": c.review_status,

@@ -437,21 +437,27 @@ function asobiUnlinkSocial(int $userId, string $provider): bool {
 }
 
 /** OAuth URL を生成してセッションにステートを保存 */
-function asobiOAuthGetUrl(string $provider, string $mode = 'login', string $redirectTo = ''): string {
+function asobiOAuthGetUrl(string $provider, string $mode = 'login', string $redirectTo = '', string $purpose = ''): string {
     require_once __DIR__ . '/oauth_config.php';
 
     $state = bin2hex(random_bytes(16));
     $_SESSION['oauth_state']    = $state;
     $_SESSION['oauth_mode']     = $mode;
     $_SESSION['oauth_redirect'] = $redirectTo ?: 'https://asobi.info/';
+    $_SESSION['oauth_purpose']  = $purpose;
     unset($_SESSION['oauth_code_verifier']);
 
     if ($provider === 'google') {
+        // 年齢認証用は生年月日スコープを追加
+        $scope = 'openid email profile';
+        if ($purpose === 'age_verify') {
+            $scope .= ' https://www.googleapis.com/auth/user.birthday.read';
+        }
         $params = [
             'client_id'     => ASOBI_GOOGLE_CLIENT_ID,
             'redirect_uri'  => ASOBI_GOOGLE_REDIRECT_URI,
             'response_type' => 'code',
-            'scope'         => 'openid email profile',
+            'scope'         => $scope,
             'state'         => $state,
             'prompt'        => 'select_account',
         ];

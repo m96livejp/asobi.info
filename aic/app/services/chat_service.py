@@ -119,7 +119,7 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False,
             "会話テキストを返した後、必ず以下の形式でステータスを返してください。\n"
             "ステータスはキャラクターの性格に基づき、会話の流れに応じて自然に変化させてください。\n"
             "記憶には会話の中で覚えておくべき重要事項を追加・削除してください。\n"
-            "各ステータスは短く簡潔に記述してください。\n\n"
+            "各ステータスは短く簡潔に記述してください。値は必ず日本語で記述してください。\n\n"
             f"<<<STATE>>>\n{state_template_str}\n<<</STATE>>>"
         )
     else:

@@ -32,6 +32,12 @@ class CharacterCreate(BaseModel):
     keywords: list[str] = []
     voice_model: str | None = None
     tts_styles: list = []
+    bgm_mode: str = "none"
+    bgm_track_id: int | None = None
+    sd_prompt: str | None = None
+    sd_neg_prompt: str | None = None
+    sd_seed: int | None = None
+    sd_model: str | None = None
 
 
 class CharacterUpdate(CharacterCreate):
@@ -65,6 +71,12 @@ def char_to_dict(c: Character, hide_private: bool = False) -> dict:
         "use_count": c.use_count,
         "voice_model": c.voice_model,
         "tts_styles": json.loads(c.tts_styles or "[]") if c.tts_styles else [],
+        "bgm_mode": c.bgm_mode or "none",
+        "bgm_track_id": c.bgm_track_id,
+        "sd_prompt": c.sd_prompt,
+        "sd_neg_prompt": c.sd_neg_prompt,
+        "sd_seed": c.sd_seed,
+        "sd_model": c.sd_model,
     }
     if not hide_private:
         d["private_profile"] = c.private_profile
@@ -113,10 +125,18 @@ async def list_mine(user: User = Depends(require_user), db: AsyncSession = Depen
 @router.get("/chatting-public")
 async def list_chatting_public(user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     """会話中の公開キャラクター（自分が作成者でないもの）"""
+    # キャラクターIDと最新の会話IDを取得
     conv_result = await db.execute(
-        select(Conversation.character_id).where(Conversation.user_id == user.id).distinct()
+        select(Conversation.character_id, Conversation.id).where(
+            Conversation.user_id == user.id,
+            Conversation.is_deleted == 0,
+        ).order_by(Conversation.updated_at.desc())
     )
-    char_ids = [row[0] for row in conv_result.all()]
+    char_conv_map: dict[int, int] = {}
+    for char_id, conv_id in conv_result.all():
+        if char_id not in char_conv_map:
+            char_conv_map[char_id] = conv_id
+    char_ids = list(char_conv_map.keys())
     if not char_ids:
         return []
     # 公開キャラかつ自分が作成者でないもの（削除済み含む: フロントで表示制御）
@@ -127,7 +147,12 @@ async def list_chatting_public(user: User = Depends(require_user), db: AsyncSess
             or_(Character.is_public == 1, Character.is_sample == 1)
         ).order_by(Character.name)
     )
-    return [char_to_dict(c, hide_private=True) for c in result.scalars()]
+    out = []
+    for c in result.scalars():
+        d = char_to_dict(c, hide_private=True)
+        d["conv_id"] = char_conv_map.get(c.id)
+        out.append(d)
+    return out
 
 
 @router.get("/{char_id}")
@@ -183,6 +208,12 @@ async def create_character(req: CharacterCreate, user: User = Depends(require_us
         keywords=json.dumps(req.keywords[:5], ensure_ascii=False),
         voice_model=req.voice_model,
         tts_styles=json.dumps(req.tts_styles, ensure_ascii=False) if req.tts_styles else None,
+        bgm_mode=req.bgm_mode or "none",
+        bgm_track_id=req.bgm_track_id,
+        sd_prompt=req.sd_prompt or None,
+        sd_neg_prompt=req.sd_neg_prompt or None,
+        sd_seed=req.sd_seed,
+        sd_model=req.sd_model or None,
     )
     db.add(c)
     await db.commit()
@@ -204,6 +235,12 @@ async def update_character(char_id: int, req: CharacterUpdate, user: User = Depe
         setattr(c, field, json.dumps(getattr(req, field), ensure_ascii=False))
     c.keywords = json.dumps(req.keywords[:5], ensure_ascii=False)
     c.tts_styles = json.dumps(req.tts_styles, ensure_ascii=False) if req.tts_styles else None
+    c.bgm_mode = req.bgm_mode or "none"
+    c.bgm_track_id = req.bgm_track_id
+    c.sd_prompt = req.sd_prompt or None
+    c.sd_neg_prompt = req.sd_neg_prompt or None
+    c.sd_seed = req.sd_seed
+    c.sd_model = req.sd_model or None
     await db.commit()
     await db.refresh(c)
     return char_to_dict(c)

@@ -91,6 +91,8 @@ class AiSettings(Base):
     tts_se = Column(Integer, nullable=False, default=0)               # 効果音システム適用
     tts_autoplay = Column(Integer, nullable=False, default=0)         # 自動再生表示（ユーザー毎に個別設定）
     tts_voice_params = Column(Text, nullable=True)                    # JSON: {"speed":{"min":0.8,"max":1.4},...} null=無効
+    image_change_enabled = Column(Integer, nullable=False, default=0)        # 画像変化機能 0=OFF 1=ON
+    image_change_revert_turns = Column(Integer, nullable=False, default=10)  # 元画像に戻すまでのターン数
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

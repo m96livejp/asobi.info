@@ -9,6 +9,7 @@ require_once '/opt/asobi/shared/assets/php/auth.php';
 $provider = $_GET['provider'] ?? '';
 $mode     = $_GET['mode'] ?? 'login';
 $redirect = $_GET['redirect'] ?? '';
+$purpose  = in_array($_GET['purpose'] ?? '', ['age_verify'], true) ? $_GET['purpose'] : '';
 
 $valid_providers = ['google', 'line', 'twitter'];
 if (!in_array($provider, $valid_providers, true)) {
@@ -16,12 +17,21 @@ if (!in_array($provider, $valid_providers, true)) {
     exit('Invalid provider');
 }
 
-if (!in_array($mode, ['login', 'link'], true)) {
+if (!in_array($mode, ['login', 'link', 'age_verify'], true)) {
     $mode = 'login';
 }
 
+// age_verify モードはログイン必須（Googleのみ対応）
+if ($mode === 'age_verify') {
+    asobiRequireLogin();
+    $purpose  = 'age_verify';
+    $mode     = 'link'; // OAuthフロー自体はlinkと同じ
+    // redirect が指定されていればそちらへ戻す
+    if (empty($redirect) || !preg_match('/^https?:\/\/([a-z0-9\-]+\.)?asobi\.info(\/|$)/i', $redirect)) {
+        $redirect = 'https://asobi.info/profile.php';
+    }
 // link モードはログイン必須
-if ($mode === 'link') {
+} elseif ($mode === 'link') {
     asobiRequireLogin();
     $redirect = 'https://asobi.info/profile.php';
 } else {
@@ -159,6 +169,6 @@ if ($provider === 'google') {
     }
 }
 
-$url = asobiOAuthGetUrl($provider, $mode, $redirect);
+$url = asobiOAuthGetUrl($provider, $mode, $redirect, $purpose);
 header('Location: ' . $url);
 exit;

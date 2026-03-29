@@ -1,6 +1,8 @@
 """チャットAPI（SSEストリーミング）"""
 import re
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import datetime
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
@@ -12,8 +14,20 @@ from ..models.conversation import Conversation, Message, ConversationState, Conv
 from ..models.balance import UserBalance, BalanceTransaction
 from ..models.settings import ChatStateConfig
 from ..services.chat_service import build_system_prompt, get_stream_func, get_ai_settings, get_cost_from_settings
+from ..services.scene_image_service import create_scene_task, _get_sd_settings as _get_sd_settings_for_scene
 from pydantic import BaseModel
 import json
+
+_API_USAGE_LOG = "/opt/asobi/aic/data/api_usage.log"
+
+
+def _append_api_usage_log(entry: dict):
+    """API利用ログをファイルに追記（JSON Lines形式）"""
+    try:
+        with open(_API_USAGE_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
 
 # STATEタグのパターン
 _STATE_TAG_RE = re.compile(r'<<<STATE>>>(.*?)<<</STATE>>>', re.DOTALL)
@@ -29,6 +43,7 @@ class ChatRequest(BaseModel):
 async def send_message(
     conversation_id: int,
     req: ChatRequest,
+    request: Request,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -203,6 +218,7 @@ async def send_message(
 
         # AIレスポンス保存 & ポイント消費（リトライ付き）
         state_snapshot_text = None
+        _scene_task_id = None  # 画像変化タスクID
         if state_enabled:
             match2 = _STATE_TAG_RE.search(full_response)
             if match2:
@@ -245,11 +261,69 @@ async def send_message(
             import logging
             logging.getLogger("aic").error(f"Chat save FAILED after 3 retries: conv={conversation_id}")
 
+        # 画像変化機能：ステータス変化がある場合にシーン画像タスクを作成
+        if save_ok and state_enabled and state_snapshot_text and ai_settings and getattr(ai_settings, 'image_change_enabled', 0):
+            try:
+                if char.sd_prompt and char.sd_seed is not None:
+                    # state_jsonからステータス辞書を構築
+                    _scene_state = {}
+                    try:
+                        _sj = json.loads(state_snapshot_text)
+                        for _k in ("mood", "environment", "situation", "relationship"):
+                            if _k in _sj:
+                                _scene_state[_k] = str(_sj[_k])
+                    except Exception:
+                        pass
+                    if _scene_state:
+                        _sd_settings = await _get_sd_settings_for_scene(db)
+                        _scene_task = await create_scene_task(
+                            db=db,
+                            conversation_id=conversation_id,
+                            message_id=ai_msg_id,
+                            base_prompt=char.sd_prompt,
+                            state_dict=_scene_state,
+                            sd=_sd_settings,
+                            seed=char.sd_seed,
+                            model=char.sd_model,
+                        )
+                        if _scene_task:
+                            _scene_task_id = _scene_task.id
+            except Exception as _e:
+                import logging
+                logging.getLogger("aic").warning(f"Scene task create error: {_e}")
+
+        # API利用ログを記録
+        if save_ok:
+            try:
+                _ip = request.client.host if request.client else ""
+                _ua = request.headers.get("user-agent", "")
+                _model_name = ai_settings.model if ai_settings and ai_settings.model else (char.ai_model or "")
+                _input_chars = len(req.message) + sum(len(m["content"]) for m in messages)
+                _output_chars = len(visible_text)
+                _append_api_usage_log({
+                    "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "user_id": user.id,
+                    "username": user.username or "",
+                    "char_name": char.name or "",
+                    "provider": provider or "",
+                    "model": _model_name,
+                    "input_chars": _input_chars,
+                    "output_chars": _output_chars,
+                    "ip": _ip,
+                    "user_agent": _ua,
+                    "cost": cost,
+                    "currency": currency,
+                })
+            except Exception:
+                pass
+
         done_payload: dict = {'done': True, 'cost': cost, 'currency': currency}
         if state_snapshot_text:
             done_payload['state_snapshot'] = state_snapshot_text
         if ai_msg_id:
             done_payload['ai_msg_id'] = ai_msg_id
+        if _scene_task_id:
+            done_payload['scene_task_id'] = _scene_task_id
         yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

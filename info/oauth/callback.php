@@ -26,21 +26,47 @@ if (empty($_SESSION['oauth_state']) || !hash_equals($_SESSION['oauth_state'], $s
     _oauthRedirectError('セッションが無効です。もう一度お試しください');
 }
 
-$mode        = $_SESSION['oauth_mode']     ?? 'login';
-$redirectTo  = $_SESSION['oauth_redirect'] ?? 'https://asobi.info/';
+$mode         = $_SESSION['oauth_mode']     ?? 'login';
+$redirectTo   = $_SESSION['oauth_redirect'] ?? 'https://asobi.info/';
 $codeVerifier = $_SESSION['oauth_code_verifier'] ?? null;
+$purpose      = $_SESSION['oauth_purpose']  ?? '';
 
 // セッション用変数をクリア
-unset($_SESSION['oauth_state'], $_SESSION['oauth_mode'], $_SESSION['oauth_redirect'], $_SESSION['oauth_code_verifier']);
+unset($_SESSION['oauth_state'], $_SESSION['oauth_mode'], $_SESSION['oauth_redirect'], $_SESSION['oauth_code_verifier'], $_SESSION['oauth_purpose']);
 
 // ── プロバイダーからユーザー情報取得 ─────────────────────────────
 try {
-    $info = _oauthFetchUserInfo($provider, $code, $codeVerifier);
+    $info = _oauthFetchUserInfo($provider, $code, $codeVerifier, $purpose);
 } catch (Exception $e) {
     _oauthRedirectError('認証に失敗しました: ' . $e->getMessage());
 }
 
 $db = asobiUsersDb();
+
+// ── 年齢認証モード ─────────────────────────────────────────────────
+if ($purpose === 'age_verify') {
+    if (!asobiIsLoggedIn()) {
+        _oauthRedirectError('ログインが必要です');
+    }
+    $birthYear = $info['birth_year'] ?? null;
+    if ($birthYear === null) {
+        $dest = $redirectTo !== 'https://asobi.info/' ? $redirectTo : 'https://asobi.info/profile.php';
+        header('Location: ' . $dest . (strpos($dest, '?') !== false ? '&' : '?') . 'age_verify_error=no_birthday');
+        exit;
+    }
+    $age = (int)date('Y') - (int)$birthYear;
+    if ($age < 18) {
+        header('Location: https://asobi.info/profile.php?age_verify_error=underage');
+        exit;
+    }
+    $userId = $_SESSION['asobi_user_id'];
+    $db->prepare("UPDATE users SET birth_year = ?, age_verified_at = datetime('now','localtime') WHERE id = ?")
+       ->execute([$birthYear, $userId]);
+    $_SESSION['asobi_age_verified'] = true;
+    $dest = $redirectTo !== 'https://asobi.info/' ? $redirectTo : 'https://asobi.info/profile.php';
+    header('Location: ' . $dest . (strpos($dest, '?') !== false ? '&' : '?') . 'age_verified=1');
+    exit;
+}
 
 // ── リンクモード ─────────────────────────────────────────────────
 if ($mode === 'link') {
@@ -136,8 +162,8 @@ function _oauthGenerateUsername(string $provider, array $info): string {
     return $provider . '_' . substr(bin2hex(random_bytes(4)), 0, 8);
 }
 
-function _oauthFetchUserInfo(string $provider, string $code, ?string $codeVerifier): array {
-    if ($provider === 'google')  return _oauthGoogle($code);
+function _oauthFetchUserInfo(string $provider, string $code, ?string $codeVerifier, string $purpose = ''): array {
+    if ($provider === 'google')  return _oauthGoogle($code, $purpose);
     if ($provider === 'line')    return _oauthLine($code);
     if ($provider === 'twitter') return _oauthTwitter($code, $codeVerifier ?? '');
     throw new Exception('Unknown provider');
@@ -165,7 +191,7 @@ function _oauthCurl(string $url, array $post = [], array $headers = [], ?string 
     return $json;
 }
 
-function _oauthGoogle(string $code): array {
+function _oauthGoogle(string $code, string $purpose = ''): array {
     $tokens = _oauthCurl('https://oauth2.googleapis.com/token', [
         'code'          => $code,
         'client_id'     => ASOBI_GOOGLE_CLIENT_ID,
@@ -176,11 +202,31 @@ function _oauthGoogle(string $code): array {
     $userinfo = _oauthCurl('https://www.googleapis.com/oauth2/v2/userinfo', [], [
         'Authorization: Bearer ' . $tokens['access_token'],
     ]);
+
+    // 年齢認証用：Google People API から生年月日を取得
+    $birthYear = null;
+    if ($purpose === 'age_verify') {
+        try {
+            $people = _oauthCurl(
+                'https://people.googleapis.com/v1/people/me?personFields=birthdays',
+                [],
+                ['Authorization: Bearer ' . $tokens['access_token']]
+            );
+            foreach ($people['birthdays'] ?? [] as $bd) {
+                if (!empty($bd['date']['year'])) {
+                    $birthYear = (int)$bd['date']['year'];
+                    break;
+                }
+            }
+        } catch (Exception $e) {}
+    }
+
     return [
         'provider_id'  => (string)$userinfo['id'],
         'email'        => $userinfo['email'] ?? null,
         'display_name' => $userinfo['name']  ?? null,
         'username'     => null,
+        'birth_year'   => $birthYear,
     ];
 }
 
