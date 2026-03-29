@@ -19,6 +19,7 @@ let _ttsStopId = 0;        // 停止世代ID（インクリメントで全実行
 let _ttsAutoPlay = false;  // 自動読み上げON/OFF
 let _showState = false;        // 感情STATE表示ON/OFF（管理者のみ）
 let _showStateChange = false;  // ステータス変化ログ表示ON/OFF（管理者のみ）
+let _adminShowDeleted = false; // 削除済みメッセージ表示ON/OFF（管理者のみ、デフォルトOFF）
 let _vvStyleMap = {};      // スタイル名→IDマップ（現在の会話のキャラから構築）
 let _ttsCache = new Map(); // テキスト+styleId → Blob キャッシュ（会話ごとにリセット）
 
@@ -199,6 +200,8 @@ function renderHeaderUser() {
   if (stateBtn) stateBtn.style.display = currentUser.role === 'admin' ? '' : 'none';
   const scBtn2 = document.getElementById('state-change-btn');
   if (scBtn2) scBtn2.style.display = currentUser.role === 'admin' ? '' : 'none';
+  const showDelBtn = document.getElementById('show-deleted-btn');
+  if (showDelBtn) showDelBtn.style.display = currentUser.role === 'admin' ? '' : 'none';
 
   // チャットヘッダーにもドロップダウン付きユーザーアイコン表示（メインと同じ構造）
   if (chatArea) {
@@ -1050,6 +1053,11 @@ async function openConversation(convId) {
   // スタイルマップ・キャッシュリセット
   _vvStyleMap = {};
   _ttsCache.clear();
+  // 削除済み表示をリセット（会話が変わったらOFFに戻す）
+  _adminShowDeleted = false;
+  document.getElementById('chat-messages')?.classList.remove('show-deleted');
+  const _sdBtn = document.getElementById('show-deleted-btn');
+  if (_sdBtn) _sdBtn.textContent = '👁 削除済み表示 OFF';
   if (currentCharacter?.tts_styles) {
     const styles = Array.isArray(currentCharacter.tts_styles) ? currentCharacter.tts_styles : [];
     for (const s of styles) { if (s.name != null && s.id != null) _vvStyleMap[s.name] = s.id; }
@@ -3414,6 +3422,18 @@ function editCurrentChar() {
     _editReturnScreen = 'chat';
     editCharacter(currentCharacter.id);
   }
+}
+
+// 削除済みメッセージ表示トグル（管理者のみ）
+function toggleShowDeleted() {
+  _chatMenuOpen = false;
+  document.getElementById('chat-menu-panel')?.classList.remove('open');
+  _adminShowDeleted = !_adminShowDeleted;
+  const btn = document.getElementById('show-deleted-btn');
+  if (btn) btn.textContent = _adminShowDeleted ? '👁 削除済み表示 ON' : '👁 削除済み表示 OFF';
+  const msgArea = document.getElementById('chat-messages');
+  if (msgArea) msgArea.classList.toggle('show-deleted', _adminShowDeleted);
+  showToast(_adminShowDeleted ? '削除済みメッセージを表示します' : '削除済みメッセージを非表示にしました', 'info', 1500);
 }
 
 // 感情STATE表示トグル（管理者のみ）

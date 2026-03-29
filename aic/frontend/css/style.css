@@ -386,9 +386,12 @@ body {
 @keyframes scene-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.8)} }
 
 .msg-soft-deleted {
-  opacity: 0.35;
+  display: none; /* デフォルトは非表示（管理者はハンバーガーメニューでON/OFF） */
+}
+.show-deleted .msg-soft-deleted {
+  display: block;
+  opacity: 0.9;
   text-decoration: line-through;
-  filter: grayscale(0.5);
   cursor: default;
 }
 .retry-btn {
