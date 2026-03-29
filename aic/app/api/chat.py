@@ -68,7 +68,7 @@ async def send_message(
     # AI設定取得
     ai_settings = await get_ai_settings(db)
 
-    # ポイント確認
+    # ポイント確認（管理者はスキップ）
     cost = get_cost_from_settings(ai_settings)
     result = await db.execute(select(UserBalance).where(UserBalance.user_id == user.id))
     balance = result.scalar_one_or_none()
@@ -77,7 +77,8 @@ async def send_message(
         db.add(balance)
         await db.flush()
 
-    if balance.points < cost and balance.crystals < cost:
+    is_admin_user = user.role == "admin"
+    if not is_admin_user and balance.points < cost and balance.crystals < cost:
         raise HTTPException(status_code=402, detail="ポイントが不足しています")
 
     # ユーザーメッセージ保存
@@ -237,18 +238,19 @@ async def send_message(
 
                 result2 = await db.execute(select(UserBalance).where(UserBalance.user_id == user.id))
                 bal = result2.scalar_one()
-                if bal.points >= cost:
-                    bal.points -= cost
-                    currency = "points"
-                else:
-                    bal.crystals -= cost
-                    currency = "crystals"
+                if not is_admin_user:
+                    if bal.points >= cost:
+                        bal.points -= cost
+                        currency = "points"
+                    else:
+                        bal.crystals -= cost
+                        currency = "crystals"
 
-                tx = BalanceTransaction(
-                    user_id=user.id, currency=currency, amount=-cost,
-                    type="chat", memo=f"{char.name} ({provider}:{ai_settings.model if ai_settings else char.ai_model})"
-                )
-                db.add(tx)
+                    tx = BalanceTransaction(
+                        user_id=user.id, currency=currency, amount=-cost,
+                        type="chat", memo=f"{char.name} ({provider}:{ai_settings.model if ai_settings else char.ai_model})"
+                    )
+                    db.add(tx)
                 await db.commit()
                 save_ok = True
                 break

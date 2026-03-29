@@ -501,17 +501,17 @@ function buildQuery(array $overrides): string {
         $isAiNote = !$isOk && !$isNg && $resultRaw !== '';
       ?>
       <?php
-        // 番号を動的に割り当て
+        // 番号を動的に割り当て（順序: 対応状況→更新内容→対応メモ→確認結果）
         $sn = 1;
         $n_status  = $sn++;                    // 常に①
-        $n_ainote  = $isAiNote ? $sn++ : null; // AI対応内容（あれば）
+        $n_ainote  = $isAiNote ? $sn++ : null; // 更新内容（AIが記入した対応内容、あれば）
         $holdAnswer = $selItem['hold_answer'] ?? '';
-        $n_result  = $sn++;                    // 確認結果
-        $n_memo    = $sn++;                    // 対応メモ（最後）
+        $n_memo    = $sn++;                    // 対応メモ
+        $n_result  = $sn++;                    // 確認結果（最後）
         $circled = ['①','②','③','④','⑤'];
       ?>
       <div class="sel-actions">
-        <!-- 対応状況 -->
+        <!-- ① 対応状況 -->
         <div class="action-group">
           <div class="action-group-title"><?= $circled[$n_status-1] ?> 対応状況</div>
           <form method="POST" action="" style="display:flex;gap:6px;align-items:center;margin-bottom:10px;">
@@ -524,14 +524,26 @@ function buildQuery(array $overrides): string {
         </div>
 
         <?php if ($isAiNote): ?>
-        <!-- AI対応内容（確認前に読む） -->
+        <!-- ② 更新内容（AI対応内容） -->
         <div class="action-group">
-          <div class="action-group-title" style="color:#4338ca;"><?= $circled[$n_ainote-1] ?> AI対応内容</div>
+          <div class="action-group-title" style="color:#4338ca;"><?= $circled[$n_ainote-1] ?> 更新内容</div>
           <div style="background:#f0f4ff;border-left:3px solid #667eea;border-radius:0 8px 8px 0;padding:10px 14px;font-size:0.85rem;line-height:1.6;white-space:pre-wrap;"><?= htmlspecialchars($resultRaw) ?></div>
         </div>
         <?php endif; ?>
 
-        <!-- 確認結果 -->
+        <!-- 対応メモ -->
+        <div class="action-group">
+          <div class="action-group-title"><?= $circled[$n_memo-1] ?> 対応メモ</div>
+          <form method="POST" action="">
+            <input type="hidden" name="action" value="status_note">
+            <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
+            <textarea name="status_note" rows="8" placeholder="対応状況の詳細メモ（自由記入）"
+              style="width:100%;padding:9px 12px;border:2px solid #e0e4e8;border-radius:8px;font-size:0.85rem;font-family:inherit;resize:vertical;line-height:1.6;margin-bottom:8px;"><?= htmlspecialchars($selItem['status_note'] ?? '') ?></textarea>
+            <button type="submit" class="btn-save">メモ保存</button>
+          </form>
+        </div>
+
+        <!-- 確認結果（最後） -->
         <div class="action-group">
           <?php if ($selItem['status'] === '保留'): ?>
           <!-- 保留中：解除回答入力 -->
@@ -576,18 +588,6 @@ function buildQuery(array $overrides): string {
               <button type="submit" class="btn-save" style="background:#388e3c;">✓ OK（完了）</button>
             </form>
           </div>
-        </div>
-
-        <!-- 対応メモ（最後） -->
-        <div class="action-group">
-          <div class="action-group-title"><?= $circled[$n_memo-1] ?> 対応メモ</div>
-          <form method="POST" action="">
-            <input type="hidden" name="action" value="status_note">
-            <input type="hidden" name="id" value="<?= $selItem['id'] ?>">
-            <textarea name="status_note" rows="8" placeholder="対応状況の詳細メモ（自由記入）"
-              style="width:100%;padding:9px 12px;border:2px solid #e0e4e8;border-radius:8px;font-size:0.85rem;font-family:inherit;resize:vertical;line-height:1.6;margin-bottom:8px;"><?= htmlspecialchars($selItem['status_note'] ?? '') ?></textarea>
-            <button type="submit" class="btn-save">メモ保存</button>
-          </form>
 
           <!-- 削除 -->
           <div style="margin-top:20px;">

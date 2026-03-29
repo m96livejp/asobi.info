@@ -313,20 +313,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       </div>
     </div>
 
-    <div class="card" style="margin-top:20px">
-      <div class="card-title">画像変化機能</div>
-      <div class="form-group">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="image-change-enabled" onchange="saveImageChangeConfig()" style="width:auto">
-          ステータス変化時に一時画像を生成する
-        </label>
-        <div class="hint">有効時、会話のSTATE変化でSDがキャラクター一時画像を生成しフェード表示します（SD設定・キャラのSDプロンプト設定が必要）。</div>
-      </div>
-      <div class="form-group" style="margin-top:8px">
-        <label>元画像に戻すまでのターン数</label>
-        <input type="number" id="image-change-revert-turns" min="1" max="999" value="10" style="width:100px" onchange="saveImageChangeConfig()">
-        <div class="hint">一時画像を表示してから元のアバター画像に戻るまでのAI返答回数。</div>
-      </div>
     </div>
   </div>
 
@@ -342,11 +328,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
             <th>ロール</th>
             <th style="cursor:pointer" onclick="sortUsers('char_count')">キャラ ⇅</th>
             <th style="cursor:pointer" onclick="sortUsers('image_count')">画像 ⇅</th>
+            <th style="cursor:pointer" onclick="sortUsers('points')">Pt ⇅</th>
             <th style="cursor:pointer" onclick="sortUsers('last_active')">最終ログイン ⇅</th>
             <th style="cursor:pointer" onclick="sortUsers('created_at')">登録日 ⇅</th>
             <th>操作</th>
           </tr></thead>
-          <tbody id="user-tbody"><tr><td colspan="8" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
+          <tbody id="user-tbody"><tr><td colspan="9" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -655,6 +642,24 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           <button class="btn btn-primary btn-sm" onclick="createTemplate()">追加する</button>
         </div>
       </details>
+    </div>
+
+    <!-- 画像変化機能（会話×SD連携） -->
+    <div class="card">
+      <div class="card-title">🔄 画像変化機能（会話×SD連携）</div>
+      <div class="hint" style="margin-bottom:12px">ステータス変化時にSDでキャラ一時画像を生成しチャット背景をフェード切替する機能です。<br>
+        使用するには：① このページの「AUTOMATIC1111 接続設定」でSDエンドポイントを有効化 → ② 各キャラクターの編集画面でSD設定（プロンプト・シード値）を入力 → ③ 以下でONにする</div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="image-change-enabled" onchange="saveImageChangeConfig()" style="width:auto">
+          ステータス変化時に一時画像を生成する
+        </label>
+      </div>
+      <div class="form-group" style="margin-top:8px">
+        <label>元画像に戻すまでのターン数</label>
+        <input type="number" id="image-change-revert-turns" min="1" max="999" value="10" style="width:100px" onchange="saveImageChangeConfig()">
+        <div class="hint">一時画像を表示してから元のアバター画像に戻るまでのAI返答回数。</div>
+      </div>
     </div>
   </div>
 
@@ -1230,16 +1235,19 @@ function renderUsers() {
     return 0;
   });
   const tbody = document.getElementById('user-tbody');
-  if (!users.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:20px">ユーザーがいません</td></tr>'; return; }
+  if (!users.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--sub);padding:20px">ユーザーがいません</td></tr>'; return; }
   tbody.innerHTML = users.map(u => {
     const lastActive = u.last_active ? u.last_active.slice(0, 16) : '-';
     const suspendedBadge = u.is_suspended ? ' <span style="background:#e74c3c;color:#fff;font-size:0.65rem;padding:1px 5px;border-radius:3px;vertical-align:middle">停止</span>' : '';
+    const ptColor = u.points <= 0 ? 'color:#e74c3c;font-weight:600' : u.points <= 20 ? 'color:#f39c12' : 'color:var(--sub)';
+    const ptLabel = u.role === 'admin' ? '<span style="color:#7ab3ff;font-size:0.72rem">∞</span>' : `<span style="${ptColor}">${u.points}</span>`;
     return `<tr${u.is_suspended ? ' style="opacity:0.6"' : ''} data-uid="${u.id}" data-uname="${esc(u.display_name)}">
       <td style="color:var(--sub)">${u.id}</td>
       <td>${esc(u.display_name)}${suspendedBadge}</td>
       <td><span class="badge badge-${u.role}">${u.role}</span></td>
       <td style="text-align:center">${u.char_count}</td>
       <td style="text-align:center">${u.image_count}</td>
+      <td style="text-align:center;font-size:0.85rem">${ptLabel}</td>
       <td style="color:var(--sub);font-size:0.78rem">${lastActive}</td>
       <td style="color:var(--sub);font-size:0.78rem">${u.created_at.slice(0,10)}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
@@ -1247,6 +1255,7 @@ function renderUsers() {
           ? `<button class="btn btn-sm btn-ghost" onclick="setRole(${u.id},'user')">解除</button>`
           : u.is_guest ? ''
           : `<button class="btn btn-sm btn-warn" onclick="setRole(${u.id},'admin')">管理者に</button>`}
+        <button class="btn btn-sm btn-primary" onclick="addPoints(${u.id},'${esc(u.display_name)}')">Pt+</button>
         <button class="btn btn-sm ${u.is_suspended ? 'btn-ghost' : 'btn-warn'}" onclick="toggleSuspend(${u.id},'${esc(u.display_name)}',${u.is_suspended})">${u.is_suspended ? '停止解除' : '利用停止'}</button>
         <button class="btn btn-sm btn-info" onclick="showUserConversations(${u.id})">会話</button>
         ${u.role !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id},'${esc(u.display_name)}')">削除</button>` : ''}
@@ -1273,6 +1282,31 @@ async function deleteUser(id, name) {
     const r = await api(`/admin/users/${id}`, { method: 'DELETE' });
     r.ok ? (toast('削除しました'), loadUsers()) : toast('削除に失敗しました', 'err');
   }, '削除する');
+}
+
+function addPoints(id, name) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.zIndex = '3000';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="width:300px">
+      <div class="confirm-title">ポイント付与</div>
+      <div style="margin-bottom:12px;font-size:0.85rem;color:var(--text-secondary)">「${esc(name)}」に付与するポイント数</div>
+      <input type="number" id="add-pt-amount" value="100" min="1" max="100000"
+        style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);color:var(--text);font-size:1rem;margin-bottom:12px">
+      <div class="confirm-actions">
+        <button class="btn btn-secondary" onclick="this.closest('.confirm-overlay').remove()">キャンセル</button>
+        <button class="btn btn-primary" onclick="(async()=>{
+          const amt=parseInt(document.getElementById('add-pt-amount').value)||0;
+          if(amt<=0){return;}
+          const r=await api('/admin/users/${id}/add-points',{method:'POST',body:JSON.stringify({amount:amt,currency:'points'})});
+          this.closest('.confirm-overlay').remove();
+          if(r.ok){toast('ポイントを付与しました');loadUsers();}else{toast('付与に失敗しました','err');}
+        })()">付与する</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  setTimeout(() => document.getElementById('add-pt-amount')?.focus(), 50);
 }
 
 async function showUserConversations(userId) {

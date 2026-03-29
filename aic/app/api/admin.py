@@ -10,6 +10,7 @@ from ..models.character import Character, CharacterReport
 from ..models.conversation import Conversation, Message
 from ..models.settings import AiSettings, SdSettings, PromptTemplate, SdSelectableModel, ChatStateConfig
 from ..models.image import UserImage, ImageFeedback, GenerationQueue
+from ..models.balance import UserBalance, BalanceTransaction
 from ..services import queue_worker
 from pydantic import BaseModel
 import httpx
@@ -250,6 +251,12 @@ async def list_users(admin: User = Depends(require_admin), db: AsyncSession = De
     for uid, cnt in ir.all():
         img_counts[uid] = cnt
 
+    # ユーザーごとの残高
+    bal_map = {}
+    br = await db.execute(select(UserBalance))
+    for b in br.scalars():
+        bal_map[b.user_id] = b
+
     result = await db.execute(select(User).order_by(User.id.desc()))
     users = result.scalars().all()
     return [{
@@ -263,6 +270,8 @@ async def list_users(admin: User = Depends(require_admin), db: AsyncSession = De
         "is_suspended": bool(u.is_suspended),
         "last_active": str(u.updated_at) if u.updated_at else "",
         "created_at": str(u.created_at),
+        "points": bal_map[u.id].points if u.id in bal_map else 0,
+        "crystals": bal_map[u.id].crystals if u.id in bal_map else 0,
     } for u in users]
 
 
@@ -293,6 +302,38 @@ async def suspend_user(user_id: int, admin: User = Depends(require_admin), db: A
     u.is_suspended = 0 if u.is_suspended else 1
     await db.commit()
     return {"ok": True, "is_suspended": bool(u.is_suspended)}
+
+
+class AddPointsRequest(BaseModel):
+    amount: int  # 付与ポイント数（正の整数）
+    currency: str = "points"  # "points" or "crystals"
+
+
+@router.post("/users/{user_id}/add-points")
+async def add_points(user_id: int, req: AddPointsRequest,
+                     admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """ユーザーにポイント/クリスタルを付与する"""
+    if req.amount <= 0 or req.amount > 100000:
+        raise HTTPException(status_code=400, detail="amount は 1〜100000 の範囲で指定してください")
+    if req.currency not in ("points", "crystals"):
+        raise HTTPException(status_code=400, detail="currency は points または crystals")
+    result = await db.execute(select(UserBalance).where(UserBalance.user_id == user_id))
+    bal = result.scalar_one_or_none()
+    if not bal:
+        bal = UserBalance(user_id=user_id, points=0, crystals=0)
+        db.add(bal)
+        await db.flush()
+    if req.currency == "points":
+        bal.points += req.amount
+    else:
+        bal.crystals += req.amount
+    tx = BalanceTransaction(
+        user_id=user_id, currency=req.currency, amount=req.amount,
+        type="admin_grant", memo=f"管理者({admin.display_name})が付与"
+    )
+    db.add(tx)
+    await db.commit()
+    return {"ok": True, "points": bal.points, "crystals": bal.crystals}
 
 
 @router.delete("/users/{user_id}")
