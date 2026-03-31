@@ -144,7 +144,15 @@ const LoginPage = {
                 const btn = document.getElementById('guest-start-btn');
                 btn.disabled = true;
                 try {
-                    await Auth.autoLogin();
+                    const name = await UI.prompt('プレイヤー名を入力してください', '');
+                    if (name === null) { if (tosCheckbox?.checked) btn.disabled = false; return; }
+                    const trimmed = name.trim();
+                    if (!trimmed || trimmed.length > 20) {
+                        await UI.alert('名前は1〜20文字で入力してください');
+                        if (tosCheckbox?.checked) btn.disabled = false;
+                        return;
+                    }
+                    await Auth.autoLogin(trimmed);
                     location.reload();
                 } catch (e) {
                     await UI.alert(e.message);

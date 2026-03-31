@@ -69,6 +69,9 @@ class AiSettingsUpdate(BaseModel):
     cost: int = 1
     response_guideline: str | None = None
     voicevox_endpoint: str | None = None
+    state_instruction: str | None = None
+    tts_instruction: str | None = None
+    tts_instruction_params: str | None = None
 
 
 @router.get("/ai-settings")
@@ -86,7 +89,10 @@ async def get_ai_settings(admin: User = Depends(require_admin), db: AsyncSession
             "image_change_enabled": s.image_change_enabled or 0,
             "image_change_revert_turns": s.image_change_revert_turns or 10,
             "daily_point_recovery_enabled": s.daily_point_recovery_enabled or 0,
-            "daily_point_recovery_threshold": s.daily_point_recovery_threshold or 100}
+            "daily_point_recovery_threshold": s.daily_point_recovery_threshold or 100,
+            "state_instruction": s.state_instruction or "",
+            "tts_instruction": s.tts_instruction or "",
+            "tts_instruction_params": s.tts_instruction_params or ""}
 
 
 @router.put("/ai-settings")
@@ -96,6 +102,9 @@ async def update_ai_settings(req: AiSettingsUpdate, admin: User = Depends(requir
     s.model = req.model; s.max_tokens = req.max_tokens; s.cost = req.cost
     s.response_guideline = req.response_guideline or None
     s.voicevox_endpoint = req.voicevox_endpoint or None
+    s.state_instruction = req.state_instruction or None
+    s.tts_instruction = req.tts_instruction or None
+    s.tts_instruction_params = req.tts_instruction_params or None
     await db.commit()
     return {"ok": True}
 
@@ -485,25 +494,39 @@ async def list_all_characters(
         .group_by(Conversation.character_id)
     )
     msg_map = {row.character_id: row.cnt for row in msg_q}
+    # 作成者IDから表示名を一括取得
+    creator_ids = list({c.creator_id for c in chars})
+    creator_map: dict[int, str] = {}
+    if creator_ids:
+        user_q = await db.execute(select(User.id, User.display_name, User.username).where(User.id.in_(creator_ids)))
+        for row in user_q:
+            creator_map[row.id] = row.display_name or row.username or f"ID:{row.id}"
+    # キャラIDごとの不正報告数を一括取得
+    report_q = await db.execute(
+        select(CharacterReport.character_id, func.count(CharacterReport.id).label("cnt"))
+        .where(CharacterReport.status == "pending")
+        .group_by(CharacterReport.character_id)
+    )
+    report_map = {row.character_id: row.cnt for row in report_q}
     return [{
         "id": c.id,
         "name": c.name,
         "creator_id": c.creator_id,
+        "creator_name": creator_map.get(c.creator_id, f"ID:{c.creator_id}"),
         "is_deleted": c.is_deleted,
         "is_public": c.is_public,
-        "is_sample": c.is_sample,
         "review_status": c.review_status,
         "is_recommended": c.is_recommended,
         "like_count": c.like_count,
         "use_count": c.use_count,
         "msg_count": msg_map.get(c.id, 0),
+        "report_count": report_map.get(c.id, 0),
         "created_at": str(c.created_at),
     } for c in chars]
 
 
 class CharacterUpdate(BaseModel):
     is_public: int | None = None
-    is_sample: int | None = None
     review_status: str | None = None
     is_recommended: int | None = None
 
@@ -546,7 +569,6 @@ async def update_character(char_id: int, req: CharacterUpdate,
     c = result.scalar_one_or_none()
     if not c: raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
     if req.is_public is not None: c.is_public = req.is_public
-    if req.is_sample is not None: c.is_sample = req.is_sample
     if req.review_status is not None and req.review_status in ("pending", "approved", "rejected"):
         c.review_status = req.review_status
     if req.is_recommended is not None: c.is_recommended = req.is_recommended
@@ -604,6 +626,11 @@ class SdSettingsUpdate(BaseModel):
     lt_mode: str = "off"  # off / free / local / both
     lt_api_key: str | None = None
     max_images: int = 100
+    wm_enabled: int = 0
+    wm_text: str | None = None
+    wm_image_path: str | None = None
+    wm_opacity: float = 0.3
+    wm_scale: float = 0.15
 
 
 @router.get("/sd-settings")
@@ -618,6 +645,11 @@ async def get_sd_settings(admin: User = Depends(require_admin), db: AsyncSession
         "lt_mode": s.lt_mode or "off",
         "lt_api_key": s.lt_api_key or "",
         "max_images": s.max_images if s.max_images is not None else 100,
+        "wm_enabled": s.wm_enabled if s.wm_enabled is not None else 0,
+        "wm_text": s.wm_text or "",
+        "wm_image_path": s.wm_image_path or "",
+        "wm_opacity": s.wm_opacity if s.wm_opacity is not None else 0.3,
+        "wm_scale": s.wm_scale if s.wm_scale is not None else 0.15,
     }
 
 
@@ -631,6 +663,11 @@ async def update_sd_settings(req: SdSettingsUpdate, admin: User = Depends(requir
     s.lt_mode = req.lt_mode if req.lt_mode in ("off", "free", "local", "both") else "off"
     s.lt_api_key = req.lt_api_key or None
     s.max_images = max(1, req.max_images) if req.max_images else 100
+    s.wm_enabled = req.wm_enabled
+    s.wm_text = req.wm_text or None
+    s.wm_image_path = req.wm_image_path or None
+    s.wm_opacity = req.wm_opacity
+    s.wm_scale = req.wm_scale
     await db.commit()
     return {"ok": True}
 
@@ -651,18 +688,44 @@ async def test_sd_connection(req: SdTestRequest = SdTestRequest(), admin: User =
     endpoint = endpoint.rstrip("/")
     try:
         async with httpx.AsyncClient(timeout=10) as c:
-            # まず疎通確認
+            # 疎通確認: /sdapi/v1/options（軽量・現在のモデル名を取得）
+            r = await c.get(f"{endpoint}/sdapi/v1/options")
+            r.raise_for_status()
+            opts = r.json()
+            from ..services.scene_image_service import _normalize_model_name as _norm
+            current_model = _norm(opts.get("sd_model_checkpoint", ""))
+            # モデル一覧取得: Gradio /info API を優先（Forge対応）
+            models = []
+            source = ""
             try:
-                ping = await c.get(f"{endpoint}/")
+                ir = await c.get(f"{endpoint}/info")
+                if ir.status_code == 200:
+                    info = ir.json()
+                    ep = info.get("named_endpoints", {}).get("/checkpoint_change", {})
+                    params = ep.get("parameters", [])
+                    if params:
+                        enum_list = params[0].get("type", {}).get("enum", [])
+                        # Gradioはファイルパス形式（A_写真風\model.safetensors）を返す
+                        # 正規化してDB保存用の model_id にする
+                        from ..services.scene_image_service import _normalize_model_name
+                        normalized = [_normalize_model_name(name) for name in enum_list]
+                        models = normalized
+                        source = "gradio"
             except Exception:
                 pass
-            # モデル一覧取得
-            r = await c.get(f"{endpoint}/sdapi/v1/sd-models")
-            r.raise_for_status()
-            models = [m.get("model_name", m.get("title", "")) for m in r.json()]
-            return {"ok": True, "models": models}
+            # フォールバック: sd-models API（A1111互換）
+            if not models:
+                try:
+                    mr = await c.get(f"{endpoint}/sdapi/v1/sd-models")
+                    if mr.status_code == 200:
+                        from ..services.scene_image_service import _normalize_model_name
+                        models = [_normalize_model_name(m.get("model_name", m.get("title", ""))) for m in mr.json()]
+                        source = "sd-models"
+                except Exception:
+                    pass
+            return {"ok": True, "models": models, "current_model": current_model, "source": source}
     except httpx.ConnectError as e:
-        return {"ok": False, "error": f"Connection refused: {endpoint} に接続できません。A1111 が --listen オプションで起動しているか確認してください。"}
+        return {"ok": False, "error": f"Connection refused: {endpoint} に接続できません。画像生成AIが --listen --api オプションで起動しているか確認してください。"}
     except httpx.TimeoutException:
         return {"ok": False, "error": f"Timeout: {endpoint} への接続がタイムアウトしました。ポート転送・ファイアウォールを確認してください。"}
     except httpx.HTTPStatusError as e:
@@ -673,16 +736,12 @@ async def test_sd_connection(req: SdTestRequest = SdTestRequest(), admin: User =
 
 class LtTestRequest(BaseModel):
     endpoint: str | None = None
+    mode: str | None = None          # off / free / local / both / both_local_first
+    api_key: str | None = None       # libretranslate.com APIキー
 
 
-@router.post("/lt-test")
-async def test_lt_connection(req: LtTestRequest = LtTestRequest(), admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
-    endpoint = req.endpoint
-    if not endpoint:
-        s = await _get_or_create_sd(db)
-        endpoint = s.lt_endpoint
-    if not endpoint:
-        return {"ok": False, "error": "エンドポイントが未設定です"}
+async def _test_lt_endpoint(endpoint: str, api_key: str = "") -> dict:
+    """1つのLibreTranslateエンドポイントをテスト"""
     endpoint = endpoint.rstrip("/")
     try:
         async with httpx.AsyncClient(timeout=10) as c:
@@ -691,13 +750,41 @@ async def test_lt_connection(req: LtTestRequest = LtTestRequest(), admin: User =
             langs = r.json()
             has_ja = any(l.get("code") == "ja" for l in langs)
             has_en = any(l.get("code") == "en" for l in langs)
-            return {"ok": True, "ja": has_ja, "en": has_en}
+            return {"ok": True, "ja": has_ja, "en": has_en, "endpoint": endpoint}
     except httpx.ConnectError:
-        return {"ok": False, "error": f"接続できません: {endpoint}"}
+        return {"ok": False, "error": f"接続できません: {endpoint}", "endpoint": endpoint}
     except httpx.TimeoutException:
-        return {"ok": False, "error": f"タイムアウト: {endpoint}"}
+        return {"ok": False, "error": f"タイムアウト: {endpoint}", "endpoint": endpoint}
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e), "endpoint": endpoint}
+
+
+@router.post("/lt-test")
+async def test_lt_connection(req: LtTestRequest = LtTestRequest(), admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    mode = req.mode or "local"
+    s = await _get_or_create_sd(db)
+
+    # テスト対象エンドポイントを構築
+    targets = []  # [(label, endpoint, api_key)]
+    if mode in ("free", "both", "both_local_first"):
+        targets.append(("無料版 (libretranslate.com)", "https://libretranslate.com", req.api_key or s.lt_api_key or ""))
+    if mode in ("local", "both", "both_local_first"):
+        ep = (req.endpoint or "").strip().rstrip("/") or (s.lt_endpoint or "").rstrip("/")
+        if ep:
+            targets.append(("ローカル", ep, ""))
+
+    if not targets:
+        return {"ok": False, "error": "テスト対象のエンドポイントがありません", "results": []}
+
+    # 全エンドポイントをテスト
+    results = []
+    for label, ep, key in targets:
+        r = await _test_lt_endpoint(ep, key)
+        r["label"] = label
+        results.append(r)
+
+    all_ok = all(r["ok"] for r in results)
+    return {"ok": all_ok, "results": results}
 
 
 # ─────────────────────────────────────────────
@@ -873,6 +960,7 @@ async def list_all_images(
             "display_name": display_name or f"User#{img.user_id}",
             "url": img.url,
             "prompt": img.prompt,
+            "original_prompt": img.original_prompt,
             "template_id": img.template_id,
             "model": img.model,
             "seed": img.seed,
@@ -1345,3 +1433,84 @@ async def update_report_status(
     report.status = req.status
     await db.commit()
     return {"ok": True}
+
+
+_API_USAGE_LOG = "/opt/asobi/aic/data/api_usage.log"
+
+
+@router.get("/chat-errors")
+async def get_chat_errors(admin: User = Depends(require_admin)):
+    """チャットエラーログを返す（api_usage.logのtypeがerrorのエントリ）"""
+    import json as _json
+    errors = []
+    try:
+        with open(_API_USAGE_LOG, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = _json.loads(line)
+                    if entry.get("type") == "error":
+                        errors.append(entry)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    errors.sort(key=lambda x: x.get("ts", ""), reverse=True)
+    return {"errors": errors[:500]}
+
+
+@router.get("/api-usage")
+async def get_api_usage(admin: User = Depends(require_admin)):
+    """API利用状況の集計（api_usage.logから集計）"""
+    import json as _json
+    import datetime as _dt
+    entries = []
+    try:
+        with open(_API_USAGE_LOG, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = _json.loads(line)
+                    entries.append(entry)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    today_str = _dt.datetime.now().strftime("%Y-%m-%d")
+    # 今日のチャット成功件数
+    today_calls = sum(1 for e in entries if e.get("ts", "").startswith(today_str) and e.get("type") != "error")
+    total_calls = sum(1 for e in entries if e.get("type") != "error")
+    error_count = sum(1 for e in entries if e.get("type") == "error")
+
+    # プロバイダ別集計（成功のみ）
+    provider_counts: dict = {}
+    for e in entries:
+        if e.get("type") == "error":
+            continue
+        p = e.get("provider", "unknown")
+        provider_counts[p] = provider_counts.get(p, 0) + 1
+
+    # 直近7日分の日別集計
+    daily: dict = {}
+    for e in entries:
+        if e.get("type") == "error":
+            continue
+        ts = e.get("ts", "")
+        if ts:
+            day = ts[:10]
+            daily[day] = daily.get(day, 0) + 1
+    # 直近7日だけ
+    sorted_daily = sorted(daily.items(), reverse=True)[:7]
+
+    return {
+        "today_calls": today_calls,
+        "total_calls": total_calls,
+        "error_count": error_count,
+        "by_provider": provider_counts,
+        "daily": sorted_daily,
+    }

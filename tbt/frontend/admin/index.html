@@ -39,19 +39,19 @@
             <div class="nav-item" data-section="players"><span class="nav-icon">👥</span>プレイヤー</div>
             <div class="nav-item" data-section="characters"><span class="nav-icon">⚔️</span>キャラクター</div>
             <div class="nav-item" data-section="items"><span class="nav-icon">🎒</span>アイテム</div>
+            <div class="nav-item" data-section="gacha"><span class="nav-icon">🎰</span>ガチャ</div>
             <div class="nav-item" data-section="settings"><span class="nav-icon">⚙️</span>設定</div>
             <div class="nav-item" data-section="npc-names"><span class="nav-icon">🤖</span>NPC名前</div>
             <div class="nav-item" data-section="tournaments"><span class="nav-icon">🏆</span>トーナメント</div>
             <div class="nav-item" data-section="logs"><span class="nav-icon">📋</span>ログ</div>
         </nav>
-        <div class="sidebar-footer">
-            <button id="logout-btn" class="btn btn-ghost btn-sm" style="width:100%">ログアウト</button>
-        </div>
     </aside>
     <main class="main-content" id="content">
         <div class="loading">読み込み中...</div>
     </main>
 </div>
+
+<div id="asobi-user-area" style="position:fixed;top:12px;right:16px;z-index:9999;"></div>
 
 <!-- JS: Sections first (they define global objects), then app -->
 <script src="js/admin-api.js"></script>
@@ -59,10 +59,12 @@
 <script src="js/sections/characters.js"></script>
 <script src="js/sections/items.js"></script>
 <script src="js/sections/settings.js"></script>
+<script src="js/sections/gacha.js"></script>
 <script src="js/sections/npc-names.js"></script>
 <script src="js/sections/tournaments.js"></script>
 <script src="js/sections/logs.js"></script>
 <script src="js/admin-app.js"></script>
+<script src="https://asobi.info/assets/js/common.js?v=20260327g"></script>
 
 </body>
 </html>

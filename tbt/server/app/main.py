@@ -160,7 +160,7 @@ async def seed_master_data():
         db.add_all(pool_items)
 
         # プレミアムガチャ
-        premium_pool = GachaPool(id=2, name="プレミアムガチャ", description="SSR以上確定！有料通貨で引ける", cost_type="premium", cost_amount=300, pity_count=50)
+        premium_pool = GachaPool(id=2, name="プレミアムガチャ", description="R以上確定！有料通貨で引ける", cost_type="premium", cost_amount=300, pity_count=50)
         db.add(premium_pool)
         await db.flush()
 
@@ -286,18 +286,20 @@ async def _seed_premium_item_gacha_pool(db):
     from app.models.gacha import GachaPool, GachaPoolItemEquip
 
     premium_item_pool = GachaPool(
-        name="プレミアム装備ガチャ", description="SR以上確定！GEMで引ける高レアリティ装備ガチャ",
+        name="プレミアム装備ガチャ", description="R以上確定！GEMで引ける高レアリティ装備ガチャ",
         pool_type="item", cost_type="premium", cost_amount=300, pity_count=50,
     )
     db.add(premium_item_pool)
     await db.flush()
 
     premium_item_entries = [
+        # R装備 (weight=5)
+        *[GachaPoolItemEquip(pool_id=premium_item_pool.id, item_template_id=tid, weight=5) for tid in [102, 103, 104, 120, 131, 202, 203, 204, 212, 213, 214, 222, 232, 303]],
         # SR装備 (weight=12)
         *[GachaPoolItemEquip(pool_id=premium_item_pool.id, item_template_id=tid, weight=12) for tid in [105, 106, 107, 132, 233, 304, 305, 306]],
         # SSR装備 (weight=4)
         *[GachaPoolItemEquip(pool_id=premium_item_pool.id, item_template_id=tid, weight=4) for tid in [108, 109, 121]],
-        # UR装備 (weight=1) ※合計99+3=102中2 ≈ 2%
+        # UR装備 (weight=1)
         *[GachaPoolItemEquip(pool_id=premium_item_pool.id, item_template_id=tid, weight=1) for tid in [110, 111]],
     ]
     db.add_all(premium_item_entries)

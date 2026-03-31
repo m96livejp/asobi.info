@@ -88,7 +88,10 @@ function buildQuery(array $extra = []): string {
 <body>
   <?php $adminActivePage = 'access-logs'; require __DIR__ . '/_sidebar.php'; ?>
 
-      <h1>アクセスログ</h1>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:8px;">
+        <h1 style="margin:0">アクセス生ログ</h1>
+        <a href="/admin/access-stats.php" style="font-size:0.8rem;color:#9ba8b5;text-decoration:none;">← 📊 アクセス統計グラフに戻る</a>
+      </div>
 
       <form class="filter-bar" method="get">
         <div>

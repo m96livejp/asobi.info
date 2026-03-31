@@ -26,6 +26,7 @@ if ($loggedIn) {
     $initial = mb_substr($name, 0, 1);
     echo json_encode([
         'loggedIn'    => true,
+        'userId'      => (int)$_SESSION['asobi_user_id'],
         'displayName' => $name,
         'initial'     => $initial,
         'avatarUrl'   => $avatarUrl,

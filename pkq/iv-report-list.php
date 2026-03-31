@@ -555,7 +555,9 @@ $recipe_stats = $db->query("
                 <?php if ($isOwn): ?>
                 <a href="/iv-report.php?edit=<?= $r['id'] ?>" class="edit-btn">編集</a>
                 <?php endif; ?>
+                <?php if ($isOwn): ?>
                 <a href="/iv-report.php?copy=<?= $r['id'] ?>" class="copy-btn">進化後登録</a>
+                <?php endif; ?>
               </div>
             </td>
           </tr>
@@ -670,7 +672,7 @@ $recipe_stats = $db->query("
     </div>
   </footer>
 
-  <script src="https://asobi.info/assets/js/common.js?v=20260327e"></script>
+  <script src="https://asobi.info/assets/js/common.js?v=20260327h"></script>
   <script src="/js/comments.js"></script>
   <script>
   // コメント初期化

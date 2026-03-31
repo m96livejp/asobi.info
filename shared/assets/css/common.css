@@ -10,6 +10,8 @@
 html {
   font-size: 16px;
   scroll-behavior: smooth;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -47,6 +49,7 @@ img {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  max-width: none;
 }
 
 .site-logo {
@@ -374,7 +377,6 @@ img {
   opacity: 0.5;
 }
 .header-user-dropdown {
-  display: none;
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
@@ -386,8 +388,18 @@ img {
   overflow: hidden;
   z-index: 300;
   color: #1d1d1f;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity .15s, visibility .15s, transform .15s;
+  pointer-events: none;
 }
-.header-user-menu.open .header-user-dropdown { display: block; }
+.header-user-menu.open .header-user-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
 .header-user-dropdown a {
   display: block;
   padding: 10px 16px;

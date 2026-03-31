@@ -100,6 +100,17 @@ async def asobi_callback(token: str, db: DbSession, state: str = Query(default="
             existing_user = None
 
         if existing_user and not existing_user.asobi_user_id:
+            # このasobi_idが既に別のtbtアカウントに紐づいていないか確認する
+            # （異なるブラウザユーザーがゲストアカウントを乗っ取るのを防ぐ）
+            result = await db.execute(select(User).where(User.asobi_user_id == asobi_id))
+            already_linked = result.scalar_one_or_none()
+            if already_linked:
+                # 既存のtbtアカウントへリダイレクト（ゲストアカウントには連携しない）
+                already_linked.last_login_at = datetime.now(timezone.utc)
+                await db.flush()
+                tbt_token = create_access_token(already_linked.id)
+                redirect_url = f"{settings.FRONTEND_URL}/auth-callback.html?token={tbt_token}&user_id={already_linked.id}"
+                return RedirectResponse(redirect_url)
             existing_user.asobi_user_id = asobi_id
             existing_user.last_login_at = datetime.now(timezone.utc)
             await db.flush()
@@ -127,7 +138,7 @@ async def asobi_callback(token: str, db: DbSession, state: str = Query(default="
         user = User(
             id=str(uuid_module.uuid4()),
             asobi_user_id=asobi_id,
-            display_name=payload.get("name") or "プレイヤー",
+            display_name=payload.get("name") or f"冒険者{random.randint(1000,9999)}",
         )
         db.add(user)
         await db.flush()

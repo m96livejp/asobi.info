@@ -13,11 +13,18 @@
   --ok:#4caf50; --warn:#ff9800; --info:#2196f3;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text)}
 
-/* レイアウト */
-.layout{display:flex;min-height:100vh}
-.sidebar{width:200px;background:var(--bg2);border-right:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column}
+/* レイアウト（position:fixed でビューポート全体を占有） */
+.layout{
+  position:fixed;
+  inset:0;
+  display:grid;
+  grid-template-areas:"header header" "sidebar content";
+  grid-template-rows:52px 1fr;
+  grid-template-columns:200px 1fr;
+}
+.sidebar{grid-area:sidebar;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
 .sidebar-logo{padding:20px 16px;font-size:1.1rem;font-weight:700;border-bottom:1px solid var(--border)}
 .sidebar-logo a{color:var(--sub);text-decoration:none;font-size:0.8rem;display:block;margin-top:4px}
 .sidebar-logo a:hover{color:var(--accent-l)}
@@ -25,7 +32,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans
 .nav-item{display:block;width:100%;padding:11px 16px;background:none;border:none;color:var(--sub);font-size:0.9rem;text-align:left;cursor:pointer;font-family:inherit;transition:all 0.15s;border-left:3px solid transparent}
 .nav-item:hover{color:var(--text);background:rgba(255,255,255,0.04)}
 .nav-item.active{color:var(--text);background:rgba(233,69,96,0.1);border-left-color:var(--accent)}
-.content{flex:1;overflow-y:auto;padding:24px}
+.content{grid-area:content;overflow-y:auto;padding:24px}
 
 /* セクション */
 .section{display:none}
@@ -91,7 +98,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .payload-chars{margin-left:auto;color:var(--sub);font-size:0.75rem}
 .payload-body{padding:10px 14px;font-size:0.8rem;line-height:1.6;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow-y:auto;background:var(--bg);color:var(--text);margin:0}
 .model-tbl{width:100%;border-collapse:collapse;margin-top:8px}
-.model-tbl th,.model-tbl td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);font-size:0.82rem}
+.model-tbl th,.model-tbl td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);font-size:0.82rem;white-space:nowrap}
 .model-tbl th{background:var(--bg);color:var(--sub)}
 .model-tbl td{font-family:'Consolas',monospace}
 
@@ -112,10 +119,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 
 /* ヘッダー */
 .admin-header{
-  position:sticky;top:0;z-index:200;
+  grid-area:header;
+  position:relative;z-index:10;
   background:var(--bg2);border-bottom:1px solid var(--border);
   display:flex;align-items:center;justify-content:space-between;
-  padding:0 20px;height:52px;flex-shrink:0;
+  padding:0 20px;
 }
 .admin-header-left{display:flex;align-items:center;gap:12px}
 .admin-header-logo{font-size:1rem;font-weight:700}
@@ -139,11 +147,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .hud-divider{height:1px;background:var(--border)}
 .hud-logout{color:var(--accent)!important}
 
-/* レイアウト調整（ヘッダー分） */
-.layout{flex-direction:column;height:100vh;overflow:hidden}
-.layout-body{display:flex;flex:1;min-height:0;overflow:hidden}
-.sidebar{overflow-y:auto}
-.content{overflow-y:auto;flex:1}
+/* レスポンシブ用スタイルここまで（上部レイアウトは統合済み） */
 
 /* 生成画像グリッド */
 .img-filter-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
@@ -155,7 +159,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .img-card-model{font-size:0.7rem;color:var(--accent-l);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .img-card-info{padding:8px}
 .img-card-user{font-size:0.78rem;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.img-card-prompt{font-size:0.75rem;color:var(--text);margin-top:2px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.img-card-prompt{display:none}
 .img-card-footer{display:flex;align-items:center;justify-content:space-between;margin-top:6px;gap:4px}
 .img-card-date{font-size:0.7rem;color:var(--sub)}
 .badge-pending{background:rgba(255,152,0,0.15);color:var(--warn)}
@@ -173,14 +177,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 
 /* レスポンシブ */
 @media(max-width:640px){
-  .layout-body{flex-direction:column}
-  .sidebar{width:100%;flex-direction:row;overflow-x:auto;overflow-y:hidden}
-  .sidebar-logo{display:none}
-  .sidebar-nav{display:flex;flex-direction:row;padding:0}
-  .nav-item{padding:12px 14px;border-left:none;border-bottom:3px solid transparent;white-space:nowrap}
-  .nav-item.active{border-bottom-color:var(--accent);border-left:none}
-  .content{padding:16px}
-  .stats-grid{grid-template-columns:repeat(3,1fr)}
+  .layout{grid-template-columns:110px 1fr}
+  .nav-item{padding:9px 8px;font-size:0.75rem;white-space:normal;line-height:1.3}
+  .content{padding:12px}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
 }
 </style>
 </head>
@@ -196,20 +196,19 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
   <div id="header-user-area" class="hdr-user-area"></div>
 </header>
 
-<div class="layout-body">
-
 <!-- サイドバー -->
 <aside class="sidebar">
   <nav class="sidebar-nav">
     <button class="nav-item active" onclick="showSection('dashboard')">📊 ダッシュボード</button>
-    <button class="nav-item" onclick="showSection('ai')">🤖 AI設定チャット用</button>
+    <button class="nav-item" onclick="showSection('sd')">🎨 画像生成AI設定</button>
+    <button class="nav-item" onclick="showSection('ai')">🤖 チャットAI設定</button>
     <button class="nav-item" onclick="showSection('tts')">🔊 音声設定</button>
-    <button class="nav-item" onclick="showSection('bgm')">🎵 BGM管理</button>
-    <button class="nav-item" onclick="showSection('sd')">🎨 AI設定画像用</button>
+    <button class="nav-item" onclick="showSection('bgm')">🎵 BGM設定</button>
     <button class="nav-item" onclick="showSection('users')">👥 ユーザー</button>
     <button class="nav-item" onclick="showSection('characters')">✨ キャラクター</button>
-    <button class="nav-item" onclick="showSection('queue')">📋 生成キュー</button>
     <button class="nav-item" onclick="showSection('images')">🖼 生成画像</button>
+    <button class="nav-item" onclick="showSection('queue')">📋 生成キュー</button>
+    <button class="nav-item" onclick="showSection('errorlogs')">🚨 エラーログ</button>
     <button class="nav-item" onclick="showSection('feedbacks')">📝 フィードバック</button>
     <button class="nav-item" onclick="showSection('reports')">⚠ 不正報告</button>
   </nav>
@@ -233,11 +232,15 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       <div class="card-title">現在のAI設定</div>
       <div id="current-ai" style="color:var(--sub);font-size:0.9rem">読み込み中...</div>
     </div>
+    <div class="card">
+      <div class="card-title">API利用状況（チャット）</div>
+      <div id="api-usage-stats" style="color:var(--sub);font-size:0.9rem">読み込み中...</div>
+    </div>
   </div>
 
   <!-- AI設定 -->
   <div id="sec-ai" class="section">
-    <div class="section-title">🤖 AI設定チャット用</div>
+    <div class="section-title">🤖 チャットAI設定</div>
     <div class="card">
       <div class="card-title">AIプロバイダ設定</div>
       <div class="form-group">
@@ -300,6 +303,21 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         <textarea id="response-guideline" rows="4" placeholder="例: キャラクターとして自然に会話してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。"></textarea>
         <div class="hint">空欄の場合はデフォルト指示文が使用されます。全キャラクター共通のシステムプロンプト末尾に追加されます。</div>
       </div>
+      <div class="form-group" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <label style="font-weight:600;margin-bottom:4px;display:block">📋 STATEブロック指示</label>
+        <textarea id="state-instruction" rows="6" placeholder="空欄の場合はデフォルト指示が使用されます"></textarea>
+        <div class="hint">ステータス機能有効時にAIへ送る指示文。この後にステータスのJSONテンプレートが自動付加されます。</div>
+      </div>
+      <div class="form-group">
+        <label style="font-weight:600;margin-bottom:4px;display:block">🔊 音声スタイル指示（通常）</label>
+        <textarea id="tts-instruction" rows="6" placeholder="空欄の場合はデフォルト指示が使用されます"></textarea>
+        <div class="hint">TTS有効時にAIへ送る音声スタイル指示文。{styles} はキャラの音声スタイル一覧に自動置換されます。</div>
+      </div>
+      <div class="form-group">
+        <label style="font-weight:600;margin-bottom:4px;display:block">🔊 音声スタイル指示（パラメータ付き）</label>
+        <textarea id="tts-instruction-params" rows="6" placeholder="空欄の場合はデフォルト指示が使用されます"></textarea>
+        <div class="hint">音声パラメータ（速度:ピッチ:抑揚:音量）有効時の指示文。{styles} は自動置換されます。</div>
+      </div>
       <button class="btn btn-primary" id="btn-save" onclick="saveAiSettings()">保存</button>
     </div>
 
@@ -329,7 +347,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
     </div>
 
     </div>
-  </div>
 
   <!-- ユーザー管理 -->
   <div id="sec-users" class="section">
@@ -366,9 +383,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       <div style="overflow-x:auto">
         <table class="tbl" id="char-table">
           <thead><tr>
-            <th>ID</th><th>名前</th><th>作成者</th><th>❤</th><th title="ユニークユーザー数">👤</th><th title="AIメッセージ総数">💬</th><th>作成日</th><th>操作</th>
+            <th>ID</th><th>名前</th><th>作成者</th><th>❤</th><th title="ユニークユーザー数">👤</th><th title="AIメッセージ総数">💬</th><th title="不正報告数">⚠</th><th>作成日</th><th>操作</th>
           </tr></thead>
-          <tbody id="char-tbody"><tr><td colspan="8" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
+          <tbody id="char-tbody"><tr><td colspan="9" style="color:var(--sub);text-align:center;padding:20px">読み込み中...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -512,9 +529,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 
   <!-- SD設定 -->
   <div id="sec-sd" class="section">
-    <div class="section-title">🎨 AI設定画像用（Stable Diffusion）</div>
+    <div class="section-title">🎨 画像生成AI設定</div>
     <div class="card">
-      <div class="card-title">AUTOMATIC1111 接続設定</div>
+      <div class="card-title">画像生成AI 接続設定</div>
       <div class="form-group">
         <label>画像生成を有効にする</label>
         <select id="sd-enabled">
@@ -524,17 +541,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       </div>
       <div class="form-group">
         <label>エンドポイントURL</label>
-        <input type="text" id="sd-endpoint" placeholder="例: http://127.0.0.1:1233">
+        <input type="text" id="sd-endpoint" placeholder="例: http://153.242.124.35:17211">
         <div class="hint">
-          A1111 起動オプション: <code>--api --listen --cors-allow-origins "https://aic.asobi.info"</code><br>
-          ・同じPC で管理画面を開く場合: <code>http://127.0.0.1:ポート番号</code><br>
-          ・外部から接続する場合: ngrok 等で HTTPS URL を取得して入力
+          起動オプション: <code>--api --listen --port 7860</code><br>
+          ・サーバーから画像生成AIのエンドポイントに到達できる必要があります
         </div>
       </div>
       <div class="form-group">
-        <button class="btn btn-info btn-sm" id="btn-sd-test" onclick="testSdConnection()">接続テスト</button>
-        <div class="hint" style="margin-top:4px">※ サーバーからSDへ接続します（サーバーがSDのエンドポイントに到達できる必要があります）</div>
-        <div id="sd-test-result" style="margin-top:10px"></div>
+        <button class="btn btn-info btn-sm" id="btn-forge-test" onclick="testForgeConnection()">接続テスト</button>
+        <div class="hint" style="margin-top:4px">※ サーバーから画像生成AIへ接続します</div>
+        <div id="forge-test-result" style="margin-top:10px"></div>
       </div>
     </div>
     <div class="card">
@@ -570,6 +586,35 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         <input type="number" id="sd-max-images" value="100" min="1" max="9999" style="width:100px">
         <div class="hint">この枚数に達すると新規生成ボタンが押せなくなります。</div>
       </div>
+      <!-- 透かし設定 -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
+        <div style="font-weight:600;margin-bottom:10px;font-size:0.9rem">透かし設定</div>
+        <div class="form-group">
+          <label><input type="checkbox" id="sd-wm-enabled"> 透かしを有効にする</label>
+          <div class="hint">保存時に画像の右下に透かしを追加します</div>
+        </div>
+        <div class="form-group">
+          <label>テキスト透かし</label>
+          <input type="text" id="sd-wm-text" placeholder="例: aic.asobi.info">
+        </div>
+        <div class="form-group">
+          <label>画像透かしパス（サーバー上の絶対パス）</label>
+          <input type="text" id="sd-wm-image-path" placeholder="例: /opt/asobi/aic/frontend/images/watermark.png">
+          <div class="hint">PNG推奨（透過対応）。テキストと併用可。</div>
+        </div>
+        <div style="display:flex;gap:16px">
+          <div class="form-group" style="flex:1">
+            <label>透明度</label>
+            <input type="number" id="sd-wm-opacity" value="0.3" min="0.05" max="1.0" step="0.05" style="width:80px">
+            <div class="hint">0.05〜1.0（小さいほど薄い）</div>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>サイズ比率</label>
+            <input type="number" id="sd-wm-scale" value="0.15" min="0.05" max="0.5" step="0.05" style="width:80px">
+            <div class="hint">画像幅に対する比率</div>
+          </div>
+        </div>
+      </div>
       <button class="btn btn-primary" id="btn-sd-save" onclick="saveSdSettings()">保存</button>
     </div>
 
@@ -586,7 +631,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
             <input type="text" id="new-sm-name" placeholder="例: リアル系、アニメ系">
           </div>
           <div class="form-group" style="margin:0">
-            <label>モデルID <span style="font-weight:400;color:var(--sub)">（SDのチェックポイント名）</span></label>
+            <label>モデルID <span style="font-weight:400;color:var(--sub)">（チェックポイント名）</span></label>
             <input type="text" id="new-sm-id" placeholder="例: v1-5-pruned-emaonly.safetensors">
           </div>
           <div class="form-group" style="margin:0">
@@ -608,6 +653,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           <option value="free">無料版のみ（libretranslate.com）</option>
           <option value="local">ローカルのみ</option>
           <option value="both">無料版 → ローカル（フォールバック）</option>
+          <option value="both_local_first">ローカル → 無料版（フォールバック）</option>
         </select>
       </div>
       <div id="lt-free-settings" style="display:none">
@@ -626,10 +672,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
           <div class="hint">
             LibreTranslate 起動例: <code>docker run -d -p 5000:5000 libretranslate/libretranslate</code>
           </div>
-          <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-            <button class="btn btn-sm" id="btn-lt-test" onclick="testLtConnection()">接続テスト</button>
-            <span id="lt-test-result" style="font-size:0.85rem"></span>
-          </div>
+        </div>
+      </div>
+      <div id="lt-test-area" style="display:none;margin-top:8px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-sm" id="btn-lt-test" onclick="testLtConnection()">接続テスト</button>
+          <span id="lt-test-result" style="font-size:0.85rem"></span>
         </div>
       </div>
       <button class="btn btn-primary" onclick="saveSdSettings()">保存</button>
@@ -652,7 +700,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
             <textarea id="new-tmpl-prompt" rows="3" placeholder="例: anime girl, long hair, school uniform, smile, high quality, detailed"></textarea>
           </div>
           <div class="form-group" style="margin:0">
-            <label>ネガティブプロンプト <span style="font-weight:400;color:var(--sub)">（空欄でSD設定のデフォルト使用）</span></label>
+            <label>ネガティブプロンプト <span style="font-weight:400;color:var(--sub)">（空欄で画像生成AI設定のデフォルト使用）</span></label>
             <textarea id="new-tmpl-neg" rows="8" placeholder="空欄の場合はAI設定画像用のデフォルトを使用"></textarea>
           </div>
           <div class="form-group" style="margin:0">
@@ -664,11 +712,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       </details>
     </div>
 
-    <!-- 画像変化機能（会話×SD連携） -->
+    <!-- 画像変化機能（会話×画像生成AI連携） -->
     <div class="card">
-      <div class="card-title">🔄 画像変化機能（会話×SD連携）</div>
-      <div class="hint" style="margin-bottom:12px">ステータス変化時にSDでキャラ一時画像を生成しチャット背景をフェード切替する機能です。<br>
-        使用するには：① このページの「AUTOMATIC1111 接続設定」でSDエンドポイントを有効化 → ② 各キャラクターの編集画面でSD設定（プロンプト・シード値）を入力 → ③ 以下でONにする</div>
+      <div class="card-title">🔄 画像変化機能（会話×画像生成AI連携）</div>
+      <div class="hint" style="margin-bottom:12px">ステータス変化時に画像生成AIでキャラ一時画像を生成しチャット背景をフェード切替する機能です。<br>
+        使用するには：① このページの「画像生成AI 接続設定」でエンドポイントを有効化 → ② 各キャラクターの編集画面で画像生成設定（プロンプト・シード値）を入力 → ③ 以下でONにする</div>
       <div class="form-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="image-change-enabled" onchange="saveImageChangeConfig()" style="width:auto">
@@ -789,13 +837,19 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 
   <!-- BGM管理セクション -->
   <div id="sec-bgm" class="section">
-    <div class="section-title">🎵 BGM管理</div>
+    <div class="section-title">🎵 BGM設定</div>
     <div class="card" style="margin-bottom:16px">
       <div class="card-title">BGMファイルのアップロード</div>
+      <p style="font-size:0.82rem;color:var(--sub);margin:0 0 10px">アップロード直後は「無効」状態です。確認後に有効にしてください。</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <div class="form-group" style="flex:1;min-width:160px;margin:0">
           <label class="form-label">表示名</label>
           <input type="text" id="bgm-name" class="form-control" placeholder="例: 落ち着いたBGM" style="width:100%">
+        </div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0">
+          <label class="form-label">ジャンル</label>
+          <input type="text" id="bgm-genre" class="form-control" list="bgm-genre-list" placeholder="例: 癒し系" style="width:100%">
+          <datalist id="bgm-genre-list"></datalist>
         </div>
         <div class="form-group" style="flex:2;min-width:200px;margin:0">
           <label class="form-label">ファイル（MP3/OGG/WAV/M4A/WebM）</label>
@@ -806,13 +860,30 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
       <div id="bgm-upload-msg" style="margin-top:8px;font-size:0.85rem"></div>
     </div>
     <div class="card">
-      <div class="card-title">BGMトラック一覧</div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <div class="card-title" style="margin:0">BGMトラック一覧</div>
+        <select id="bgm-genre-filter" class="form-control" style="width:auto;min-width:120px" onchange="loadBgmList()">
+          <option value="">全ジャンル</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="loadBgmList()">🔄 更新</button>
+      </div>
       <div id="bgm-list">読み込み中...</div>
     </div>
   </div>
 
+  <!-- エラーログセクション -->
+  <div id="sec-errorlogs" class="section">
+    <div class="section-title">🚨 チャットエラーログ</div>
+    <div class="card">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+        <div class="card-title" style="margin:0">最新エラー一覧</div>
+        <button class="btn btn-secondary btn-sm" onclick="loadErrorLogs()">🔄 更新</button>
+      </div>
+      <div id="errorlogs-table">読み込み中...</div>
+    </div>
+  </div>
+
 </main>
-</div><!-- layout-body -->
 </div><!-- layout -->
 
 <div class="toast" id="toast"></div>
@@ -879,9 +950,13 @@ async function api(path, opts = {}) {
   const h = { 'Content-Type': 'application/json' };
   if (token) h['Authorization'] = 'Bearer ' + token;
   const r = await fetch(API + path, { ...opts, headers: h });
-  if (r.status === 403) {
-    document.querySelector('.layout-body').innerHTML =
-      '<div style="padding:40px;text-align:center"><h2>アクセス拒否</h2><p style="color:var(--sub);margin:12px 0">管理者権限が必要です</p><a href="/" style="color:var(--accent-l)">← 戻る</a></div>';
+  if (r.status === 403 && !document.getElementById('_access-denied-ov')) {
+    // DOMを破壊せずfixedオーバーレイで表示（セクション構造を保持）
+    const ov = document.createElement('div');
+    ov.id = '_access-denied-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px';
+    ov.innerHTML = '<h2 style="color:var(--text)">アクセス拒否</h2><p style="color:var(--sub)">管理者権限が必要です</p><a href="/" style="color:var(--accent-l)">← 戻る</a>';
+    document.body.appendChild(ov);
   }
   return r;
 }
@@ -997,6 +1072,18 @@ async function loadStats() {
     document.getElementById('current-ai').innerHTML =
       `プロバイダ: <b>${esc(s.provider)}</b> ／ モデル: <b>${esc(s.model || '未設定')}</b> ／ コスト: <b>${s.cost}pt/メッセージ</b>`;
   }
+
+  const r3 = await api('/admin/api-usage');
+  if (r3.ok) {
+    const u = await r3.json();
+    const providerHtml = Object.entries(u.by_provider).sort((a,b) => b[1]-a[1])
+      .map(([p, n]) => `<span style="margin-right:12px">${esc(p)}: <b>${n}</b>回</span>`).join('');
+    const dailyHtml = u.daily.map(([d, n]) => `<span style="margin-right:12px">${esc(d)}: <b>${n}</b></span>`).join('');
+    document.getElementById('api-usage-stats').innerHTML =
+      `<div style="margin-bottom:8px">今日: <b>${u.today_calls}</b>回 ／ 合計: <b>${u.total_calls}</b>回 ／ エラー: <b style="color:var(--danger)">${u.error_count}</b>件</div>` +
+      (providerHtml ? `<div style="margin-bottom:6px">プロバイダ別: ${providerHtml}</div>` : '') +
+      (dailyHtml ? `<div style="font-size:0.82rem;color:var(--sub)">直近7日: ${dailyHtml}</div>` : '');
+  }
 }
 
 // ─── AI設定 ───
@@ -1025,6 +1112,9 @@ async function loadAiSettings() {
   document.getElementById('cost').value = d.cost ?? 1;
   document.getElementById('response-guideline').value = d.response_guideline || '';
   document.getElementById('voicevox-endpoint').value = d.voicevox_endpoint || '';
+  document.getElementById('state-instruction').value = d.state_instruction || '';
+  document.getElementById('tts-instruction').value = d.tts_instruction || '';
+  document.getElementById('tts-instruction-params').value = d.tts_instruction_params || '';
   onProviderChange();
 
   // チャットステータス設定ロード
@@ -1217,6 +1307,9 @@ async function saveAiSettings() {
     cost: parseInt(document.getElementById('cost').value) ?? 1,
     response_guideline: document.getElementById('response-guideline').value || null,
     voicevox_endpoint: document.getElementById('voicevox-endpoint').value || null,
+    state_instruction: document.getElementById('state-instruction').value || null,
+    tts_instruction: document.getElementById('tts-instruction').value || null,
+    tts_instruction_params: document.getElementById('tts-instruction-params').value || null,
   };
   const r = await api('/admin/ai-settings', { method: 'PUT', body: JSON.stringify(body) });
   btn.disabled = false; btn.textContent = '保存';
@@ -1418,8 +1511,8 @@ async function viewConversation(convId) {
   const stateLogs = r2.ok ? await r2.json() : [];
   const conv = data.conversation;
 
-  const win = window.open('', `conv_${convId}`, 'width=560,height=780,resizable=yes,scrollbars=no');
-  if (!win) { toast('ポップアップがブロックされています。ブラウザの設定をご確認ください', 'err'); return; }
+  const win = window.open('about:blank', '_blank');
+  if (!win) { toast('新しいタブを開けませんでした。ブラウザの設定をご確認ください', 'err'); return; }
 
   const avatarHtml = conv.character_avatar
     ? `<img src="${esc(conv.character_avatar)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0">`
@@ -1483,11 +1576,17 @@ async function viewConversation(convId) {
     if (item.type === 'msg') {
       const m = item.msg;
       const time = (m.created_at || '').slice(0, 16);
+      const deletedStyle = m.is_deleted ? ' style="opacity:0.9;text-decoration:line-through"' : '';
+      const deletedBadge = m.is_deleted ? '<span style="font-size:0.65rem;background:rgba(233,69,96,0.3);color:#ff9ab0;padding:1px 5px;border-radius:3px;margin-left:4px;text-decoration:none;display:inline-block">削除</span>' : '';
       if (m.role === 'user')
-        return `<div class="msg msg-user">${escW(m.content)}<div class="msg-meta">${time}</div></div>`;
-      const snapHtml = m.state_snapshot ? `<div class="state-badge" style="display:none">${escW(_fmtState(m.state_snapshot))}</div>` : '';
-      const ttsBtn = `<button class="tts-play-btn" style="display:none" onclick="playTts(this)" title="音声再生">▶</button>`;
-      return `<div class="msg msg-ai" data-content="${escAttr(m.content)}">${ttsBtn}${escW(m.content)}${snapHtml}<div class="msg-meta">${time}</div></div>`;
+        return `<div class="msg msg-user"${deletedStyle}>${escW(m.content)}${deletedBadge}<div class="msg-meta">${time}</div></div>`;
+      const snapHtml = m.state_snapshot ? `<div class="state-badge">${escW(_fmtState(m.state_snapshot))}</div>` : '';
+      const ttsBtn = m.is_deleted ? '' : `<button class="tts-play-btn" style="display:none" onclick="playTts(this)" title="音声再生">▶</button>`;
+      // [...]と{...}をemotion-tagスパンでラップ（デフォルト非表示）
+      const escapedContent = escW(m.content)
+        .replace(/\[[^\]]*\]/g, '<span class="emotion-tag">$&</span>')
+        .replace(/\{[^}]*\}/g, '<span class="emotion-tag">$&</span>');
+      return `<div class="msg msg-ai"${deletedStyle} data-content="${escAttr(m.content)}">${ttsBtn}${escapedContent}${deletedBadge}${snapHtml}<div class="msg-meta">${time}</div></div>`;
     }
     // STATE変更行
     return `<div class="state-change"><div class="state-change-title">📊 ステータス変化 <span class="state-time">${item.time.slice(0,16)}</span></div><div class="state-diff">${item.diff.join('<br>')}</div></div>`;
@@ -1519,7 +1618,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans JP',sans
 .msg-ai:hover .tts-play-btn{opacity:0.85}
 .tts-play-btn:hover{opacity:1!important}
 .tts-play-btn:disabled{opacity:0.3;cursor:default}
-.state-badge{margin-top:6px;padding:5px 9px;background:rgba(45,90,123,0.07);border:1px solid rgba(45,90,123,0.22);border-radius:8px;font-size:0.7rem;font-family:'Menlo','Consolas',monospace;color:#7ab3ff;word-break:break-all;line-height:1.6;white-space:pre-wrap}
+.emotion-tag{display:none;color:#aaa;font-size:0.88em;opacity:0.8}
+.show-emotions .emotion-tag{display:inline}
+.state-badge{margin-top:6px;padding:5px 9px;background:rgba(45,90,123,0.07);border:1px solid rgba(45,90,123,0.22);border-radius:8px;font-size:0.7rem;font-family:'Menlo','Consolas',monospace;color:#7ab3ff;word-break:break-all;line-height:1.6;white-space:pre-wrap;display:none}
 .state-change{align-self:center;background:rgba(15,52,96,0.9);border:1px solid #1e4a8a;border-radius:10px;padding:8px 14px;font-size:0.78rem;max-width:90%;width:100%;backdrop-filter:blur(4px)}
 .state-change-title{font-weight:700;color:#7ab3ff;margin-bottom:4px}
 .state-time{font-weight:400;color:var(--sub);font-size:0.72rem;margin-left:6px}
@@ -1580,6 +1681,7 @@ async function playTts(btn) {
   }
 }
 function toggleBadge(on) {
+  document.getElementById('msgs').classList.toggle('show-emotions', on);
   document.querySelectorAll('.state-badge').forEach(el => el.style.display = on ? '' : 'none');
 }
 function toggleState(on) {
@@ -1602,7 +1704,7 @@ async function loadCharacters() {
   if (!r.ok) return;
   const chars = await r.json();
   const tbody = document.getElementById('char-tbody');
-  if (!chars.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:20px">キャラクターがいません</td></tr>'; return; }
+  if (!chars.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--sub);padding:20px">キャラクターがいません</td></tr>'; return; }
   tbody.innerHTML = chars.map(c => {
     const isDeleted = c.is_deleted > 0;
     const rowStyle = isDeleted ? ' style="opacity:0.5"' : '';
@@ -1611,13 +1713,13 @@ async function loadCharacters() {
       : c.is_deleted === 1
         ? '<span style="font-size:0.72rem;background:var(--warn);color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px">作成者削除</span>'
         : '';
+    const reportBadge = c.report_count > 0
+      ? `<span style="color:var(--accent);font-weight:700">${c.report_count}</span>`
+      : '<span style="color:var(--sub)">0</span>';
     const actionBtns = isDeleted
       ? `<button class="btn btn-sm btn-ok" onclick="restoreChar(${c.id},'${esc(c.name)}')">復元</button>`
       : `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem">
           <input type="checkbox" ${c.is_public ? 'checked' : ''} onchange="setCharFlag(${c.id},{is_public:this.checked?1:0})"> 公開
-        </label>
-        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem">
-          <input type="checkbox" ${c.is_sample ? 'checked' : ''} onchange="setCharFlag(${c.id},{is_sample:this.checked?1:0})"> サンプル
         </label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem;color:${c.review_status==='approved'?'var(--ok)':'var(--sub)'}">
           <input type="checkbox" ${c.review_status === 'approved' ? 'checked' : ''} onchange="setCharFlag(${c.id},{review_status:this.checked?'approved':'pending'})"> 審査
@@ -1630,10 +1732,11 @@ async function loadCharacters() {
     return `<tr${rowStyle}>
       <td style="color:var(--sub)">${c.id}</td>
       <td>${esc(c.name)}${deletedBadge}</td>
-      <td style="color:var(--sub)">${c.creator_id}</td>
+      <td style="color:var(--sub);font-size:0.78rem;white-space:nowrap" title="ID:${c.creator_id}">${esc(c.creator_name)}<br><span style="font-size:0.7rem">ID:${c.creator_id}</span></td>
       <td>${c.like_count}</td>
       <td title="ユニークユーザー数">${c.use_count}</td>
       <td title="AIメッセージ総数">${c.msg_count}</td>
+      <td title="不正報告数">${reportBadge}</td>
       <td style="color:var(--sub);font-size:0.78rem">${c.created_at.slice(0,10)}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${actionBtns}</td>
     </tr>`;
@@ -1724,6 +1827,12 @@ async function loadSdSettings() {
   // lt_mode: off / free / local / both
   document.getElementById('sd-lt-mode').value = d.lt_mode || 'off';
   document.getElementById('sd-max-images').value = d.max_images ?? 100;
+  // 透かし設定
+  document.getElementById('sd-wm-enabled').checked = !!d.wm_enabled;
+  document.getElementById('sd-wm-text').value = d.wm_text || '';
+  document.getElementById('sd-wm-image-path').value = d.wm_image_path || '';
+  document.getElementById('sd-wm-opacity').value = d.wm_opacity ?? 0.3;
+  document.getElementById('sd-wm-scale').value = d.wm_scale ?? 0.15;
   updateLtModeUI();
   // 画像比率CSS変数を設定
   const w = d.width || 512, h = d.height || 512;
@@ -1746,6 +1855,11 @@ async function saveSdSettings() {
     lt_mode: document.getElementById('sd-lt-mode').value,
     lt_api_key: document.getElementById('sd-lt-api-key').value || null,
     max_images: parseInt(document.getElementById('sd-max-images').value) || 100,
+    wm_enabled: document.getElementById('sd-wm-enabled').checked ? 1 : 0,
+    wm_text: document.getElementById('sd-wm-text').value || null,
+    wm_image_path: document.getElementById('sd-wm-image-path').value || null,
+    wm_opacity: parseFloat(document.getElementById('sd-wm-opacity').value) || 0.3,
+    wm_scale: parseFloat(document.getElementById('sd-wm-scale').value) || 0.15,
   };
   const r = await api('/admin/sd-settings', { method: 'PUT', body: JSON.stringify(body) });
   btn.disabled = false; btn.textContent = '保存';
@@ -1820,6 +1934,7 @@ async function loadSelectableModels() {
           <div style="font-size:0.78rem;color:var(--sub);margin-top:1px">利用: ${m.use_count ?? 0}回</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-sm btn-info" onclick="editSelectableModel(${m.id})">編集</button>
           <button class="btn btn-sm ${m.is_active ? 'btn-ghost' : 'btn-ok'}" onclick="toggleSelectableModel(${m.id},${m.is_active})">${m.is_active ? '無効化' : '有効化'}</button>
           <button class="btn btn-sm btn-danger" onclick="deleteSelectableModel(${m.id},'${esc(m.display_name)}')">削除</button>
         </div>
@@ -1854,6 +1969,38 @@ async function toggleSelectableModel(id, isActive) {
     body: JSON.stringify({ model_id: m.model_id, display_name: m.display_name, is_active: isActive ? 0 : 1, sort_order: m.sort_order }),
   });
   r.ok ? (toast(isActive ? '無効化しました' : '有効化しました'), loadSelectableModels()) : toast('更新に失敗しました', 'err');
+}
+
+async function editSelectableModel(id) {
+  const listR = await api('/admin/selectable-models');
+  if (!listR.ok) { toast('読み込み失敗', 'err'); return; }
+  const models = await listR.json();
+  const m = models.find(x => x.id === id);
+  if (!m) { toast('モデルが見つかりません', 'err'); return; }
+  openDialog(
+    `<div style="text-align:left">
+      <div class="form-group" style="margin:0 0 10px">
+        <label>表示名</label>
+        <input type="text" id="dlg-edit-sm-name" value="${esc(m.display_name)}" style="width:100%">
+      </div>
+      <div class="form-group" style="margin:0 0 10px">
+        <label>表示順</label>
+        <input type="number" id="dlg-edit-sm-order" value="${m.sort_order}" min="0" style="width:100px">
+      </div>
+      <div style="font-size:0.78rem;color:var(--sub)">モデルID: ${esc(m.model_id)}</div>
+    </div>`,
+    async () => {
+      const name = document.getElementById('dlg-edit-sm-name').value.trim();
+      const ord = parseInt(document.getElementById('dlg-edit-sm-order').value) || 0;
+      if (!name) { toast('表示名を入力してください', 'err'); return; }
+      const r = await api(`/admin/selectable-models/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ model_id: m.model_id, display_name: name, is_active: m.is_active, sort_order: ord }),
+      });
+      r.ok ? (toast('更新しました'), loadSelectableModels()) : toast('更新に失敗しました', 'err');
+    },
+    '保存'
+  );
 }
 
 async function deleteSelectableModel(id, name) {
@@ -1962,9 +2109,9 @@ async function deleteTemplate(id, name) {
   }, '削除する');
 }
 
-async function testSdConnection() {
-  const btn = document.getElementById('btn-sd-test');
-  const el = document.getElementById('sd-test-result');
+async function testForgeConnection() {
+  const btn = document.getElementById('btn-forge-test');
+  const el = document.getElementById('forge-test-result');
   btn.disabled = true; btn.textContent = 'テスト中...'; el.innerHTML = '';
   const body = { endpoint: document.getElementById('sd-endpoint').value || null };
   const r = await api('/admin/sd-test', { method: 'POST', body: JSON.stringify(body) });
@@ -1975,7 +2122,7 @@ async function testSdConnection() {
     if (d.error?.includes('Connection') || d.error?.includes('connect')) {
       hint = '<div style="color:var(--sub);font-size:0.78rem;margin-top:6px">' +
         '確認事項：<br>' +
-        '① A1111 を <code>--api --listen</code> オプションで起動しているか<br>' +
+        '① 画像生成AIを <code>--api --listen</code> オプションで起動しているか<br>' +
         '② ルーターでポート転送が設定されているか<br>' +
         '③ Windows ファイアウォールでポートが許可されているか' +
         '</div>';
@@ -1984,6 +2131,12 @@ async function testSdConnection() {
     return;
   }
   let html = '<div class="test-status ok">✓ 接続成功</div>';
+  if (d.current_model) {
+    html += `<div style="font-size:0.83rem;color:var(--sub);margin-top:4px">現在のモデル: <strong>${esc(d.current_model)}</strong></div>`;
+  }
+  if (d.source) {
+    html += `<div style="font-size:0.78rem;color:var(--sub);margin-top:2px">取得元: ${esc(d.source)}</div>`;
+  }
   if (d.models?.length) {
     // 登録済みモデルを取得してグレーアウト判定
     let registeredIds = new Set();
@@ -2010,29 +2163,47 @@ async function testSdConnection() {
 
 function updateLtModeUI() {
   const mode = document.getElementById('sd-lt-mode').value;
-  document.getElementById('lt-free-settings').style.display = (mode === 'free' || mode === 'both') ? '' : 'none';
-  document.getElementById('lt-local-settings').style.display = (mode === 'local' || mode === 'both') ? '' : 'none';
+  document.getElementById('lt-free-settings').style.display = (mode === 'free' || mode === 'both' || mode === 'both_local_first') ? '' : 'none';
+  document.getElementById('lt-local-settings').style.display = (mode === 'local' || mode === 'both' || mode === 'both_local_first') ? '' : 'none';
+  document.getElementById('lt-test-area').style.display = (mode !== 'off') ? '' : 'none';
 }
 
 async function testLtConnection() {
   const btn = document.getElementById('btn-lt-test');
   const el = document.getElementById('lt-test-result');
   btn.disabled = true; btn.textContent = 'テスト中...'; el.innerHTML = '';
+  const mode = document.getElementById('sd-lt-mode').value;
   const endpoint = (document.getElementById('sd-lt-endpoint').value || '').trim().replace(/\/$/, '');
-  if (!endpoint) { btn.disabled = false; btn.textContent = '接続テスト'; el.textContent = 'URLを入力してください'; return; }
-  const r = await api('/admin/lt-test', { method: 'POST', body: JSON.stringify({ endpoint }) });
+  const apiKey = (document.getElementById('sd-lt-api-key').value || '').trim();
+  if (mode === 'off') { btn.disabled = false; btn.textContent = '接続テスト'; return; }
+  if ((mode === 'local') && !endpoint) {
+    btn.disabled = false; btn.textContent = '接続テスト'; el.textContent = 'ローカルURLを入力してください'; return;
+  }
+  const body = { mode };
+  if (endpoint) body.endpoint = endpoint;
+  if (apiKey) body.api_key = apiKey;
+  const r = await api('/admin/lt-test', { method: 'POST', body: JSON.stringify(body) });
   const d = await r.json();
-  if (!d.ok) {
-    el.innerHTML = `<span style="color:var(--err)">✗ ${esc(d.error)}</span>`;
-  } else if (d.ja && d.en) {
-    el.innerHTML = '<span style="color:var(--ok)">✓ 接続成功（日→英 翻訳可能）</span>';
+  if (!d.results || d.results.length === 0) {
+    el.innerHTML = `<span style="color:var(--err)">✗ ${esc(d.error || 'テスト対象なし')}</span>`;
   } else {
-    el.innerHTML = `<span style="color:orange">⚠ 接続成功（ja:${d.ja ? '○' : '×'} / en:${d.en ? '○' : '×'}）</span>`;
+    let html = '';
+    for (const res of d.results) {
+      if (!res.ok) {
+        html += `<div style="color:var(--err)">✗ ${esc(res.label)}: ${esc(res.error)}</div>`;
+      } else if (res.ja && res.en) {
+        html += `<div style="color:var(--ok)">✓ ${esc(res.label)}: 接続成功（日→英 翻訳可能）</div>`;
+      } else {
+        html += `<div style="color:orange">⚠ ${esc(res.label)}: 接続成功（ja:${res.ja ? '○' : '×'} / en:${res.en ? '○' : '×'}）</div>`;
+      }
+    }
+    el.innerHTML = html;
   }
   btn.disabled = false; btn.textContent = '接続テスト';
 }
 
 // ─── 生成画像管理 ───
+let _imgPromptCache = {};
 let imgOffset = 0;
 const IMG_LIMIT = 48;
 
@@ -2065,6 +2236,9 @@ async function loadImages(reset = true) {
     document.documentElement.style.setProperty('--admin-img-ratio', `${d.width}/${d.height}`);
   }
 
+  // プロンプトキャッシュに保存
+  d.images.forEach(img => { _imgPromptCache[img.id] = { prompt: img.prompt || '', original_prompt: img.original_prompt || '', seed: img.seed, model: img.model || '' }; });
+
   grid.innerHTML = d.images.map(img => {
     const statusLabel = { saved:'保存済み', pending:'Pending', discarded:'破棄済み' }[img.status] || img.status;
     const statusClass = `badge-${img.status}`;
@@ -2083,13 +2257,14 @@ async function loadImages(reset = true) {
         <div class="img-card-info">
           <div class="img-card-user">👤 ${esc(img.display_name)} <span style="color:var(--sub);font-size:0.7rem">#${img.user_id}</span></div>
           ${modelName ? `<div class="img-card-model">🎨 ${modelName}</div>` : ''}
-          <div class="img-card-prompt" title="${prompt}">${prompt || '<span style="color:var(--sub);font-style:italic">プロンプトなし</span>'}</div>
+          ${img.seed != null ? `<div style="font-size:0.7rem;color:var(--sub)">seed: ${img.seed}</div>` : ''}
           <div class="img-card-footer">
             <span class="badge ${statusClass}">${statusLabel}</span>${deletedBadge}${ratingBadge}
             <span class="img-card-date">${date}</span>
           </div>
-          <div style="margin-top:6px">
-            <button class="btn btn-sm btn-danger" style="width:100%" onclick="adminDeleteImage(${img.id})">削除</button>
+          <div style="margin-top:6px;display:flex;gap:4px">
+            <button class="btn btn-sm btn-info" style="flex:1" onclick="showImgPrompt(${img.id})">プロンプト</button>
+            <button class="btn btn-sm btn-danger" style="flex:1" onclick="adminDeleteImage(${img.id})">削除</button>
           </div>
         </div>
       </div>`;
@@ -2127,6 +2302,36 @@ async function adminDeleteImage(id) {
       toast(d.detail || '削除に失敗しました', 'err');
     }
   }, '削除する');
+}
+
+function showImgPrompt(id) {
+  const info = _imgPromptCache[id];
+  if (!info) { toast('データがありません', 'err'); return; }
+  const p = info.prompt || '(なし)';
+  const op = info.original_prompt || '';
+  let html = '<div style="text-align:left">';
+  if (op) {
+    html += `<div class="form-group" style="margin:0 0 10px">
+      <label>入力プロンプト（日本語）</label>
+      <textarea id="dlg-img-orig" readonly style="width:100%;min-height:60px;font-size:0.82rem;resize:vertical">${esc(op)}</textarea>
+    </div>
+    <div class="form-group" style="margin:0 0 10px">
+      <label>翻訳後プロンプト（実際に使用）</label>
+      <textarea id="dlg-img-prompt" readonly style="width:100%;min-height:80px;font-size:0.82rem;resize:vertical">${esc(p)}</textarea>
+    </div>`;
+  } else {
+    html += `<div class="form-group" style="margin:0 0 10px">
+      <label>プロンプト</label>
+      <textarea id="dlg-img-prompt" readonly style="width:100%;min-height:120px;font-size:0.82rem;resize:vertical">${esc(p)}</textarea>
+    </div>`;
+  }
+  html += `${info.model ? `<div style="font-size:0.8rem;color:var(--sub);margin-bottom:4px">モデル: ${esc(info.model)}</div>` : ''}`;
+  html += `${info.seed != null ? `<div style="font-size:0.8rem;color:var(--sub);margin-bottom:8px">Seed: ${info.seed}</div>` : ''}`;
+  html += `<div style="display:flex;gap:6px">`;
+  if (op) html += `<button class="btn btn-sm btn-ghost" onclick="navigator.clipboard.writeText(document.getElementById('dlg-img-orig').value);toast('コピーしました')">📋 日本語コピー</button>`;
+  html += `<button class="btn btn-sm btn-info" onclick="navigator.clipboard.writeText(document.getElementById('dlg-img-prompt').value);toast('コピーしました')">📋 プロンプトコピー</button>`;
+  html += `</div></div>`;
+  openDialog(html, null, null);
 }
 
 // ─── フィードバック管理 ───
@@ -2597,34 +2802,96 @@ const _sectionLoaders = {
   feedbacks: () => loadFeedbacks(),
   reports: () => loadReports(),
   bgm: () => loadBgmList(),
+  errorlogs: () => loadErrorLogs(),
 };
 
 // ─── BGM管理 ───
+let _bgmGenres = [];
+
+async function loadBgmGenres() {
+  try {
+    const res = await api('/bgm/genres');
+    if (res.ok) {
+      _bgmGenres = await res.json();
+      // ジャンルdatalist更新
+      const dl = document.getElementById('bgm-genre-list');
+      if (dl) dl.innerHTML = _bgmGenres.map(g => `<option value="${esc(g)}">`).join('');
+      // フィルタselect更新
+      const sel = document.getElementById('bgm-genre-filter');
+      if (sel) {
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">全ジャンル</option>' +
+          _bgmGenres.map(g => `<option value="${esc(g)}"${g === cur ? ' selected' : ''}>${esc(g)}</option>`).join('');
+      }
+    }
+  } catch(e) {}
+}
+
 async function loadBgmList() {
   const listEl = document.getElementById('bgm-list');
   if (!listEl) return;
   listEl.innerHTML = '読み込み中...';
+  await loadBgmGenres();
   const res = await api('/bgm');
   if (!res.ok) { listEl.innerHTML = '<span style="color:var(--accent)">取得失敗</span>'; return; }
-  const tracks = await res.json();
+  let tracks = await res.json();
+  // ジャンルフィルタ
+  const gf = document.getElementById('bgm-genre-filter');
+  const genreFilter = gf ? gf.value : '';
+  if (genreFilter) tracks = tracks.filter(t => t.genre === genreFilter);
   if (!tracks.length) { listEl.innerHTML = '<p style="color:var(--sub)">BGMトラックがありません。上のフォームからアップロードしてください。</p>'; return; }
   listEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:0.85rem">
     <thead><tr>
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #333;color:var(--sub)">有効</th>
       <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #333;color:var(--sub)">名前</th>
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #333;color:var(--sub)">ジャンル</th>
       <th style="padding:6px 10px;border-bottom:1px solid #333;color:var(--sub)">プレビュー</th>
       <th style="padding:6px 10px;border-bottom:1px solid #333;color:var(--sub)">操作</th>
     </tr></thead>
     <tbody>` +
-    tracks.map(t => `<tr>
-      <td style="padding:8px 10px">${esc(t.name)}</td>
+    tracks.map(t => `<tr data-bgm-id="${t.id}">
+      <td style="padding:8px 10px;text-align:center">
+        <label style="cursor:pointer"><input type="checkbox" ${t.enabled ? 'checked' : ''} onchange="toggleBgmEnabled(${t.id}, this.checked)"></label>
+      </td>
+      <td style="padding:8px 10px">
+        <input type="text" class="form-control bgm-edit-name" value="${esc(t.name)}" style="width:100%;min-width:100px;padding:2px 6px;font-size:0.85rem" data-orig="${esc(t.name)}">
+      </td>
+      <td style="padding:8px 10px">
+        <input type="text" class="form-control bgm-edit-genre" value="${esc(t.genre)}" list="bgm-genre-list" style="width:100%;min-width:80px;padding:2px 6px;font-size:0.85rem" data-orig="${esc(t.genre)}">
+      </td>
       <td style="padding:8px 10px"><audio controls src="${esc(t.url)}" style="height:28px;max-width:180px"></audio></td>
-      <td style="padding:8px 10px"><button class="btn btn-danger btn-sm" onclick="deleteBgm(${t.id},this)">削除</button></td>
+      <td style="padding:8px 10px;white-space:nowrap">
+        <button class="btn btn-secondary btn-sm" onclick="saveBgmRow(${t.id},this)" style="margin-right:4px">保存</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteBgm(${t.id},this)">削除</button>
+      </td>
     </tr>`).join('') +
     '</tbody></table>';
 }
 
+async function toggleBgmEnabled(id, enabled) {
+  const res = await api('/bgm/' + id, { method: 'PUT', body: JSON.stringify({ enabled: enabled ? 1 : 0 }) });
+  if (res.ok) toast(enabled ? '有効にしました' : '無効にしました', 'ok');
+  else toast('更新失敗', 'err');
+}
+
+async function saveBgmRow(id, btn) {
+  const tr = btn.closest('tr');
+  const name = tr.querySelector('.bgm-edit-name').value.trim();
+  const genre = tr.querySelector('.bgm-edit-genre').value.trim();
+  if (!name) { toast('名前を入力してください', 'err'); return; }
+  const res = await api('/bgm/' + id, { method: 'PUT', body: JSON.stringify({ name, genre }) });
+  if (res.ok) {
+    toast('保存しました', 'ok');
+    // orig値を更新
+    tr.querySelector('.bgm-edit-name').dataset.orig = name;
+    tr.querySelector('.bgm-edit-genre').dataset.orig = genre;
+    loadBgmGenres();
+  } else toast('保存失敗', 'err');
+}
+
 async function uploadBgm() {
   const name = document.getElementById('bgm-name').value.trim();
+  const genre = document.getElementById('bgm-genre').value.trim();
   const file = document.getElementById('bgm-file').files[0];
   const msgEl = document.getElementById('bgm-upload-msg');
   if (!name) { msgEl.style.color = 'var(--accent)'; msgEl.textContent = '名前を入力してください'; return; }
@@ -2632,14 +2899,16 @@ async function uploadBgm() {
   msgEl.style.color = 'var(--sub)'; msgEl.textContent = 'アップロード中...';
   const fd = new FormData();
   fd.append('name', name);
+  fd.append('genre', genre);
   fd.append('file', file);
   // multipartはContent-Typeを自動設定させる（api()は強制json）
   const h = {};
   if (token) h['Authorization'] = 'Bearer ' + token;
   const res = await fetch(API + '/bgm/upload', { method: 'POST', headers: h, body: fd });
   if (res.ok) {
-    msgEl.style.color = '#3cb371'; msgEl.textContent = 'アップロードしました';
+    msgEl.style.color = '#3cb371'; msgEl.textContent = 'アップロードしました（無効状態）';
     document.getElementById('bgm-name').value = '';
+    document.getElementById('bgm-genre').value = '';
     document.getElementById('bgm-file').value = '';
     loadBgmList();
   } else {
@@ -2649,12 +2918,41 @@ async function uploadBgm() {
 }
 
 async function deleteBgm(id, btn) {
-  const name = btn.closest('tr').querySelector('td').textContent;
+  const name = btn.closest('tr').querySelector('.bgm-edit-name').value;
   showConfirm(`「${name}」を削除しますか？<br><small style="color:var(--sub)">このBGMを使用しているキャラクターのBGM設定はなしに変更されます。</small>`, async () => {
     const res = await api('/bgm/' + id, { method: 'DELETE' });
     if (res.ok) { toast('削除しました', 'ok'); loadBgmList(); }
     else toast('削除失敗', 'err');
   });
+}
+
+// ─── エラーログ ───
+async function loadErrorLogs() {
+  const el = document.getElementById('errorlogs-table');
+  if (!el) return;
+  el.innerHTML = '読み込み中...';
+  try {
+    const res = await api('/admin/chat-errors');
+    if (!res.ok) { el.innerHTML = '<p style="color:var(--danger)">取得失敗</p>'; return; }
+    const d = await res.json();
+    if (!d.errors.length) {
+      el.innerHTML = '<p style="color:var(--sub)">エラーログはありません</p>';
+      return;
+    }
+    el.innerHTML = `<div style="overflow-x:auto"><table class="data-table">
+      <thead><tr><th>日時</th><th>ユーザー</th><th>キャラ</th><th>プロバイダ</th><th>モデル</th><th>エラー内容</th></tr></thead>
+      <tbody>${d.errors.map(e => `<tr>
+        <td style="white-space:nowrap">${esc(e.ts || '')}</td>
+        <td>${esc(e.username || '')}</td>
+        <td>${esc(e.char_name || '')}</td>
+        <td>${esc(e.provider || '')}</td>
+        <td>${esc(e.model || '')}</td>
+        <td style="max-width:400px;word-break:break-all;color:var(--danger)">${esc(e.error || '')}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  } catch(e) {
+    el.innerHTML = '<p style="color:var(--danger)">読み込みエラー</p>';
+  }
 }
 
 const _origShowSection = showSection;

@@ -267,6 +267,6 @@ $oauthBase = '/oauth/start.php?mode=login&redirect=' . urlencode($redirect);
       </a>
     </div>
   </div>
-<script src="/assets/js/common.js?v=20260327e"></script>
+<script src="/assets/js/common.js?v=20260327h"></script>
 </body>
 </html>

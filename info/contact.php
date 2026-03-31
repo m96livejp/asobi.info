@@ -238,7 +238,7 @@ $selType = $p['type'] ?? '個人';
       <p>&copy; 2026 あそび - ゲーム情報ポータル</p>
     </div>
   </footer>
-  <script src="/assets/js/common.js?v=20260327e"></script>
+  <script src="/assets/js/common.js?v=20260327h"></script>
   <script>
     function setType(type) {
       document.getElementById('type-input').value = type;

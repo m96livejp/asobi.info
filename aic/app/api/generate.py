@@ -1,4 +1,4 @@
-"""画像生成API（Stable Diffusion AUTOMATIC1111）- SQLiteキューベース"""
+"""画像生成API（Stable Diffusion）- SQLiteキューベース"""
 import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -114,6 +114,7 @@ async def generate_image(
     job = GenerationQueue(
         user_id=user.id,
         prompt=final_prompt,
+        original_prompt=req.prompt if final_prompt != req.prompt else None,
         negative_prompt=req.negative_prompt or sd.negative_prompt,
         model=use_model,
         template_id=req.template_id,
@@ -251,6 +252,26 @@ async def save_image(
     img = result.scalar_one_or_none()
     if not img:
         raise HTTPException(status_code=404, detail="画像が見つかりません")
+    # 透かし処理
+    sd = await _get_sd_settings(db)
+    if sd and sd.wm_enabled and img.url:
+        try:
+            from ..services.watermark import apply_watermark
+            # URLからファイルパスを算出
+            filename = img.url.split("/")[-1]
+            file_path = os.path.join(IMAGE_DIR, filename)
+            if os.path.isfile(file_path):
+                apply_watermark(
+                    file_path,
+                    text=sd.wm_text,
+                    image_wm_path=sd.wm_image_path,
+                    opacity=sd.wm_opacity if sd.wm_opacity is not None else 0.3,
+                    scale=sd.wm_scale if sd.wm_scale is not None else 0.15,
+                )
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            # 透かし失敗でも保存は続行
     img.status = "saved"
     await db.commit()
     return {"ok": True}
@@ -373,8 +394,19 @@ async def get_my_images(
         .order_by(UserImage.is_favorite.desc(), UserImage.id.desc())
     )
     imgs = result.scalars().all()
+    # 画像URLからキャラクター使用状況を取得
+    img_urls = [img.url for img in imgs if img.url]
+    used_map: dict[str, str] = {}  # url -> character name
+    if img_urls:
+        from ..models.character import Character
+        char_result = await db.execute(
+            select(Character.avatar_url, Character.name)
+            .where(Character.avatar_url.in_(img_urls), Character.is_deleted == 0)
+        )
+        for row in char_result:
+            used_map[row.avatar_url] = row.name
     return {
-        "images": [{"id": img.id, "url": img.url, "prompt": img.prompt, "is_favorite": img.is_favorite, "seed": img.seed} for img in imgs],
+        "images": [{"id": img.id, "url": img.url, "prompt": img.prompt, "is_favorite": img.is_favorite, "seed": img.seed, "used_by": used_map.get(img.url)} for img in imgs],
         "count": len(imgs),
         "max_images": max_imgs,
     }
@@ -419,6 +451,15 @@ async def delete_my_image(
     img = result.scalar_one_or_none()
     if not img:
         raise HTTPException(status_code=404, detail="画像が見つかりません")
+    # 使用中チェック
+    if img.url:
+        from ..models.character import Character
+        char_result = await db.execute(
+            select(Character.name).where(Character.avatar_url == img.url, Character.is_deleted == 0)
+        )
+        used_char = char_result.scalar_one_or_none()
+        if used_char:
+            raise HTTPException(status_code=409, detail=f"「{used_char}」で使用中のため削除できません")
     img.is_deleted = 1
     await db.commit()
     return {"ok": True}
@@ -479,9 +520,11 @@ async def _auto_translate(sd: SdSettings, text: str) -> str | None:
     endpoints = []
     if lt_mode in ("free", "both"):
         endpoints.append((LT_FREE_ENDPOINT, lt_api_key))
-    if lt_mode in ("local", "both"):
+    if lt_mode in ("local", "both", "both_local_first"):
         if sd and sd.lt_endpoint:
             endpoints.append((sd.lt_endpoint.rstrip("/"), ""))
+    if lt_mode == "both_local_first" and len(endpoints) == 2:
+        endpoints.reverse()
     for ep, key in endpoints:
         result = await _try_translate(ep, text, "ja", "en", api_key=key)
         if result:
@@ -530,11 +573,13 @@ async def translate_text(
 
     # 試行するエンドポイントを構築
     endpoints = []
-    if lt_mode in ("free", "both"):
+    if lt_mode in ("free", "both", "both_local_first"):
         endpoints.append(("無料版", LT_FREE_ENDPOINT, lt_api_key))
-    if lt_mode in ("local", "both"):
+    if lt_mode in ("local", "both", "both_local_first"):
         if sd and sd.lt_endpoint:
             endpoints.append(("ローカル", sd.lt_endpoint.rstrip("/"), ""))
+    if lt_mode == "both_local_first" and len(endpoints) == 2:
+        endpoints.reverse()
 
     if not endpoints:
         raise HTTPException(status_code=503, detail="翻訳エンドポイントが設定されていません")

@@ -96,6 +96,10 @@ function layout_head(string $title, string $active = ''): void {
       font-size: 1.1rem;
       font-weight: 600;
       color: #2d3436;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
     }
     .content { padding: 28px; flex: 1; }
     /* カード */
@@ -250,7 +254,10 @@ function layout_head(string $title, string $active = ''): void {
     </div>
   </aside>
   <div class="main">
-    <div class="topbar"><?= htmlspecialchars($title) ?></div>
+    <div class="topbar">
+      <span><?= htmlspecialchars($title) ?></span>
+      <div id="asobi-user-area"></div>
+    </div>
     <div class="content">
     <div id="toast"></div>
 <?php
@@ -276,6 +283,7 @@ function layout_foot(): void {
     return res.json();
   }
   </script>
+  <script src="https://asobi.info/assets/js/common.js?v=20260327h"></script>
 </body>
 </html>
 <?php

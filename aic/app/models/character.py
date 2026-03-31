@@ -12,7 +12,6 @@ class Character(Base):
     avatar_url = Column(Text, nullable=True)
     ai_model = Column(String, nullable=False, default="claude")
     is_public = Column(Integer, default=0)
-    is_sample = Column(Integer, default=0)
 
     # プロンプト設定
     char_name = Column(String, nullable=True)
@@ -75,6 +74,8 @@ class BgmTrack(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)        # 表示名
     file_path = Column(String, nullable=False)   # /bgm/xxx.mp3 形式（frontend相対）
+    genre = Column(String, default="")           # ジャンル分類
+    enabled = Column(Integer, default=0)         # 有効フラグ（0=無効, 1=有効）
     created_at = Column(DateTime, server_default=func.now())
 
 

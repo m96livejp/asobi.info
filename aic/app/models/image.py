@@ -14,6 +14,8 @@ class SceneImageTask(Base):
     status          = Column(String,  nullable=False, default="pending", index=True)
     # pending / processing / done / failed
     prompt_used     = Column(Text, nullable=True)      # 実際に使ったプロンプト
+    negative_prompt = Column(Text, nullable=True)      # ネガティブプロンプト
+    model           = Column(String, nullable=True)    # 使用モデル名
     image_url       = Column(Text, nullable=True)      # 生成画像のURL
     error_message   = Column(Text, nullable=True)
     created_at      = Column(Text, nullable=False, server_default=func.now())
@@ -40,7 +42,8 @@ class GenerationQueue(Base):
     user_id         = Column(Integer, nullable=False, index=True)
     status          = Column(String, nullable=False, default="pending", index=True)
     # pending / processing / completed / failed / cancelled
-    prompt          = Column(Text, nullable=False)
+    prompt          = Column(Text, nullable=False)      # 翻訳後プロンプト
+    original_prompt = Column(Text, nullable=True)      # 翻訳前プロンプト
     negative_prompt = Column(Text, nullable=True)
     model           = Column(String, nullable=True)
     template_id     = Column(Integer, nullable=True)
@@ -66,7 +69,8 @@ class UserImage(Base):
     id          = Column(Integer, primary_key=True, autoincrement=True)
     user_id     = Column(Integer, nullable=False, index=True)
     url         = Column(String,  nullable=False)
-    prompt      = Column(Text,    nullable=True)
+    prompt      = Column(Text,    nullable=True)              # 翻訳後プロンプト（実際に使用）
+    original_prompt = Column(Text, nullable=True)              # 翻訳前プロンプト（日本語入力）
     template_id = Column(Integer, nullable=True)   # 使用したテンプレートID（nullable）
     status      = Column(String,  nullable=False, default="pending")   # pending/saved/discarded
     is_deleted  = Column(Integer, nullable=False, default=0)           # saved画像のソフトデリート

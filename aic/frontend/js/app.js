@@ -5,8 +5,10 @@ let currentUser = null;
 let currentConversationId = null;
 let currentCharacter = null;
 let isStreaming = false;
+let _pendingUserMsgEl = null; // 送信中ユーザーメッセージ要素（done時にmsgIdをセット）
 let _convLoadId = 0;  // openConversation の世代管理（古いリクエスト無視用）
 let _chatVisMode = 0; // 0=全表示, 1=フェード, 2=非表示
+let _chatMaskTimer = null; // マスク後処理タイマー（競合防止のためclearTimeout管理）
 let _longPressTimer = null;
 
 // TTS（VOICEVOX音声読み上げ）
@@ -16,10 +18,43 @@ let _ttsPlayingBtn = null;
 let _ttsQueue = [];        // 再生キュー [{type:'se'|'voice', name?, style?, text?, styleId?}]
 let _ttsPlaying = false;   // キュー再生中フラグ
 let _ttsStopId = 0;        // 停止世代ID（インクリメントで全実行中セッションを無効化）
+let _ttsPlayChain = Promise.resolve(); // 連続再生チェーン（前セッション終了を待機）
 let _ttsAutoPlay = false;  // 自動読み上げON/OFF
 let _showState = false;        // 感情STATE表示ON/OFF（管理者のみ）
 let _showStateChange = false;  // ステータス変化ログ表示ON/OFF（管理者のみ）
 let _adminShowDeleted = false; // 削除済みメッセージ表示ON/OFF（管理者のみ、デフォルトOFF）
+
+// ─── チャット設定の永続化（全キャラ共通・localStorage）───
+const _PREFS_KEY = 'aic_chat_prefs';
+function _loadChatPrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(_PREFS_KEY) || '{}');
+    if (typeof saved.autoVoice === 'boolean')      _ttsAutoPlay      = saved.autoVoice;
+    if (typeof saved.showDeleted === 'boolean')    _adminShowDeleted = saved.showDeleted;
+    if (typeof saved.showEmotion === 'boolean')    _showState        = saved.showEmotion;
+    if (typeof saved.showStateChange === 'boolean') _showStateChange = saved.showStateChange;
+  } catch(e) {}
+}
+function _saveChatPrefs() {
+  try {
+    localStorage.setItem(_PREFS_KEY, JSON.stringify({
+      autoVoice: _ttsAutoPlay,
+      showDeleted: _adminShowDeleted,
+      showEmotion: _showState,
+      showStateChange: _showStateChange,
+    }));
+  } catch(e) {}
+}
+// トグルボタンのラベルと色を一括更新するヘルパー
+function _applyToggleBtn(id, isOn, label) {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+  btn.textContent = label + ' ' + (isOn ? 'オン' : 'オフ');
+  btn.classList.toggle('toggle-on',  isOn);
+  btn.classList.toggle('toggle-off', !isOn);
+}
+// 起動時にlocalStorageから設定を読み込む
+_loadChatPrefs();
 let _vvStyleMap = {};      // スタイル名→IDマップ（現在の会話のキャラから構築）
 let _ttsCache = new Map(); // テキスト+styleId → Blob キャッシュ（会話ごとにリセット）
 
@@ -29,6 +64,56 @@ let _sceneTempUrl = null;          // 現在の一時シーン画像URL
 let _sceneRevertTurns = 10;        // 元画像に戻すまでのターン数
 let _sceneAppliedTurn = 0;         // シーン画像を適用したターン番号
 let _sceneTurnCount = 0;           // 現在の会話ターン数
+const _sceneCache = new Map();     // 会話ID → シーン画像URL
+
+// 処理状態表示（管理者デバッグ用）
+let _showProcState = (() => { try { return localStorage.getItem('aic_showProcState') === '1'; } catch (_) { return false; } })();
+const _procState = {
+  ollama: '待機中',
+  tts: '待機中',
+  translate: '待機中',
+  ttsPlay: '待機中',
+  scene: '待機中',
+};
+function _setProcState(key, val) {
+  _procState[key] = val;
+  _updateProcOverlay();
+}
+function _updateProcOverlay() {
+  const overlay = document.getElementById('proc-state-overlay');
+  const content = document.getElementById('proc-state-content');
+  if (!overlay || !content) return;
+  if (!_showProcState) { overlay.style.display = 'none'; return; }
+  const dot = (s) => {
+    if (s === '処理中') return '<span style="color:#f90">●</span>';
+    if (s === '完了') return '<span style="color:#0f0">●</span>';
+    if (s === 'エラー') return '<span style="color:#f44">●</span>';
+    return '<span style="color:#888">○</span>';
+  };
+  content.innerHTML =
+    `${dot(_procState.ollama)} チャットAI: ${_procState.ollama}<br>` +
+    `${dot(_procState.translate)} 翻訳API: ${_procState.translate}<br>` +
+    `${dot(_procState.tts)} 音声生成: ${_procState.tts}<br>` +
+    `${dot(_procState.ttsPlay)} 再生待ち: ${_procState.ttsPlay}<br>` +
+    `${dot(_procState.scene)} シーン画像: ${_procState.scene}`;
+  overlay.style.display = '';
+}
+function _resetProcState() {
+  _procState.ollama = '待機中';
+  _procState.tts = '待機中';
+  _procState.translate = '待機中';
+  _procState.ttsPlay = '待機中';
+  _procState.scene = '待機中';
+  _updateProcOverlay();
+}
+function toggleProcState() {
+  _chatMenuOpen = false;
+  document.getElementById('chat-menu-panel')?.classList.remove('open');
+  _showProcState = !_showProcState;
+  try { localStorage.setItem('aic_showProcState', _showProcState ? '1' : '0'); } catch (_) {}
+  _applyToggleBtn('proc-state-btn', _showProcState, '🔍 処理状態表示');
+  _updateProcOverlay();
+}
 
 // キャラクター編集モード
 let _editingCharId = null;
@@ -195,13 +280,18 @@ function renderHeaderUser() {
       ${menuItems}
     </div>`;
 
-  // 管理者専用メニュー項目の表示切替
+  // 管理者専用メニュー項目の表示切替 + 保存済みプレフ状態を反映
   const stateBtn = document.getElementById('state-display-btn');
   if (stateBtn) stateBtn.style.display = currentUser.role === 'admin' ? '' : 'none';
   const scBtn2 = document.getElementById('state-change-btn');
   if (scBtn2) scBtn2.style.display = currentUser.role === 'admin' ? '' : 'none';
   const showDelBtn = document.getElementById('show-deleted-btn');
   if (showDelBtn) showDelBtn.style.display = currentUser.role === 'admin' ? '' : 'none';
+  // 保存済みトグル状態をボタンに反映
+  _applyToggleBtn('state-display-btn', _showState, '🧠 感情表示');
+  _applyToggleBtn('state-change-btn', _showStateChange, '📊 ステータス変化');
+  _applyToggleBtn('show-deleted-btn', _adminShowDeleted, '👁 削除済み表示');
+  _updateAutoVoiceIcon();
 
   // チャットヘッダーにもドロップダウン付きユーザーアイコン表示（メインと同じ構造）
   if (chatArea) {
@@ -282,19 +372,23 @@ function navTo(screen) {
     if (saveBtn) saveBtn.textContent = '作成する';
     const backBtn = document.getElementById('cr-back-btn');
     if (backBtn) backBtn.style.display = '';
+    const cancelEditBtn = document.getElementById('cr-cancel-edit-btn');
+    if (cancelEditBtn) cancelEditBtn.style.display = 'none';
 
     showScreen('create');
     const isGuest = !currentUser || currentUser.is_guest;
     document.getElementById('create-gate').style.display = isGuest ? 'block' : 'none';
     document.getElementById('create-form').style.display = isGuest ? 'none' : 'block';
     if (!isGuest) {
-      // ステップ1に戻す
+      // 新規作成: ギャラリー表示、プロフィールは画像選択後に表示
       document.getElementById('cr-step-1').style.display = 'block';
       document.getElementById('cr-step-2').style.display = 'none';
-      document.getElementById('cr-step-ind-1').className = 'cr-step active';
-      document.getElementById('cr-step-ind-2').className = 'cr-step';
       clearAvatarSelection();
       checkSdStatus();
+      // SD設定は管理者のみ表示
+      document.querySelectorAll('.cr-admin-only').forEach(el => {
+        el.style.display = (currentUser && currentUser.role === 'admin') ? '' : 'none';
+      });
       // ギャラリー読み込み（アバター選択用）
       loadCreateGallery().then(() => {
         // sessionStorageからアバターURLを引き継ぐ（画像生成画面から戻った時）
@@ -324,9 +418,12 @@ function navTo(screen) {
   if (screen === 'generate') {
     showScreen('generate');
     document.getElementById('header-title').textContent = '画像生成';
+    const backLink = document.getElementById('gen-back-to-create');
+    if (backLink) backLink.style.display = _fromCreate ? '' : 'none';
     openGenerateScreen();
     return;
   }
+  _fromCreate = false;
   showScreen(screen);
   const titles = { home: 'AIチャット', community: 'コミュニティ', 'chat-list': 'チャット', profile: 'プロフィール' };
   document.getElementById('header-title').textContent = titles[screen] || 'AIチャット';
@@ -445,6 +542,7 @@ async function loadChatList() {
               </div>
               <div class="chatlist-conv-preview">${esc(getDisplayText(c.last_message || '会話を始める'))}</div>
             </div>
+            <button class="chatlist-conv-delete" data-conv-id="${c.id}" data-conv-name="${esc(c.character_name)}" onclick="event.stopPropagation();_deleteConvFromList(this)">×</button>
           </div>`;
         }).join('');
         _attachConvListDeleteHandlers(convsEl);
@@ -490,7 +588,7 @@ async function loadChatList() {
       const commSec = document.getElementById('chatlist-community-section');
       if (commSec) {
         commSec.style.display = 'block';
-        document.querySelector('#chatlist-community-section h3').textContent = 'サンプルキャラクター';
+        document.querySelector('#chatlist-community-section h3').textContent = 'おすすめキャラクター';
         renderCharCards('chatlist-community', await sampleRes.json());
       }
     }
@@ -505,8 +603,15 @@ function _attachConvListDeleteHandlers(container) {
       const name = el.querySelector('.chatlist-conv-name')?.textContent || '会話';
       showConfirm(`「${name}」を削除しますか？`, async () => {
         const r = await api(`/conversations/${convId}`, { method: 'DELETE' });
-        if (r.ok) { showToast('削除しました', 'success'); loadChatList(); loadConversations(); }
-        else showToast('削除に失敗しました', 'error');
+        if (r.ok) {
+          showToast('削除しました', 'success');
+          // 現在開いている会話を削除した場合はURLハッシュをクリア
+          if (currentConversationId === convId) {
+            currentConversationId = null;
+            history.replaceState(null, '', '#chat-list');
+          }
+          loadChatList(); loadConversations();
+        } else showToast('削除に失敗しました', 'error');
       }, '会話の削除');
     };
     el.addEventListener('contextmenu', e => { e.preventDefault(); trigger(); });
@@ -514,6 +619,22 @@ function _attachConvListDeleteHandlers(container) {
     el.addEventListener('touchend', () => clearTimeout(_longTimer));
     el.addEventListener('touchmove', () => clearTimeout(_longTimer));
   });
+}
+
+function _deleteConvFromList(btn) {
+  const convId = parseInt(btn.dataset.convId);
+  const name = btn.dataset.convName || '会話';
+  showConfirm(`「${name}」の会話を削除しますか？`, async () => {
+    const r = await api(`/conversations/${convId}`, { method: 'DELETE' });
+    if (r.ok) {
+      showToast('削除しました', 'success');
+      if (currentConversationId === convId) {
+        currentConversationId = null;
+        history.replaceState(null, '', '#chat-list');
+      }
+      loadChatList(); loadConversations();
+    } else showToast('削除に失敗しました', 'error');
+  }, '会話の削除');
 }
 
 // === プロフィール ===
@@ -558,7 +679,7 @@ function loadProfile() {
         <button class="btn btn-outline" style="margin-top:12px" onclick="navTo('create')">＋ キャラクター作成</button>
       </div>
       <div class="profile-section" id="profile-public-section" style="display:none">
-        <h3>会話中の公開キャラクター</h3>
+        <h3>公開キャラクター</h3>
         <div id="profile-public-chars" class="char-grid"></div>
       </div>
       <div class="profile-actions">
@@ -573,19 +694,27 @@ function loadProfile() {
       }
     });
 
-    // マイキャラ
+    // マイキャラ（公開マーク付き）
     api('/characters/mine').then(r => r.ok && r.json()).then(chars => {
       if (chars) {
-        const el = document.getElementById('profile-mine-chars');
-        if (el) renderCharCards('profile-mine-chars', chars);
+        renderCharCards('profile-mine-chars', chars, { showPublicBadge: true });
       }
     });
 
-    // 会話中の公開キャラクター
-    api('/characters/chatting-public').then(r => r.ok && r.json()).then(chars => {
-      if (chars && chars.length) {
+    // 公開キャラクター（お気に入り + 会話中の第三者を統合）
+    Promise.all([
+      api('/characters/liked').then(r => r.ok ? r.json() : []),
+      api('/characters/chatting-public').then(r => r.ok ? r.json() : []),
+    ]).then(([liked, chatting]) => {
+      // 統合して重複排除（liked優先）
+      const seen = new Set();
+      const merged = [];
+      for (const c of [...(liked || []), ...(chatting || [])]) {
+        if (!seen.has(c.id)) { seen.add(c.id); merged.push(c); }
+      }
+      if (merged.length) {
         document.getElementById('profile-public-section').style.display = 'block';
-        renderCharCards('profile-public-chars', chars, { deletable: true });
+        renderCharCards('profile-public-chars', merged, { deletable: true });
       }
     });
   }
@@ -657,7 +786,7 @@ async function showCharDetail(charId) {
         <div style="padding:60px 20px;text-align:center">
           <div style="font-size:2rem;margin-bottom:12px">⚠</div>
           <div style="font-size:1.1rem;font-weight:600;margin-bottom:8px">${esc(c.name)}</div>
-          <div style="color:var(--text-secondary)">このキャラクターは規約違反のため管理者により削除されました。</div>
+          <div style="color:var(--text-secondary)">このキャラクターは削除されました。</div>
           <button class="btn" style="margin-top:24px" onclick="history.back()">戻る</button>
         </div>`;
       return;
@@ -697,6 +826,8 @@ async function showCharDetail(charId) {
     const likedText = c.liked ? '❤ いいね済み' : '🤍 いいね';
 
     const isLoggedIn = currentUser && !currentUser.is_guest;
+    // チャット可能: 公開 or 自分のキャラ or 管理者 or サンプル
+    const canChat = c.is_public || c.is_owner || c.is_admin;
 
     // 作者 or 管理者なら編集リンク
     const editHtml = (c.is_owner || c.is_admin)
@@ -716,7 +847,9 @@ async function showCharDetail(charId) {
         ${tagsHtml ? '<div class="cd-tags">' + tagsHtml + '</div>' : ''}
         ${profileHtml}
         <div class="cd-actions">
-          <button class="btn cd-btn-chat" onclick="startChat(${c.id})">💬 このキャラクターとチャット</button>
+          ${canChat
+            ? `<button class="btn cd-btn-chat" onclick="startChat(${c.id})">💬 このキャラクターとチャット</button>`
+            : `<div style="text-align:center;padding:8px 0;color:var(--text-secondary);font-size:0.88rem;cursor:pointer" onclick="history.back()">このキャラクターは非公開または削除されています<br><span style="font-size:0.8rem;color:var(--sub)">タップして戻る</span></div>`}
           ${isLoggedIn
             ? ((!c.is_owner || c.is_admin) ? `
             <div class="cd-action-row">
@@ -849,7 +982,8 @@ function renderCharStateSection(el, data, isAdmin) {
 }
 
 async function editCharState(convId) {
-  // 最新データを取得して編集モーダルを開く
+  // プロフィールオーバーレイを閉じる
+  document.getElementById('char-profile-overlay')?.classList.remove('active');
   const res = await api('/conversations/' + convId + '/state');
   if (!res.ok) { showToast('ステータスの取得に失敗しました', 'error'); return; }
   const data = await res.json();
@@ -932,8 +1066,11 @@ function renderCharCards(containerId, chars, opts = {}) {
     const delBtn = opts.deletable && c.conv_id
       ? '<button class="char-card-del-btn" onclick="event.stopPropagation();deleteConvFromProfile(' + c.conv_id + ',this)" title="会話を削除">×</button>'
       : '';
+    const publicBadge = opts.showPublicBadge && c.is_public
+      ? '<span style="position:absolute;top:4px;right:4px;font-size:0.7rem;background:var(--accent);color:#fff;padding:1px 6px;border-radius:8px">公開</span>'
+      : '';
     return '<div class="char-card" onclick="' + clickAction + '" style="position:relative">' +
-      delBtn +
+      delBtn + publicBadge +
       '<div class="char-card-avatar">' + avatarInner + '</div>' +
       '<div class="char-card-name">' + esc(c.name) + '</div>' +
       '<div class="char-card-desc">' + esc(c.profile || '') + '</div>' +
@@ -965,6 +1102,11 @@ async function deleteConvFromProfile(convId, btnEl) {
         }
         // サイドバー会話一覧も更新
         loadConversations();
+        // 現在開いている会話を削除した場合はURLハッシュをクリア
+        if (currentConversationId === convId) {
+          currentConversationId = null;
+          history.replaceState(null, '', '#chat-list');
+        }
         showToast('会話を削除しました', 'success');
       } else {
         showToast('削除に失敗しました', 'error');
@@ -989,6 +1131,13 @@ async function startChat(charId) {
     currentConversationId = conv.id;
     await openConversation(conv.id);
     loadConversations();
+  } else {
+    try {
+      const err = await res.json();
+      showToast(err.detail || 'チャットを開始できませんでした', 'error');
+    } catch (_) {
+      showToast('チャットを開始できませんでした', 'error');
+    }
   }
 }
 
@@ -1023,6 +1172,12 @@ async function loadConversations() {
 
 // === 会話表示 ===
 async function openConversation(convId) {
+  // 前の会話でストリームが止まっていた場合にリセット（stuck isStreaming 対策）
+  if (isStreaming) {
+    isStreaming = false;
+    const sendBtn = document.getElementById('send-btn');
+    if (sendBtn) sendBtn.disabled = false;
+  }
   currentConversationId = convId;
   const myLoadId = ++_convLoadId;  // このリクエストの世代ID
 
@@ -1043,7 +1198,14 @@ async function openConversation(convId) {
   const res = await api('/conversations/' + convId);
   // 画面切り替え済みで別の会話が開かれていたら無視
   if (myLoadId !== _convLoadId) return;
-  if (!res.ok) return;
+  if (!res.ok) {
+    // 会話が見つからない・削除済みの場合はチャットリストに遷移
+    currentConversationId = null;
+    history.replaceState(null, '', '#chat-list');
+    navTo('chat-list');
+    if (res.status === 404) showToast('会話が見つかりません', 'error');
+    return;
+  }
   const data = await res.json();
   if (myLoadId !== _convLoadId) return;
 
@@ -1053,18 +1215,25 @@ async function openConversation(convId) {
   // スタイルマップ・キャッシュリセット
   _vvStyleMap = {};
   _ttsCache.clear();
-  // 削除済み表示をリセット（会話が変わったらOFFに戻す）
-  _adminShowDeleted = false;
-  document.getElementById('chat-messages')?.classList.remove('show-deleted');
-  const _sdBtn = document.getElementById('show-deleted-btn');
-  if (_sdBtn) _sdBtn.textContent = '👁 削除済み表示 OFF';
+  // 削除済み・感情表示をprefs値に合わせて適用（会話切替でリセットしない・全キャラ共通）
+  const _chatMsgsEl = document.getElementById('chat-messages');
+  if (_chatMsgsEl) {
+    _chatMsgsEl.classList.toggle('show-deleted', _adminShowDeleted);
+    _chatMsgsEl.classList.toggle('show-emotions', _showState);
+  }
+  _applyToggleBtn('show-deleted-btn', _adminShowDeleted, '👁 削除済み表示');
+  _applyToggleBtn('state-display-btn', _showState, '🧠 感情表示');
+  _applyToggleBtn('state-change-btn', _showStateChange, '📊 ステータス変化');
+  _applyToggleBtn('proc-state-btn', _showProcState, '🔍 処理状態表示');
+  _updateProcOverlay();
   if (currentCharacter?.tts_styles) {
     const styles = Array.isArray(currentCharacter.tts_styles) ? currentCharacter.tts_styles : [];
     for (const s of styles) { if (s.name != null && s.id != null) _vvStyleMap[s.name] = s.id; }
   }
-  // チャットメニューのTTSボタン表示切替
+  // チャットメニューのTTSボタン表示切替 + 保存済み状態を反映
   const avBtn = document.getElementById('auto-voice-btn');
   if (avBtn) avBtn.style.display = _ttsAvailable ? '' : 'none';
+  if (_ttsAvailable) _updateAutoVoiceIcon();
 
   // キャラクター編集ボタン（管理者 or 作成者のみ）
   const charEditBtn = document.getElementById('char-edit-btn');
@@ -1073,6 +1242,17 @@ async function openConversation(convId) {
     const isCreator = currentCharacter?.creator_id != null && currentCharacter.creator_id === currentUser?.id;
     charEditBtn.style.display = (isAdmin || isCreator) ? '' : 'none';
   }
+  // 今すぐ画像変更ボタン（管理者のみ）
+  const forceSceneBtn = document.getElementById('force-scene-btn');
+  if (forceSceneBtn) {
+    forceSceneBtn.style.display = currentUser?.role === 'admin' ? '' : 'none';
+  }
+  // 全会話完全削除ボタン（管理者のみ）
+  const purgeConvBtn = document.getElementById('purge-conv-btn');
+  if (purgeConvBtn) purgeConvBtn.style.display = currentUser?.role === 'admin' ? '' : 'none';
+  // 処理状態表示ボタン（管理者のみ）
+  const procStateBtn = document.getElementById('proc-state-btn');
+  if (procStateBtn) procStateBtn.style.display = currentUser?.role === 'admin' ? '' : 'none';
   // ステータス変化ボタン（管理者のみ）
   const scBtn = document.getElementById('state-change-btn');
   if (scBtn) scBtn.style.display = currentUser?.role === 'admin' ? '' : 'none';
@@ -1093,11 +1273,13 @@ async function openConversation(convId) {
     chatScreen.style.backgroundImage = '';
     chatScreen.style.backgroundRepeat = '';
   }
-  // シーン画像状態リセット
+  // シーン画像状態リセット（キャッシュがあれば復元）
   _sceneOriginalUrl = currentCharacter?.avatar_url || null;
-  _sceneTempUrl = null;
+  _sceneTempUrl = _sceneCache.get(convId) || null;
   _sceneAppliedTurn = 0;
   _sceneTurnCount = 0;
+  _sceneShowingTemp = false;
+  _updateSceneToggleBtn();
   _sceneShowLoading(false);
   if (_scenePollingTimer) { clearInterval(_scenePollingTimer); _scenePollingTimer = null; }
 
@@ -1110,7 +1292,8 @@ async function openConversation(convId) {
     el.innerHTML = '<div class="chat-deleted-banner" style="padding:40px 20px;text-align:center;color:var(--sub)">'
       + '<div style="font-size:1.5rem;margin-bottom:12px">⚠</div>'
       + '<div style="font-weight:600;margin-bottom:6px">' + esc(currentCharacter.name) + '</div>'
-      + '<div>このキャラクターは規約違反のため管理者により削除されました。</div>'
+      + '<div>このキャラクターは削除されました。</div>'
+      + '<button class="btn" style="margin-top:16px" onclick="confirmDeletedConv()">確認して削除</button>'
       + '</div>';
     inputArea.style.display = 'none';
   } else if (isDeleted === 1) {
@@ -1118,7 +1301,8 @@ async function openConversation(convId) {
     el.innerHTML = _renderMessages(data.messages);
     el.querySelectorAll('.msg-ai[data-raw]').forEach(_applyStateDisplay);
     el.innerHTML += '<div class="chat-deleted-banner" style="padding:16px 20px;text-align:center;color:var(--sub);border-top:1px solid rgba(255,255,255,0.1)">'
-      + 'このキャラクターは作成者により削除されました。新しいメッセージは送れません。'
+      + 'このキャラクターは削除されました。新しいメッセージは送れません。'
+      + '<button class="btn btn-outline" style="margin-left:12px" onclick="confirmDeletedConv()">確認して削除</button>'
       + '</div>';
     inputArea.style.display = 'none';
   } else {
@@ -1144,14 +1328,21 @@ async function openConversation(convId) {
         retryBtn.className = 'retry-btn';
         retryBtn.textContent = '↻';
         retryBtn.onclick = async () => {
-          if (!lastUser || isStreaming) return;
+          if (!lastUser || isStreaming || retryBtn.disabled) return;
+          retryBtn.disabled = true;
           isStreaming = true;
           document.getElementById('send-btn').disabled = true;
-          // 古いユーザーメッセージをDB削除してDOMからも除去
-          await api('/chat/' + currentConversationId + '/messages/' + lastUser.id, { method: 'DELETE' }).catch(() => {});
-          el.querySelector('[data-msg-id="' + lastUser.id + '"]')?.remove();
-          aiMsg.innerHTML = '<div class="msg-typing"><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span></div>';
-          _sendRequest(lastUser.content, aiMsg, el);
+          try {
+            // 古いユーザーメッセージをDB削除してDOMからも除去
+            await api('/chat/' + currentConversationId + '/messages/' + lastUser.id, { method: 'DELETE' }).catch(() => {});
+            el.querySelector('[data-msg-id="' + lastUser.id + '"]')?.remove();
+            aiMsg.innerHTML = '<div class="msg-typing"><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span></div>';
+            await _sendRequest(lastUser.content, aiMsg, el);
+          } catch (e) {
+            isStreaming = false;
+            document.getElementById('send-btn').disabled = false;
+            retryBtn.disabled = false;
+          }
         };
         aiMsg.appendChild(retryBtn);
       };
@@ -1235,11 +1426,32 @@ async function openCharProfile() {
     if (c.private_profile) html += '<div class="cp-section"><div class="cp-section-title">非公開プロフィール</div><div class="cp-text">' + esc(c.private_profile) + '</div></div>';
     if (c.first_message) html += '<div class="cp-section"><div class="cp-section-title">最初のメッセージ</div><div class="cp-text">' + esc(c.first_message) + '</div></div>';
     html += '<div class="cp-meta">❤ ' + c.like_count + ' 💬 ' + c.use_count + '</div>';
+    // 編集ボタン（オーナーまたは管理者）
     if (c.is_owner || c.is_admin) {
-      html += '<div style="margin-top:16px;text-align:center"><button class="btn btn-secondary btn-sm" onclick="editCharacter(' + c.id + ')">編集</button></div>';
+      html += '<div style="margin-top:16px;text-align:center"><button class="btn btn-secondary btn-sm" onclick="editCharacter(' + c.id + ')">✏️ 編集</button></div>';
+    }
+    // 管理者用: ステータス表示エリア（下部に配置）
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    if (isAdmin && currentConversationId) {
+      html += '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">';
+      html += '<div style="font-size:0.8rem;color:var(--sub);margin-bottom:8px">🔒 管理者専用</div>';
+      html += '<div id="cp-state-section"></div>';
+      html += '</div>';
     }
 
     body.innerHTML = html;
+
+    // 管理者用: ステータスを非同期ロード
+    if (isAdmin && currentConversationId) {
+      try {
+        const stRes = await api('/conversations/' + currentConversationId + '/state');
+        if (stRes.ok) {
+          const stData = await stRes.json();
+          const stEl = document.getElementById('cp-state-section');
+          if (stEl) renderCharStateSection(stEl, stData, true);
+        }
+      } catch (_) {}
+    }
   } catch (e) {
     body.innerHTML = '<p style="color:var(--accent);text-align:center;padding:20px">' + esc(e.message) + '</p>';
   }
@@ -1247,6 +1459,17 @@ async function openCharProfile() {
 
 function closeCharProfile() {
   document.getElementById('char-profile-overlay').classList.remove('active');
+}
+
+// 編集モードのキャンセル（チャット画面からの編集に対応）
+function cancelEditCharacter() {
+  _editingCharId = null;
+  // チャット画面にいた場合はチャットに戻る、それ以外はchat-listへ
+  if (currentConversationId) {
+    openConversation(currentConversationId);
+  } else {
+    navTo('chat-list');
+  }
 }
 
 async function editCharacter(charId) {
@@ -1261,17 +1484,15 @@ async function editCharacter(charId) {
   showScreen('create');
   document.getElementById('create-gate').style.display = 'none';
   document.getElementById('create-form').style.display = 'block';
-  // ステップ2を直接表示（アバター選択スキップ）
-  document.getElementById('cr-step-1').style.display = 'none';
+  // 編集モード: 両セクション表示
+  document.getElementById('cr-step-1').style.display = 'block';
   document.getElementById('cr-step-2').style.display = 'block';
-  document.getElementById('cr-step-ind-1').className = 'cr-step done';
-  document.getElementById('cr-step-ind-2').className = 'cr-step active';
 
-  // ボタンラベル変更
+  // ボタンラベル変更（編集モード）
   const saveBtn = document.getElementById('cr-save-btn');
   if (saveBtn) saveBtn.textContent = '保存する';
-  const backBtn = document.getElementById('cr-back-btn');
-  if (backBtn) backBtn.style.display = 'none';
+  const cancelEditBtn = document.getElementById('cr-cancel-edit-btn');
+  if (cancelEditBtn) cancelEditBtn.style.display = '';
 
   // アバターURL設定
   const avatarEl = document.getElementById('cr-avatar-url');
@@ -1333,15 +1554,26 @@ async function editCharacter(charId) {
     if (trackEl && c.bgm_track_id) trackEl.value = c.bgm_track_id;
   });
 
-  // SD設定復元
-  const sdPromptEl = document.getElementById('cr-sd-prompt');
-  const sdNegEl = document.getElementById('cr-sd-neg-prompt');
-  const sdSeedEl = document.getElementById('cr-sd-seed');
-  const sdModelEl = document.getElementById('cr-sd-model');
-  if (sdPromptEl) sdPromptEl.value = c.sd_prompt || '';
-  if (sdNegEl) sdNegEl.value = c.sd_neg_prompt || '';
-  if (sdSeedEl) sdSeedEl.value = c.sd_seed ?? '';
-  if (sdModelEl) sdModelEl.value = c.sd_model || '';
+  // SD設定は管理者のみ表示・復元
+  document.querySelectorAll('.cr-admin-only').forEach(el => {
+    el.style.display = (currentUser && currentUser.role === 'admin') ? '' : 'none';
+  });
+  if (currentUser && currentUser.role === 'admin') {
+    const sdInfoEl = document.getElementById('cr-sd-info');
+    if (sdInfoEl) {
+      const p = c.sd_prompt, s = c.sd_seed, m = c.sd_model, n = c.sd_neg_prompt;
+      if (p || s != null || m) {
+        sdInfoEl.innerHTML =
+          `<b>プロンプト:</b> ${esc(p || '（未設定）')}<br>` +
+          `<b>ネガティブ:</b> ${esc(n || '（未設定）')}<br>` +
+          `<b>シード:</b> ${s != null ? s : '（未設定）'}<br>` +
+          `<b>モデル:</b> ${esc(m || '（未設定）')}` +
+          ((!p || s == null) ? '<br><span style="color:var(--accent);font-size:0.78rem">※ 未設定の項目はアバター画像から自動取得されます</span>' : '');
+      } else {
+        sdInfoEl.innerHTML = '<span style="color:var(--sub)">キャラクター固有の設定なし</span>';
+      }
+    }
+  }
 
   // エラークリア
   clearInlineError('cr-name-error');
@@ -1369,28 +1601,30 @@ function toggleChatVisibility() {
   if (_chatVisMode === 2) { toggleChatHide(); return; } // 非表示中はクリックで全表示
   const el = document.getElementById('chat-messages');
   if (!el) return;
+  // 競合防止：前のマスク後処理タイマーをキャンセル
+  if (_chatMaskTimer) { clearTimeout(_chatMaskTimer); _chatMaskTimer = null; }
   if (_chatVisMode === 0) {
     // 全表示→半分フェード
     _chatVisMode = 1;
     el.classList.add('msg-masked');
-    el.style.setProperty('-webkit-mask-size', '100% 250%');
-    el.style.setProperty('mask-size', '100% 250%');
+    el.style.setProperty('-webkit-mask-size', '100% 400%');
+    el.style.setProperty('mask-size', '100% 400%');
     el.offsetHeight;
     el.style.setProperty('-webkit-mask-size', '100% 100%');
     el.style.setProperty('mask-size', '100% 100%');
   } else {
     // 半分フェード→全表示
+    // ※transitionendは子要素バブリングで誤発火するためsetTimeoutで対応
     _chatVisMode = 0;
     el.style.pointerEvents = '';
-    el.style.setProperty('-webkit-mask-size', '100% 250%');
-    el.style.setProperty('mask-size', '100% 250%');
-    const onDone = () => {
-      el.removeEventListener('transitionend', onDone);
+    el.style.setProperty('-webkit-mask-size', '100% 400%');
+    el.style.setProperty('mask-size', '100% 400%');
+    _chatMaskTimer = setTimeout(() => {
+      _chatMaskTimer = null;
       el.classList.remove('msg-masked');
       el.style.removeProperty('-webkit-mask-size');
       el.style.removeProperty('mask-size');
-    };
-    el.addEventListener('transitionend', onDone);
+    }, 550); // CSSトランジション0.5sより少し長め
   }
 }
 
@@ -1400,20 +1634,23 @@ function toggleChatHide() {
   document.getElementById('chat-menu-panel')?.classList.remove('open');
   const el = document.getElementById('chat-messages');
   if (!el) return;
+  // 競合防止：前のマスク後処理タイマーをキャンセル
+  if (_chatMaskTimer) { clearTimeout(_chatMaskTimer); _chatMaskTimer = null; }
   const isAdmin = currentUser && currentUser.role === 'admin';
   if (_chatVisMode === 2) {
     // 非表示→全表示（フェードイン）
     _chatVisMode = 0;
     el.style.pointerEvents = '';
     if (isAdmin) {
-      // マスクを戻しながらフェードイン
-      el.style.setProperty('-webkit-mask-size', '100% 100%');
-      el.style.setProperty('mask-size', '100% 100%');
-      setTimeout(() => {
+      // マスクを戻しながらフェードイン（400%でグラデーション黒ゾーンが全体をカバー）
+      el.style.setProperty('-webkit-mask-size', '100% 400%');
+      el.style.setProperty('mask-size', '100% 400%');
+      _chatMaskTimer = setTimeout(() => {
+        _chatMaskTimer = null;
         el.classList.remove('msg-masked');
         el.style.removeProperty('-webkit-mask-size');
         el.style.removeProperty('mask-size');
-      }, 500);
+      }, 550);
     } else {
       // opacity フェードイン
       el.style.opacity = '1';
@@ -1496,6 +1733,29 @@ function getDisplayText(text) {
     .trim();
 }
 
+// [...] と {...} を emotion-tag スパンでラップ（感情表示ON時に表示）
+function _withEmotionTags(raw) {
+  if (!raw) return '';
+  // STATEブロックと未完成タグを除去した後、{...}も[...]も emotion-tag スパンとしてラップ
+  const text = raw
+    .replace(/<<<STATE>>>[\s\S]*?<<\/STATE>>>/g, '')
+    .replace(/<<<STATE>>>[\s\S]*$/g, '')
+    .replace(/\{[^}]*$/g, '')    // 未完成 {... も除去
+    .trim();
+  const parts = [];
+  let lastIdx = 0;
+  // [...] と {...} の両方をemotion-tagとして扱う
+  const re = /\[[^\]]*\]|\{[^}]*\}/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    parts.push(esc(text.slice(lastIdx, m.index)));
+    parts.push('<span class="emotion-tag">' + esc(m[0]) + '</span>');
+    lastIdx = m.index + m[0].length;
+  }
+  parts.push(esc(text.slice(lastIdx)));
+  return parts.join('');
+}
+
 // === メッセージ長押し削除 ===
 function _createAiRow(aiMsgEl) {
   return aiMsgEl;
@@ -1507,7 +1767,7 @@ function _renderMessages(messages) {
     const deleted = m.is_deleted ? ' msg-soft-deleted' : '';
     if (m.role === 'user')
       return '<div class="msg msg-user' + deleted + '" data-msg-id="' + m.id + '" data-deleted="' + (m.is_deleted||0) + '" data-raw="' + esc(m.content) + '">' + esc(m.content) + '</div>';
-    const display = esc(getDisplayText(m.content));
+    const display = _withEmotionTags(m.content);
     const ttsBtn = hasTts ? '<button class="tts-btn" onclick="ttsPlayFromBtn(this)" title="読み上げ">▶</button>' : '';
     const stateAttr = m.state_snapshot ? ' data-state="' + esc(m.state_snapshot) + '"' : '';
     return '<div class="msg msg-ai' + deleted + '" data-msg-id="' + m.id + '" data-deleted="' + (m.is_deleted||0) + '" data-raw="' + esc(m.content) + '"' + stateAttr + '>' + display + ttsBtn + '</div>';
@@ -1517,7 +1777,7 @@ function _renderMessages(messages) {
 // === BGMプレーヤー ===
 async function loadBgmTracks() {
   try {
-    const res = await api('/bgm');
+    const res = await api('/bgm?enabled_only=true');
     if (res.ok) _bgmTracks = await res.json();
   } catch (_) {}
 }
@@ -1605,8 +1865,21 @@ function _initChatBgm(char) {
 
   // セレクトボックスを更新
   menuItem.style.display = '';
-  sel.innerHTML = '<option value="">なし</option>' +
-    _bgmTracks.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  // ジャンル別にグループ化して表示
+  const genres = {};
+  const noGenre = [];
+  _bgmTracks.forEach(t => {
+    if (t.genre) { (genres[t.genre] = genres[t.genre] || []).push(t); }
+    else { noGenre.push(t); }
+  });
+  let opts = '<option value="">なし</option>';
+  for (const [g, ts] of Object.entries(genres).sort((a,b) => a[0].localeCompare(b[0]))) {
+    opts += `<optgroup label="${esc(g)}">` + ts.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('') + '</optgroup>';
+  }
+  if (noGenre.length) {
+    opts += noGenre.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  }
+  sel.innerHTML = opts;
 
   if (char?.bgm_mode === 'manual' && char?.bgm_track_id) {
     const exists = _bgmTracks.find(t => t.id === char.bgm_track_id);
@@ -1721,6 +1994,8 @@ function initMsgLongPress() {
       const msgId = msgEl.dataset.msgId;
       if (!msgId) return;
       e.preventDefault();
+      // バイブレーションフィードバック（対応端末のみ）
+      if (navigator.vibrate) navigator.vibrate(30);
       showMsgMenu(msgId, msgEl);
     }, 600);
   }, { passive: false });
@@ -1761,16 +2036,22 @@ function showMsgMenu(msgId, msgEl) {
   menu.id = 'msg-ctx-menu';
   menu.className = 'msg-ctx-menu';
   menu.innerHTML =
+    '<button class="msg-ctx-item" data-act="copy">📋 コピー</button>' +
     (canRegen ? '<button class="msg-ctx-item" data-act="regen">再更新</button>' : '') +
     '<button class="msg-ctx-item" data-act="hide">' + (isHidden ? '元に戻す' : '会話の削除') + '</button>' +
     (isAdmin ? '<button class="msg-ctx-item msg-ctx-danger" data-act="purge">完全削除（管理者）</button>' : '');
 
-  // メッセージ要素の位置に合わせて表示
+  // メッセージ要素の位置に合わせて表示（下に余裕がなければ上に表示）
   const rect = msgEl.getBoundingClientRect();
   menu.style.position = 'fixed';
-  menu.style.top = (rect.bottom + 6) + 'px';
   menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 160)) + 'px';
   document.body.appendChild(menu);
+  const menuH = menu.offsetHeight;
+  if (rect.bottom + 6 + menuH > window.innerHeight) {
+    menu.style.top = Math.max(4, rect.top - menuH - 6) + 'px';
+  } else {
+    menu.style.top = (rect.bottom + 6) + 'px';
+  }
 
   // メニュー外クリックで閉じる
   const close = (e) => {
@@ -1784,7 +2065,15 @@ function showMsgMenu(msgId, msgEl) {
     menu.remove();
     document.removeEventListener('pointerdown', close, true);
 
-    if (act === 'purge') {
+    if (act === 'copy') {
+      // 吹き出し内のテキストをコピー（data-rawがあればそちらを使用）
+      const rawText = msgEl.dataset.raw || msgEl.textContent || '';
+      navigator.clipboard.writeText(rawText.trim()).then(() => {
+        showToast('コピーしました', 'success', 1500);
+      }).catch(() => {
+        showToast('コピーに失敗しました', 'error');
+      });
+    } else if (act === 'purge') {
       const r = await api('/admin/messages/' + msgId, { method: 'DELETE' });
       if (r.ok) {
         msgEl.remove();
@@ -1804,6 +2093,7 @@ function showMsgMenu(msgId, msgEl) {
         }
       }
     } else if (act === 'regen') {
+      if (isStreaming) return; // 送信中は再生成不可
       // 最後のユーザーメッセージを取得して再送信
       const userMsgs = [...chatEl.querySelectorAll('.msg-user[data-msg-id]')];
       const lastUserEl = userMsgs[userMsgs.length - 1];
@@ -1843,6 +2133,8 @@ async function sendMessage() {
   // 2. ユーザーメッセージをゆっくり表示
   const userMsgEl = document.createElement('div');
   userMsgEl.className = 'msg msg-user';
+  userMsgEl.dataset.raw = msg;
+  userMsgEl.dataset.deleted = '0';
   chatEl.appendChild(userMsgEl);
   await _typeUserMsg(userMsgEl, msg, chatEl);
 
@@ -1853,7 +2145,8 @@ async function sendMessage() {
   chatEl.appendChild(_createAiRow(aiMsg));
   chatEl.scrollTop = chatEl.scrollHeight;
 
-  // 4. 先行fetch済みのリクエストを引き継いで処理
+  // 4. 先行fetch済みのリクエストを引き継いで処理（userMsgElも渡す）
+  _pendingUserMsgEl = userMsgEl;
   await _sendRequest(msg, aiMsg, chatEl, fetchPromise);
 }
 
@@ -1893,6 +2186,8 @@ function _typeAiMsg(el, text, chatEl) {
 }
 
 async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
+  _resetProcState();
+  _setProcState('ollama', '処理中');
   try {
     const res = await (prefetch || fetch(API_BASE + '/chat/' + currentConversationId, {
       method: 'POST',
@@ -1901,8 +2196,14 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
     }));
 
     if (!res.ok) {
+      _setProcState('ollama', 'エラー');
       const err = await res.json().catch(() => ({}));
-      _showRetryError(aiMsg, chatEl, msg, esc(err.detail || '送信に失敗しました'));
+      let errText = esc(err.detail || '送信に失敗しました');
+      if (res.status === 402) {
+        // ポイント不足: 補足説明を追加
+        errText += '<br><small style="color:var(--sub);font-size:0.82em">ポイントは毎日自動で回復されます。しばらく後に再試行してください。</small>';
+      }
+      _showRetryError(aiMsg, chatEl, msg, errText);
       return;
     }
 
@@ -1938,6 +2239,11 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
           setTimeout(step, 30); // 次テキスト到着待ち
         } else {
           el.textContent = _typer.target; // 最終確定
+          // 感情表示ONの場合、rawDataからemotion-tagを付与（TTS自動再生時は_withEmotionTagsがスキップされるため）
+          if (_showState) {
+            const raw = el.parentElement?.dataset?.raw;
+            if (raw) el.innerHTML = _withEmotionTags(raw);
+          }
           _typer = null;
         }
       };
@@ -1992,6 +2298,14 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
     async function _sPlayLoop(btn) {
       let idx = 0;
       const myId = _ttsStopId;  // このセッションのID
+
+      // 連続再生：前のセッション終了を待ってから開始
+      const prevChain = _ttsPlayChain;
+      let resolveChain;
+      _ttsPlayChain = new Promise(r => { resolveChain = r; });
+      await prevChain;
+      if (_ttsStopId !== myId) { resolveChain(); return; }  // 待機中に停止された場合
+
       _ttsPlaying = true;
       _ttsPlayingBtn = btn;
       btn.innerHTML = '<span class="tts-dots"><b></b><b></b><b></b></span>';
@@ -2002,6 +2316,7 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
         if (_ttsStopId !== myId) break;
         if (idx < _sQueue.length) {
           const item = _sQueue[idx++];
+          const isFirstItem = idx === 1;
           if (item.type === 'audio') {
             const blob = await item.prom;
             if (_ttsStopId !== myId) break;  // 明示的な停止 → 即終了
@@ -2009,6 +2324,10 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
             await _playAudioBlob(blob, myId);
           } else if (item.type === 'se') {
             await _playSe(item.name, myId);
+          }
+          // セグメント間に0.5秒ディレイ（次のセグメントがある場合のみ）
+          if (_sQueue.length > idx && _ttsStopId === myId) {
+            await new Promise(r => setTimeout(r, 500));
           }
         } else if (_sDone) {
           break;
@@ -2023,6 +2342,7 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
           _ttsPlayingBtn = null;
         }
       }
+      resolveChain();  // 次のセッションのためにチェーンを解放
     }
 
     while (true) {
@@ -2075,13 +2395,23 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
             }
           }
           if (data.done) {
+            _setProcState('ollama', '完了');
             // raw テキストを保存（STATEタグを除去）
             const rawText = aiText
               .replace(/<<<STATE>>>[\s\S]*?<<\/STATE>>>/g, '').replace(/<<<STATE>>>[\s\S]*$/g, '')
               .trim();
             aiMsg.dataset.raw = rawText;
 
+            // TTS自動再生以外は emotion-tagスパン付きでテキストを更新
+            if (!(_ttsAvailable && _ttsAutoPlay)) {
+              aiMsg.innerHTML = _withEmotionTags(rawText);
+            }
+
             // メッセージIDをセット（右クリックメニュー等で使用）
+            if (data.user_msg_id && _pendingUserMsgEl) {
+              _pendingUserMsgEl.dataset.msgId = String(data.user_msg_id);
+              _pendingUserMsgEl = null;
+            }
             if (data.ai_msg_id) {
               aiMsg.dataset.msgId = String(data.ai_msg_id);
               aiMsg.dataset.deleted = '0';
@@ -2149,8 +2479,9 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
             // ターン数カウント
             _sceneTurnCount++;
 
-            // シーン画像ポーリング開始
+            // シーン画像ポーリング開始（翻訳API→SD生成）
             if (data.scene_task_id) {
+              _setProcState('translate', '処理中');
               _startSceneImagePoll(data.scene_task_id, ai_msg_id, data.ai_msg_id);
             }
 
@@ -2163,6 +2494,7 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
             }
           }
           if (data.error) {
+            _setProcState('ollama', 'エラー');
             const errSpan = document.createElement('span');
             errSpan.style.cssText = 'display:inline-flex;align-items:center;gap:6px;color:var(--accent);margin-top:6px';
             errSpan.innerHTML = '<br>' + esc(data.error) + ' <button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--sub);cursor:pointer;font-size:1rem;padding:0;line-height:1" title="閉じる">×</button>';
@@ -2183,21 +2515,48 @@ async function _sendRequest(msg, aiMsg, chatEl, prefetch = null) {
 // === シーン画像変化機能 ===
 
 function _sceneSetBackground(imageUrl, onDone) {
-  /**背景画像をフェードで切り替える */
+  /** 背景画像をクロスフェードで切り替える */
   const chatScreen = document.getElementById('screen-chat');
   if (!chatScreen) return;
-  // フェードアウト → 画像変更 → フェードイン
-  chatScreen.style.transition = 'background-image 0s';
-  chatScreen.style.opacity = '0.85';
-  chatScreen.style.transition = 'opacity 0.5s ease';
-  setTimeout(() => {
-    chatScreen.style.backgroundImage = `url('${imageUrl}')`;
+  // 新しい画像をプリロード
+  const img = new Image();
+  img.onload = () => {
+    // オーバーレイ要素で新画像をフェードイン（クロスフェード）
+    const overlay = document.createElement('div');
+    overlay.className = 'scene-crossfade-overlay';
+    overlay.style.cssText = [
+      'position:absolute', 'inset:0', 'z-index:0',
+      'background-size:cover', 'background-position:center 15%', 'background-repeat:no-repeat',
+      'opacity:0', 'transition:opacity 1.2s ease',
+      'pointer-events:none',
+    ].join(';');
+    overlay.style.backgroundImage = "url('" + imageUrl + "')";
+    chatScreen.appendChild(overlay);
+    // 次フレームでフェードイン開始
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        overlay.style.opacity = '1';
+      });
+    });
+    // フェード完了後にベース背景を差し替えてオーバーレイを削除
+    setTimeout(() => {
+      chatScreen.style.backgroundImage = "url('" + imageUrl + "')";
+      chatScreen.style.backgroundSize = 'cover';
+      chatScreen.style.backgroundPosition = 'center 15%';
+      chatScreen.style.backgroundRepeat = 'no-repeat';
+      overlay.remove();
+      if (onDone) onDone();
+    }, 1300);
+  };
+  img.onerror = () => {
+    // プリロード失敗時は直接切り替え
+    chatScreen.style.backgroundImage = "url('" + imageUrl + "')";
     chatScreen.style.backgroundSize = 'cover';
     chatScreen.style.backgroundPosition = 'center 15%';
     chatScreen.style.backgroundRepeat = 'no-repeat';
-    chatScreen.style.opacity = '1';
     if (onDone) onDone();
-  }, 500);
+  };
+  img.src = imageUrl;
 }
 
 function _sceneShowLoading(show) {
@@ -2238,39 +2597,48 @@ function _sceneMarkMessage(msgEl) {
 let _scenePollingTimer = null;
 
 function _startSceneImagePoll(taskId, currentMsgEl) {
-  _sceneShowLoading(true);
+  const _isAdmin = currentUser?.role === 'admin';
+  if (_isAdmin) _sceneShowLoading(true);
+  _setProcState('scene', '処理中');
   if (_scenePollingTimer) clearInterval(_scenePollingTimer);
   let retries = 0;
-  const maxRetries = 30; // 最大90秒 (3秒×30)
+  const maxRetries = 60; // 最大180秒 (3秒×60) モデル切り替え含む場合を考慮
   _scenePollingTimer = setInterval(async () => {
     retries++;
     if (retries > maxRetries) {
       clearInterval(_scenePollingTimer);
       _scenePollingTimer = null;
-      _sceneShowLoading(false);
+      if (_isAdmin) _sceneShowLoading(false);
+      _setProcState('scene', 'タイムアウト');
       return;
     }
     try {
       const res = await api(`/scene/${taskId}`);
-      if (!res.ok) { clearInterval(_scenePollingTimer); _scenePollingTimer = null; _sceneShowLoading(false); return; }
+      if (!res.ok) { clearInterval(_scenePollingTimer); _scenePollingTimer = null; if (_isAdmin) _sceneShowLoading(false); _setProcState('scene', 'エラー'); return; }
       const data = await res.json();
       if (data.status === 'done' && data.image_url) {
         clearInterval(_scenePollingTimer);
         _scenePollingTimer = null;
-        _sceneShowLoading(false);
+        if (_isAdmin) _sceneShowLoading(false);
+        _setProcState('scene', '完了');
+        // キャッシュバスティング付きURL
+        const imgUrl = data.image_url + '?t=' + Date.now();
         // 一時画像を適用
-        _sceneTempUrl = data.image_url;
+        _sceneTempUrl = imgUrl;
         _sceneAppliedTurn = _sceneTurnCount;
-        _sceneSetBackground(data.image_url, () => {
-          // 管理者向けマーク
-          if (currentUser?.role === 'admin' && currentMsgEl) {
+        _sceneShowingTemp = true;
+        if (currentConversationId) _sceneCache.set(currentConversationId, imgUrl);
+        _updateSceneToggleBtn();
+        _sceneSetBackground(imgUrl, () => {
+          if (_isAdmin && currentMsgEl) {
             _sceneMarkMessage(currentMsgEl);
           }
         });
       } else if (data.status === 'failed') {
         clearInterval(_scenePollingTimer);
         _scenePollingTimer = null;
-        _sceneShowLoading(false);
+        if (_isAdmin) _sceneShowLoading(false);
+        _setProcState('scene', 'エラー');
       }
     } catch (_) {}
   }, 3000);
@@ -2280,17 +2648,52 @@ function _checkSceneRevert() {
   /**一時シーン画像を元の画像に戻すか確認 */
   if (!_sceneTempUrl || !_sceneOriginalUrl) return;
   if ((_sceneTurnCount - _sceneAppliedTurn) >= _sceneRevertTurns) {
-    _sceneTempUrl = null;
     _sceneSetBackground(_sceneOriginalUrl);
+    _sceneShowingTemp = false;
+    _updateSceneToggleBtn();
   }
 }
 
+// シーン画像トグル状態
+let _sceneShowingTemp = false;
+
+function _updateSceneToggleBtn() {
+  const btn = document.getElementById('scene-toggle-btn');
+  if (!btn) return;
+  if (_sceneTempUrl && _sceneOriginalUrl) {
+    btn.style.display = '';
+    btn.title = _sceneShowingTemp ? '元の画像に戻す' : 'シーン画像に切替';
+    btn.textContent = '🖼';
+    btn.style.opacity = _sceneShowingTemp ? '1' : '0.5';
+    btn.style.textShadow = _sceneShowingTemp ? '0 0 6px rgba(255,200,0,0.8), 0 1px 4px rgba(0,0,0,0.6)' : '0 1px 4px rgba(255,255,255,0.6)';
+    btn.style.filter = 'none';
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+function toggleSceneImage() {
+  if (!_sceneTempUrl || !_sceneOriginalUrl) return;
+  if (_sceneShowingTemp) {
+    _sceneSetBackground(_sceneOriginalUrl);
+    _sceneShowingTemp = false;
+  } else {
+    _sceneSetBackground(_sceneTempUrl);
+    _sceneShowingTemp = true;
+  }
+  _updateSceneToggleBtn();
+}
+
 function _showRetryError(aiMsg, chatEl, msg, errText) {
+  isStreaming = false;
+  document.getElementById('send-btn').disabled = false;
   aiMsg.innerHTML = '<div class="msg-ai-name">エラー</div>' + errText;
   const retryBtn = document.createElement('button');
   retryBtn.className = 'retry-btn';
   retryBtn.textContent = '↻';
   retryBtn.onclick = () => {
+    if (isStreaming || retryBtn.disabled) return;
+    retryBtn.disabled = true;
     isStreaming = true;
     document.getElementById('send-btn').disabled = true;
     aiMsg.innerHTML = '<div class="msg-typing"><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span></div>';
@@ -2342,8 +2745,19 @@ async function loadBgmTracksForForm() {
   const sel = document.getElementById('cr-bgm-track-id');
   if (!sel) return;
   await loadBgmTracks();
-  sel.innerHTML = '<option value="">BGMを選択...</option>' +
-    _bgmTracks.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  // ジャンル別にグループ化
+  const genres = {};
+  const noGenre = [];
+  _bgmTracks.forEach(t => {
+    if (t.genre) { (genres[t.genre] = genres[t.genre] || []).push(t); }
+    else { noGenre.push(t); }
+  });
+  let opts = '<option value="">BGMを選択...</option>';
+  for (const [g, ts] of Object.entries(genres).sort((a,b) => a[0].localeCompare(b[0]))) {
+    opts += `<optgroup label="${esc(g)}">` + ts.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('') + '</optgroup>';
+  }
+  if (noGenre.length) opts += noGenre.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  sel.innerHTML = opts;
 }
 
 function initTagSelects() {
@@ -2391,10 +2805,7 @@ async function saveCharacter() {
     tts_styles: JSON.parse(document.getElementById('cr-tts-styles-json')?.value || '[]'),
     bgm_mode: document.getElementById('cr-bgm-mode')?.value || 'none',
     bgm_track_id: (() => { const v = document.getElementById('cr-bgm-track-id')?.value; return v ? parseInt(v) : null; })(),
-    sd_prompt: document.getElementById('cr-sd-prompt')?.value?.trim() || null,
-    sd_neg_prompt: document.getElementById('cr-sd-neg-prompt')?.value?.trim() || null,
-    sd_seed: (() => { const v = document.getElementById('cr-sd-seed')?.value; return v ? parseInt(v) : null; })(),
-    sd_model: document.getElementById('cr-sd-model')?.value?.trim() || null,
+    // SD設定はアバター画像から自動取得のため送信しない
   };
 
   let res;
@@ -2917,7 +3328,7 @@ async function loadGallery() {
       return;
     }
     el.innerHTML = imgs.map(img =>
-      `<div class="gen-gallery-item" id="ggrid-${img.id}" onclick="openGalleryLightbox(${img.id}, '${esc(img.url)}', ${img.is_favorite ? 1 : 0})">
+      `<div class="gen-gallery-item" id="ggrid-${img.id}" data-prompt="${esc(img.prompt||'')}" data-seed="${img.seed||''}" onclick="openGalleryLightbox(this)">
         <img src="${esc(img.url)}" loading="lazy" alt="">
         <button class="gen-gallery-fav ${img.is_favorite ? 'active' : ''}" onclick="event.stopPropagation();galleryToggleFav(${img.id}, this)" title="お気に入り">♡</button>
       </div>`
@@ -2940,7 +3351,13 @@ let _glbCurrentId = null;
 let _glbCurrentUrl = null;
 let _glbCurrentFav = 0;
 
-function openGalleryLightbox(id, url, isFav) {
+function openGalleryLightbox(el) {
+  const id = parseInt(el.id.replace('ggrid-', ''));
+  const img = el.querySelector('img');
+  const url = img ? img.src : '';
+  const isFav = el.querySelector('.gen-gallery-fav.active') ? 1 : 0;
+  const prompt = el.dataset.prompt || '';
+  const seed = el.dataset.seed || '';
   _glbCurrentId  = id;
   _glbCurrentUrl = url;
   _glbCurrentFav = isFav;
@@ -2997,7 +3414,9 @@ function glbUseAsAvatar() {
 }
 
 // キャラ作成画面の画像生成ツールへ遷移
+let _fromCreate = false;
 function goToGenerate() {
+  _fromCreate = true;
   navTo('generate');
 }
 
@@ -3033,15 +3452,23 @@ async function loadCreateGallery() {
     if (imgs.length === 0) {
       if (section) section.style.display = 'none';
       if (emptyEl) emptyEl.style.display = 'block';
+      // 生成画面から戻りでない場合は画像生成画面へ自動遷移
+      if (!sessionStorage.getItem('aic_gen_avatar')) {
+        goToGenerate();
+      }
       return;
     }
     if (section) section.style.display = '';
     if (emptyEl) emptyEl.style.display = 'none';
     grid.innerHTML = imgs.map(img => {
       const favClass = img.is_favorite ? 'active' : '';
+      const usedBadge = img.used_by ? `<span class="cr-gallery-used" title="${esc(img.used_by)}">使用中</span>` : '';
+      const prompt = esc(img.prompt || '');
       return `<div class="gen-gallery-item" id="cgrid-${img.id}" style="cursor:pointer"
-                   onclick="openCrLightbox(${img.id}, '${esc(img.url)}', ${img.is_favorite ? 1 : 0})">
+                   data-prompt="${prompt}" data-seed="${img.seed||''}"
+                   onclick="openCrLightbox(${img.id}, '${esc(img.url)}', ${img.is_favorite ? 1 : 0}, ${img.used_by ? '\'' + esc(img.used_by) + '\'' : 'null'}, '${prompt}', '${img.seed||''}')">
         <img src="${esc(img.url)}" loading="lazy" alt="">
+        ${usedBadge}
         <button class="gen-gallery-fav ${favClass}" onclick="event.stopPropagation();crToggleFavInGrid(${img.id}, this)" title="お気に入り">♡</button>
       </div>`;
     }).join('');
@@ -3052,17 +3479,28 @@ async function loadCreateGallery() {
 let _lbCurrentId = null;
 let _lbCurrentUrl = null;
 let _lbCurrentFav = 0;
+let _lbCurrentPrompt = '';
 
-function openCrLightbox(id, url, isFav) {
+function openCrLightbox(id, url, isFav, usedBy, prompt, seed) {
   _lbCurrentId  = id;
   _lbCurrentUrl = url;
   _lbCurrentFav = isFav;
+  _lbCurrentPrompt = prompt || '';
   document.getElementById('lb-img').src = url;
   const favBtn = document.getElementById('lb-fav-btn');
   if (favBtn) {
     favBtn.textContent = isFav ? '♥' : '♡';
     favBtn.classList.toggle('active', !!isFav);
   }
+  // 使用中キャラクター名表示
+  const usedEl = document.getElementById('lb-used-by');
+  if (usedEl) {
+    usedEl.textContent = usedBy ? `「${usedBy}」で使用中` : '';
+    usedEl.style.display = usedBy ? '' : 'none';
+  }
+  // 使用中は削除ボタン非表示
+  const delBtn = document.getElementById('lb-del-btn');
+  if (delBtn) delBtn.style.display = usedBy ? 'none' : '';
   document.getElementById('cr-lightbox').classList.add('open');
 }
 
@@ -3090,7 +3528,8 @@ async function deleteFromCrLightbox() {
       await loadCreateGallery();
       showToast('削除しました', 'info');
     } else {
-      showToast('削除に失敗しました', 'error');
+      const err = await r.json().catch(() => null);
+      showToast(err?.detail || '削除に失敗しました', 'error');
     }
   }, '削除する');
 }
@@ -3162,18 +3601,21 @@ function onAvatarUrlInput() {
   else clearAvatarSelection();
 }
 
-// STEP 1 → STEP 2
+// アバター選択後にキャラ設定へスクロール
 function goToCreateStep2() {
-  document.getElementById('cr-step-1').style.display = 'none';
+  // プロフィールフォームを表示
   document.getElementById('cr-step-2').style.display = 'block';
-  document.getElementById('cr-step-ind-1').classList.remove('active');
-  document.getElementById('cr-step-ind-1').classList.add('done');
-  document.getElementById('cr-step-ind-2').classList.add('active');
   // タグ初期化（まだなら）
   initTagSelects();
-  // 画像生成のキャラタイプから性別を自動セット
+  // 画像生成のキャラタイプ or プロンプトから性別を自動セット
   const activeType = document.querySelector('#gen-char-type .gen-type-btn.active');
-  const typeVal = activeType ? activeType.dataset.type : _lastCharType;
+  let typeVal = activeType ? activeType.dataset.type : _lastCharType;
+  if (!typeVal && _lbCurrentPrompt) {
+    const p = _lbCurrentPrompt.toLowerCase();
+    if (p.includes('1girl') || p.includes('girl')) typeVal = 'female';
+    else if (p.includes('1boy') || p.includes('boy')) typeVal = 'male';
+    else if (p.includes('no humans')) typeVal = 'other';
+  }
   if (typeVal) {
     const genderSel = document.getElementById('cr-gender');
     if (genderSel) genderSel.value = typeVal;
@@ -3181,19 +3623,13 @@ function goToCreateStep2() {
   // 音声モデル読み込み
   const gender = document.getElementById('cr-gender')?.value || '';
   loadVoiceModelsForForm(gender);
-  // 先頭にスクロール
-  document.getElementById('create-form').scrollTop = 0;
+  // プロフィール欄にスクロール
+  document.getElementById('cr-step-2').scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('cr-name').focus();
 }
 
-// STEP 2 → STEP 1
-function backToCreateStep1() {
-  document.getElementById('cr-step-2').style.display = 'none';
-  document.getElementById('cr-step-1').style.display = 'block';
-  document.getElementById('cr-step-ind-2').classList.remove('active');
-  document.getElementById('cr-step-ind-1').classList.remove('done');
-  document.getElementById('cr-step-ind-1').classList.add('active');
-}
+// backToCreateStep1 は統合UIのため不要（互換性のために残す）
+function backToCreateStep1() {}
 
 // === サイドバー ===
 function toggleSidebar() {
@@ -3264,6 +3700,7 @@ function ttsPlayFromBtn(btn) {
 
 function ttsStopAll() {
   _ttsStopId++;          // 実行中の全セッションを無効化
+  _ttsPlayChain = Promise.resolve();  // 連続再生チェーンをリセット
   _ttsPlaying = false;
   if (_ttsAudio) {
     _ttsAudio.pause();
@@ -3310,6 +3747,11 @@ async function _playTtsQueue(segments, stopId) {
     } else if (seg.type === 'se') {
       await _playSe(seg.name, stopId);
     }
+
+    // 次のセグメントがある場合は0.5秒ディレイを挟む
+    if (i < segments.length - 1 && _ttsStopId === stopId) {
+      await new Promise(r => setTimeout(r, 500));
+    }
   }
 }
 
@@ -3317,6 +3759,7 @@ async function _fetchTtsAudio(text, styleId, voiceParams) {
   const vpStr = voiceParams ? JSON.stringify(voiceParams) : '';
   const key = styleId + '|' + text.trim().slice(0, 300) + '|' + vpStr;
   if (_ttsCache.has(key)) return _ttsCache.get(key);
+  _setProcState('tts', '処理中');
   try {
     const body = { text: text.trim().slice(0, 300), style_id: styleId };
     if (voiceParams) {
@@ -3329,16 +3772,18 @@ async function _fetchTtsAudio(text, styleId, voiceParams) {
       method: 'POST',
       body: JSON.stringify(body),
     });
-    if (!res.ok) return null;
+    if (!res.ok) { _setProcState('tts', 'エラー'); return null; }
     const blob = await res.blob();
     _ttsCache.set(key, blob);
+    _setProcState('tts', '完了');
     return blob;
-  } catch (_) { return null; }
+  } catch (_) { _setProcState('tts', 'エラー'); return null; }
 }
 
 function _playAudioBlob(blob, stopId) {
+  _setProcState('ttsPlay', '再生中');
   return new Promise(resolve => {
-    if (_ttsStopId !== stopId) { resolve(); return; }
+    if (_ttsStopId !== stopId) { _setProcState('ttsPlay', '待機中'); resolve(); return; }
     const url = URL.createObjectURL(blob);
     _ttsAudio = new Audio(url);
     // 再生開始できたら loading → playing（音波アニメーション）に切替
@@ -3350,6 +3795,7 @@ function _playAudioBlob(blob, stopId) {
       }
     });
     _ttsAudio.onended = () => {
+      _setProcState('ttsPlay', '完了');
       // duration を蓄積
       const dur = _ttsAudio ? (_ttsAudio.duration || 0) : 0;
       if (_ttsPlayingBtn && !isNaN(dur) && dur > 0) {
@@ -3358,7 +3804,7 @@ function _playAudioBlob(blob, stopId) {
       }
       URL.revokeObjectURL(url); _ttsAudio = null; resolve();
     };
-    _ttsAudio.onerror = () => { URL.revokeObjectURL(url); _ttsAudio = null; resolve(); };
+    _ttsAudio.onerror = () => { _setProcState('ttsPlay', 'エラー'); URL.revokeObjectURL(url); _ttsAudio = null; resolve(); };
     _ttsAudio.play().catch(() => { resolve(); });
   });
 }
@@ -3424,15 +3870,56 @@ function editCurrentChar() {
   }
 }
 
+// 今すぐ画像変更（ハンバーガーメニューから）
+async function forceSceneChange() {
+  _chatMenuOpen = false;
+  document.getElementById('chat-menu-panel')?.classList.remove('open');
+  if (!currentConversationId) return;
+  const btn = document.getElementById('force-scene-btn');
+  if (btn) btn.disabled = true;
+  _setProcState('scene', '処理中');
+  try {
+    const res = await api('/scene/force/' + currentConversationId, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      _setProcState('scene', 'エラー');
+      showToast(err.detail || '画像変更に失敗しました', 'error');
+      return;
+    }
+    const data = await res.json();
+    if (data.scene_task_id) {
+      _startSceneImagePoll(data.scene_task_id, null);
+    }
+  } catch (e) {
+    _setProcState('scene', 'エラー');
+    showToast('画像変更に失敗しました', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 // 削除済みメッセージ表示トグル（管理者のみ）
+// 削除済みキャラクターの会話を確認して削除（削除バナーの確認ボタンから）
+async function confirmDeletedConv() {
+  if (!currentConversationId) return;
+  const r = await api('/conversations/' + currentConversationId, { method: 'DELETE' });
+  if (r.ok) {
+    showToast('会話を削除しました', 'success');
+    loadConversations();
+    navTo('chat-list');
+  } else {
+    showToast('削除に失敗しました', 'error');
+  }
+}
+
 function toggleShowDeleted() {
   _chatMenuOpen = false;
   document.getElementById('chat-menu-panel')?.classList.remove('open');
   _adminShowDeleted = !_adminShowDeleted;
-  const btn = document.getElementById('show-deleted-btn');
-  if (btn) btn.textContent = _adminShowDeleted ? '👁 削除済み表示 ON' : '👁 削除済み表示 OFF';
+  _applyToggleBtn('show-deleted-btn', _adminShowDeleted, '👁 削除済み表示');
   const msgArea = document.getElementById('chat-messages');
   if (msgArea) msgArea.classList.toggle('show-deleted', _adminShowDeleted);
+  _saveChatPrefs();
   showToast(_adminShowDeleted ? '削除済みメッセージを表示します' : '削除済みメッセージを非表示にしました', 'info', 1500);
 }
 
@@ -3441,31 +3928,20 @@ function toggleStateDisplay() {
   _chatMenuOpen = false;
   document.getElementById('chat-menu-panel')?.classList.remove('open');
   _showState = !_showState;
-  const btn = document.getElementById('state-display-btn');
-  if (btn) btn.textContent = _showState ? '🧠 感情表示オフ' : '🧠 感情表示オン';
-  // 既存の全AIメッセージに適用
+  _applyToggleBtn('state-display-btn', _showState, '🧠 感情表示');
+  // emotion-tag スパンの表示切替（CSS クラスで制御）
+  const chatEl = document.getElementById('chat-messages');
+  if (chatEl) chatEl.classList.toggle('show-emotions', _showState);
+  // 既存の全AIメッセージに適用（TTS バッジ等）
   document.querySelectorAll('#chat-messages .msg-ai').forEach(_applyStateDisplay);
+  _saveChatPrefs();
   showToast(_showState ? '感情表示をオンにしました' : '感情表示をオフにしました', 'info', 1500);
 }
 
 function _applyStateDisplay(el) {
-  let badge = el.querySelector('.msg-state-badge');
-  if (_showState && el.dataset.raw) {
-    // TTSスタイル情報（{スタイル:速度:ピッチ:抑揚:音量}）を抽出して表示
-    const ttsInfo = _fmtTtsParams(el.dataset.raw);
-    if (ttsInfo) {
-      if (!badge) {
-        badge = document.createElement('div');
-        badge.className = 'msg-state-badge';
-        el.appendChild(badge);
-      }
-      badge.textContent = ttsInfo;
-    } else if (badge) {
-      badge.remove();
-    }
-  } else if (badge) {
-    badge.remove();
-  }
+  // TTSパラメータバッジは廃止（{...}は常に非表示）
+  const badge = el.querySelector('.msg-state-badge');
+  if (badge) badge.remove();
 }
 
 // TTSスタイルパラメータを人間が読みやすい形式に変換
@@ -3519,9 +3995,9 @@ async function toggleStateChange() {
   _chatMenuOpen = false;
   document.getElementById('chat-menu-panel')?.classList.remove('open');
   _showStateChange = !_showStateChange;
-  const btn = document.getElementById('state-change-btn');
-  if (btn) btn.textContent = _showStateChange ? '📊 ステータス変化オフ' : '📊 ステータス変化オン';
+  _applyToggleBtn('state-change-btn', _showStateChange, '📊 ステータス変化');
   await _applyStateChangeBlocks();
+  _saveChatPrefs();
   showToast(_showStateChange ? 'ステータス変化をオンにしました' : 'ステータス変化をオフにしました', 'info', 1500);
 }
 
@@ -3579,27 +4055,12 @@ function toggleAutoVoice() {
   document.getElementById('chat-menu-panel')?.classList.remove('open');
   _ttsAutoPlay = !_ttsAutoPlay;
   _updateAutoVoiceIcon();
+  _saveChatPrefs();
   showToast(_ttsAutoPlay ? '自動音声をオンにしました' : '自動音声をオフにしました', 'info', 1500);
 }
 
 function _updateAutoVoiceIcon() {
-  const offIcon = document.getElementById('auto-voice-icon-off');
-  const onIcon = document.getElementById('auto-voice-icon-on');
-  const label = document.getElementById('auto-voice-label');
-  if (!offIcon || !onIcon || !label) return;
-  if (_ttsAutoPlay) {
-    // 現在オン → クリックするとオフ: 🔊→🔇
-    offIcon.textContent = '🔊';
-    onIcon.textContent = '🔇';
-    label.textContent = '自動音声オフ';
-    document.getElementById('auto-voice-btn')?.classList.add('active');
-  } else {
-    // 現在オフ → クリックするとオン: 🔇→🔊
-    offIcon.textContent = '🔇';
-    onIcon.textContent = '🔊';
-    label.textContent = '自動音声オン';
-    document.getElementById('auto-voice-btn')?.classList.remove('active');
-  }
+  _applyToggleBtn('auto-voice-btn', _ttsAutoPlay, _ttsAutoPlay ? '🔊 自動音声' : '🔇 自動音声');
 }
 
 // キャラクタープロフィール確認（チャットメニューから）
@@ -3607,7 +4068,7 @@ function viewCurrentCharProfile() {
   _chatMenuOpen = false;
   document.getElementById('chat-menu-panel')?.classList.remove('open');
   if (currentCharacter) {
-    showCharDetail(currentCharacter.id);
+    openCharProfile();
   }
 }
 
@@ -3616,14 +4077,27 @@ function resetConversation() {
   _chatMenuOpen = false;
   document.getElementById('chat-menu-panel')?.classList.remove('open');
   if (!currentConversationId) return;
+  const convId = currentConversationId;  // クロージャで保持
   showConfirm(
     'すべての会話履歴を削除し、最初の状態に戻します。\nこの操作は取り消せません。',
     async () => {
       try {
-        const r = await api(`/conversations/${currentConversationId}/reset`, { method: 'POST' });
+        const r = await api(`/conversations/${convId}/reset`, { method: 'POST' });
         if (r.ok) {
           _ttsCache.clear();
-          await openConversation(currentConversationId);
+          // シーン画像ポーリングを停止
+          if (_scenePollingTimer) { clearInterval(_scenePollingTimer); _scenePollingTimer = null; }
+          _sceneTempUrl = null;
+          _sceneAppliedTurn = 0;
+          _sceneTurnCount = 0;
+          _sceneShowingTemp = false;
+          _sceneCache.delete(convId);
+          _updateSceneToggleBtn();
+          // 世代管理をリセットして古いリクエストを確実に無視
+          _convLoadId++;
+          currentConversationId = null;
+          currentCharacter = null;
+          await openConversation(convId);
           showToast('会話をリセットしました', 'info', 2000);
         } else {
           showToast('リセットに失敗しました', 'error');
@@ -3663,6 +4137,30 @@ function purgeConversation() {
     '完全削除',
     'btn-danger'
   );
+}
+
+// 会話をテキストとしてクリップボードにコピー（チャットメニューから）
+function copyConversation() {
+  _chatMenuOpen = false;
+  document.getElementById('chat-menu-panel')?.classList.remove('open');
+  const el = document.getElementById('chat-messages');
+  if (!el) return;
+  const msgs = el.querySelectorAll('.msg[data-raw]');
+  if (!msgs.length) { showToast('コピーするメッセージがありません', 'info'); return; }
+  const charName = currentCharacter?.name || 'AI';
+  const lines = [];
+  msgs.forEach(m => {
+    const isDeleted = m.dataset.deleted === '1';
+    if (isDeleted && !_adminShowDeleted) return;
+    const role = m.classList.contains('msg-user') ? 'あなた' : charName;
+    const text = (m.dataset.raw || '').trim();
+    if (text) lines.push(role + ': ' + text);
+  });
+  if (!lines.length) { showToast('コピーするメッセージがありません', 'info'); return; }
+  const copyText = lines.join('\n\n');
+  navigator.clipboard.writeText(copyText)
+    .then(() => showToast('会話をコピーしました ✓', 'ok', 2500))
+    .catch(() => showToast('コピーに失敗しました', 'error'));
 }
 
 // 右下トースト通知（alert代替）
@@ -3730,9 +4228,14 @@ document.addEventListener('DOMContentLoaded', () => {
 // ブラウザ戻る/進むでハッシュが変わったら画面を切り替える
 // popstate 時は pushState せず replaceState で対応（戻るループ防止）
 window.addEventListener('popstate', () => {
-  const screen = location.hash.slice(1) || 'home';
+  const hashVal = location.hash.slice(1) || 'home';
+  const chatMatch = hashVal.match(/^chat\/(\d+)$/);
   _navReplace = true;
-  navTo(screen);
+  if (chatMatch) {
+    openConversation(parseInt(chatMatch[1]));
+  } else {
+    navTo(hashVal);
+  }
   _navReplace = false;
 });
 

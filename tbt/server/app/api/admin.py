@@ -15,6 +15,7 @@ from app.models.battle import Tournament, TournamentEntry, BattleLog
 from app.models.shop import PurchaseHistory, ShopProduct
 from app.models.social_account import SocialAccount
 from app.models.admin import AppSetting, NpcName, AdminAuditLog
+from app.models.gacha import GachaPool, GachaPoolItem, GachaPoolItemEquip
 from app.schemas.admin import (
     AdminUserSummary, AdminUserDetail, AdminUserUpdate, AdminUserListResponse,
     AdminCharacterSummary, AdminCharacterUpdate,
@@ -837,3 +838,130 @@ async def list_audit_logs(
     offset = (page - 1) * per_page
     result = await db.execute(query.offset(offset).limit(per_page))
     return [AdminAuditLogResponse.model_validate(log) for log in result.scalars().all()]
+
+
+# ==================== ガチャ ====================
+
+RARITY_NAMES = {1: "N", 2: "R", 3: "SR", 4: "SSR", 5: "UR"}
+
+
+@router.get("/gacha/pools")
+async def admin_gacha_pools(admin: AdminUser, db: DbSession):
+    """ガチャプール一覧（全プール、アイテム・確率付き）"""
+    result = await db.execute(select(GachaPool).order_by(GachaPool.id))
+    pools = result.scalars().all()
+
+    out = []
+    for pool in pools:
+        pool_data = {
+            "id": pool.id,
+            "name": pool.name,
+            "description": pool.description,
+            "pool_type": pool.pool_type,
+            "cost_type": pool.cost_type,
+            "cost_amount": pool.cost_amount,
+            "is_active": pool.is_active,
+            "pity_count": pool.pity_count,
+            "items": [],
+            "rates": {},
+        }
+
+        if pool.pool_type == "item":
+            eq_result = await db.execute(
+                select(GachaPoolItemEquip).where(GachaPoolItemEquip.pool_id == pool.id)
+            )
+            equip_items = eq_result.scalars().all()
+            total_weight = sum(i.weight for i in equip_items)
+            rarity_weights: dict[int, int] = {}
+            for i in equip_items:
+                tmpl = i.item_template
+                pool_data["items"].append({
+                    "id": i.id,
+                    "template_id": i.item_template_id,
+                    "name": tmpl.name if tmpl else "???",
+                    "rarity": tmpl.rarity if tmpl else 1,
+                    "weight": i.weight,
+                })
+                r = tmpl.rarity if tmpl else 1
+                rarity_weights[r] = rarity_weights.get(r, 0) + i.weight
+            for r, w in sorted(rarity_weights.items()):
+                pool_data["rates"][RARITY_NAMES.get(r, str(r))] = round(w / total_weight * 100, 2) if total_weight else 0
+        else:
+            total_weight = sum(i.weight for i in pool.items)
+            rarity_weights: dict[int, int] = {}
+            for i in pool.items:
+                tmpl = i.template
+                pool_data["items"].append({
+                    "id": i.id,
+                    "template_id": i.template_id,
+                    "name": tmpl.name if tmpl else "???",
+                    "rarity": tmpl.rarity if tmpl else 1,
+                    "weight": i.weight,
+                })
+                r = tmpl.rarity if tmpl else 1
+                rarity_weights[r] = rarity_weights.get(r, 0) + i.weight
+            for r, w in sorted(rarity_weights.items()):
+                pool_data["rates"][RARITY_NAMES.get(r, str(r))] = round(w / total_weight * 100, 2) if total_weight else 0
+
+        out.append(pool_data)
+    return out
+
+
+class GachaPoolUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    cost_amount: int | None = None
+    is_active: int | None = None
+    pity_count: int | None = None
+
+
+@router.patch("/gacha/pools/{pool_id}")
+async def admin_update_gacha_pool(pool_id: int, req: GachaPoolUpdate, admin: AdminUser, db: DbSession):
+    """ガチャプール設定更新"""
+    result = await db.execute(select(GachaPool).where(GachaPool.id == pool_id))
+    pool = result.scalar_one_or_none()
+    if not pool:
+        raise HTTPException(status_code=404, detail="Pool not found")
+
+    changes = {}
+    for field, value in req.model_dump(exclude_unset=True).items():
+        old_val = getattr(pool, field)
+        setattr(pool, field, value)
+        changes[field] = {"old": old_val, "new": value}
+
+    await _audit_log(db, admin.id, "update_gacha_pool", "gacha_pool", str(pool_id), changes)
+    await db.flush()
+    return {"message": "Updated", "changes": changes}
+
+
+class GachaWeightUpdate(BaseModel):
+    weights: dict[int, int]  # {item_id: new_weight}
+
+
+@router.patch("/gacha/pools/{pool_id}/weights")
+async def admin_update_gacha_weights(pool_id: int, req: GachaWeightUpdate, admin: AdminUser, db: DbSession):
+    """ガチャプール内アイテムの重み一括更新"""
+    result = await db.execute(select(GachaPool).where(GachaPool.id == pool_id))
+    pool = result.scalar_one_or_none()
+    if not pool:
+        raise HTTPException(status_code=404, detail="Pool not found")
+
+    changes = {}
+    if pool.pool_type == "item":
+        for item_id, new_weight in req.weights.items():
+            r = await db.execute(select(GachaPoolItemEquip).where(GachaPoolItemEquip.id == item_id, GachaPoolItemEquip.pool_id == pool_id))
+            item = r.scalar_one_or_none()
+            if item:
+                changes[str(item_id)] = {"old": item.weight, "new": new_weight, "name": item.item_template.name if item.item_template else ""}
+                item.weight = new_weight
+    else:
+        for item_id, new_weight in req.weights.items():
+            r = await db.execute(select(GachaPoolItem).where(GachaPoolItem.id == item_id, GachaPoolItem.pool_id == pool_id))
+            item = r.scalar_one_or_none()
+            if item:
+                changes[str(item_id)] = {"old": item.weight, "new": new_weight, "name": item.template.name if item.template else ""}
+                item.weight = new_weight
+
+    await _audit_log(db, admin.id, "update_gacha_weights", "gacha_pool", str(pool_id), changes)
+    await db.flush()
+    return {"message": "Updated", "changes": changes}

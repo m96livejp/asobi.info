@@ -127,6 +127,7 @@ body {
     padding: 0 16px;
     height: 100vh;
     overflow-y: auto;
+    padding-top: 4px;
 }
 
 /* ===== Section header ===== */
@@ -188,7 +189,7 @@ body {
     text-transform: uppercase;
     letter-spacing: 0.5px;
     position: sticky;
-    top: calc(var(--sticky-header-h) + var(--sticky-toolbar-h));
+    top: calc(var(--sticky-header-h) + var(--sticky-toolbar-h, 50px));
     z-index: 10;
     background: #112244;
 }

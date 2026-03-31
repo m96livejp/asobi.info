@@ -62,26 +62,9 @@ $currentUser    = asobiGetCurrentUser();
       background: #f0f2f5;
       color: #1d2d3a;
       min-height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
-    .site-header {
-      background: rgba(255,255,255,0.85);
-      border-bottom: 1px solid #e0e0e0;
-    }
-    .site-logo a { color: #1d1d1f; text-decoration: none; font-size: 1.5rem; font-weight: 700; }
-    .header-right { display: flex; align-items: center; gap: 24px; }
-    .site-nav ul { display: flex; list-style: none; gap: 24px; }
-    .site-nav a { color: #1d1d1f; font-weight: 500; font-size: 0.9rem; }
-    .admin-badge {
-      display: inline-block; font-size: 0.7rem; font-weight: 700;
-      padding: 2px 8px; background: linear-gradient(135deg, #e74c3c, #c0392b);
-      color: #fff; border-radius: 10px; margin-left: 6px; vertical-align: middle;
-    }
-    @media (max-width: 768px) {
-      .site-header .container { flex-direction: row; align-items: center; }
-      .site-nav { display: none; }
-    }
-
-    .admin-body { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
     h1 { font-size: 1.4rem; margin-bottom: 32px; color: #1d2d3a; }
     .section-title { font-size: 1rem; font-weight: 600; color: #637080; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #e0e4e8; }
 
@@ -137,24 +120,9 @@ $currentUser    = asobiGetCurrentUser();
   </style>
 </head>
 <body>
-  <header class="site-header">
-    <div class="container">
-      <div class="site-logo"><a href="/admin/">あそび<span class="admin-badge">ADMIN</span></a></div>
-      <div class="header-right">
-        <nav class="site-nav">
-          <ul>
-            <li><a href="/">サイトトップ</a></li>
-            <li><a href="/admin/">ダッシュボード</a></li>
-            <li><a href="/admin/users.php">ユーザー管理</a></li>
-            <li><a href="/admin/banned-words.php">禁止ワード</a></li>
-          </ul>
-        </nav>
-      </div>
-    </div>
-  </header>
+  <?php $adminActivePage = 'banned-words'; require __DIR__ . '/_sidebar.php'; ?>
 
-  <div class="admin-body">
-    <h1>禁止ワード管理</h1>
+    <h1 style="font-size:1.4rem;margin-bottom:32px;">禁止ワード管理</h1>
 
     <?php if ($msg): ?>
     <?php [$type, $text] = explode(':', $msg, 2); ?>
@@ -236,8 +204,9 @@ $currentUser    = asobiGetCurrentUser();
       </tbody>
     </table>
     <?php endif; ?>
+  </main>
   </div>
 
-  <script src="/assets/js/common.js?v=20260327e"></script>
+  <script src="/assets/js/common.js?v=20260327h"></script>
 </body>
 </html>

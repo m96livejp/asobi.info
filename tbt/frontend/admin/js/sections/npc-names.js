@@ -5,7 +5,7 @@ const NpcNamesSection = {
                 <h2>NPC名前管理</h2>
                 <button class="btn btn-primary" onclick="NpcNamesSection.showAdd()">+ 追加</button>
             </div>
-            <div id="npc-names-content" class="card"><div class="loading">読み込み中...</div></div>
+            <div id="npc-names-content" class="card" style="--sticky-toolbar-h:0px"><div class="loading">読み込み中...</div></div>
         `;
         await this.loadNames();
     },

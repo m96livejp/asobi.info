@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/tts", tags=["tts"])
 
 class TTSRequest(BaseModel):
     text: str
-    style_id: int
+    style_id: int | None = None    # None の場合はキャラクターの既定スタイルを使用
     speed: int | None = None       # 0〜100（50=普通）
     pitch: int | None = None       # 0〜100
     intonation: int | None = None  # 0〜100
@@ -100,6 +100,19 @@ async def synthesize(
     if not char or not char.voice_model:
         raise HTTPException(status_code=404, detail="音声設定がありません")
 
+    # style_id が未指定の場合、キャラクターの tts_styles から既定スタイルを解決
+    style_id = req.style_id
+    if style_id is None:
+        try:
+            styles = json.loads(char.tts_styles or "[]")
+            # "ノーマル" を優先、なければ先頭スタイルを使用
+            normal = next((s["id"] for s in styles if s.get("name") == "ノーマル"), None)
+            style_id = normal if normal is not None else (styles[0]["id"] if styles else None)
+        except Exception:
+            style_id = None
+        if style_id is None:
+            raise HTTPException(status_code=400, detail="音声スタイルが設定されていません")
+
     vv_url = await _get_vv_url(db)
     text = req.text.strip()[:300]
     if not text:
@@ -120,13 +133,13 @@ async def synthesize(
         async with httpx.AsyncClient(timeout=30.0) as client:
             q_res = await client.post(
                 f"{vv_url}/audio_query",
-                params={"text": text, "speaker": req.style_id},
+                params={"text": text, "speaker": style_id},
             )
             q_res.raise_for_status()
             query = _apply_voice_params(q_res.json(), req, vp_config)
             s_res = await client.post(
                 f"{vv_url}/synthesis",
-                params={"speaker": req.style_id},
+                params={"speaker": style_id},
                 json=query,
                 headers={"Content-Type": "application/json"},
             )

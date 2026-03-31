@@ -15,10 +15,45 @@ async def get_ai_settings(db: AsyncSession) -> AiSettings | None:
     return result.scalar_one_or_none()
 
 
-DEFAULT_RESPONSE_GUIDELINE = "キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。返答は基本的に20〜70文字の短い返事を心がけてください。長い説明が必要な場合のみ例外的に長くしてください。箇条書きや見出しは使わず、会話調で答えてください。"
+DEFAULT_RESPONSE_GUIDELINE = "キャラクターとして自然に会話してください。設定に忠実に、一人称や口調を維持してください。返答は基本的に20〜70文字の短い返事を心がけてください。長い説明が必要な場合のみ例外的に長くしてください。箇条書きや見出しは使わず、会話調で答えてください。返答は必ず日本語で行ってください。"
+
+DEFAULT_STATE_INSTRUCTION = (
+    "## STATEブロック（必須）\n"
+    "会話テキストの後に必ず以下の形式でステータスを返す。\n"
+    "ステータスはキャラクターの性格に基づき、会話の流れに応じて自然に変化させる。\n"
+    "「未指定」のステータスは会話の中で明確にわかった場合のみ更新する。推測や想像で埋めない。\n"
+    "記憶には会話の中で覚えておくべき重要事項を追加・削除する。\n"
+    "各ステータスは短く簡潔に記述する。\n"
+    "【重要】全てのステータス値と記憶はなるべく日本語で記述する。固有名詞以外英語は使わない。"
+)
+
+DEFAULT_TTS_INSTRUCTION = (
+    "## 音声スタイル指示\n"
+    "返答は以下の形式で記述する：[SE名]{スタイル}テキスト\n"
+    "- [SE名]: 動作や効果音（例：[ドアをノックする]）。不要な場合は省略可。\n"
+    "- {スタイル}: 次の中から必ず1つ選択: {styles}\n"
+    "- テキスト: キャラクターのセリフ。\n"
+    "- セグメントは意味のまとまり（文や節）ごとに区切る。1文字ずつ区切らない。\n"
+    "- 記号のみ（？！…など）のセグメントにはスタイルを付けない。\n"
+    "例：[ドアをノックする]{元気}失礼します。{ノーマル}初めまして。\n"
+    "スタイルは全てのセグメントに必ず付ける。"
+)
+
+DEFAULT_TTS_INSTRUCTION_PARAMS = (
+    "## 音声スタイル指示\n"
+    "返答は以下の形式で記述する：[SE名]{スタイル:速度:ピッチ:抑揚:音量}テキスト\n"
+    "- [SE名]: 動作や効果音（例：[ドアをノックする]）。不要な場合は省略可。\n"
+    "- {スタイル}: 次の中から必ず1つ選択: {styles}\n"
+    "- 速度:ピッチ:抑揚:音量 は各0〜100の整数（50=普通の状態）。会話の感情に合わせて変化させる。\n"
+    "- テキスト: キャラクターのセリフ。\n"
+    "- セグメントは意味のまとまり（文や節）ごとに区切る。1文字ずつ区切らない。\n"
+    "- 記号のみ（？！…など）のセグメントにはスタイルを付けない。\n"
+    "例：[ドアをノックする]{元気:65:55:70:50}失礼します！{驚き:75:60:80:55}え、本当に？\n"
+    "スタイルとパラメータは全てのセグメントに必ず付ける。"
+)
 
 
-def build_system_prompt(character, conv_state=None, state_enabled: bool = False, response_guideline: str | None = None, state_fields: list | None = None, tts_voice_params: str | None = None) -> str:
+def build_system_prompt(character, conv_state=None, state_enabled: bool = False, response_guideline: str | None = None, state_fields: list | None = None, tts_voice_params: str | None = None, state_instruction: str | None = None, tts_instruction: str | None = None, tts_instruction_params: str | None = None) -> str:
     """キャラクター設定からシステムプロンプトを組み立てる
 
     Args:
@@ -27,6 +62,9 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False,
         state_enabled: ステータス機能が有効かどうか
         response_guideline: レスポンス指示文（Noneの場合はデフォルト使用）
         state_fields: ステータスフィールド定義リスト [{key, label, default, enabled}]
+        state_instruction: STATEブロック指示テキスト（Noneの場合はデフォルト使用）
+        tts_instruction: TTS音声スタイル指示テキスト（通常、Noneの場合はデフォルト使用）
+        tts_instruction_params: TTS音声スタイル指示テキスト（パラメータ付き、Noneの場合はデフォルト使用）
     """
     parts = []
     if character.char_name:
@@ -111,19 +149,25 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False,
             parts.append(f"## 記憶\n{mem_lines}")
 
         # STATE JSONテンプレートを動的生成（TTS指示の後に配置するため保持）
-        state_template_keys = {f["key"]: "..." for f in active_fields}
-        state_template_keys["memories"] = ["..."]
+        # キーは英語だが、例示値を日本語にしてOllamaが日本語で返しやすくする
+        state_template_keys = {}
+        field_examples = {
+            "relationship": "友好的",
+            "mood": "嬉しい",
+            "environment": "自宅のリビング",
+            "situation": "雑談中",
+            "inventory": "なし",
+            "goals": "仲良くなりたい",
+        }
+        for f in active_fields:
+            key = f["key"]
+            state_template_keys[key] = field_examples.get(key, f.get("default", "（日本語で記述）"))
+        state_template_keys["memories"] = ["ユーザーの名前は○○", "好きな食べ物は△△"]
         state_template_str = json.dumps(state_template_keys, ensure_ascii=False)
-        _state_instruction = (
-            "## STATEブロック（必須）\n"
-            "会話テキストを返した後、必ず以下の形式でステータスを返してください。\n"
-            "ステータスはキャラクターの性格に基づき、会話の流れに応じて自然に変化させてください。\n"
-            "記憶には会話の中で覚えておくべき重要事項を追加・削除してください。\n"
-            "各ステータスは短く簡潔に記述してください。値は必ず日本語で記述してください。\n\n"
-            f"<<<STATE>>>\n{state_template_str}\n<<</STATE>>>"
-        )
+        _instr_text = state_instruction if state_instruction else DEFAULT_STATE_INSTRUCTION
+        _state_instruction_final = f"{_instr_text}\n\n<<<STATE>>>\n{state_template_str}\n<<</STATE>>>"
     else:
-        _state_instruction = None
+        _state_instruction_final = None
 
     # TTS音声スタイル指示（キャラクターに音声設定がある場合）
     if character.voice_model and character.tts_styles:
@@ -135,32 +179,14 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False,
         if style_names:
             style_str = "、".join(style_names)
             if tts_voice_params:
-                # 音声パラメータ込みのインライン形式
-                parts.append(
-                    "## 音声スタイル指示\n"
-                    "返答は以下の形式で記述してください：[SE名]{スタイル:速度:ピッチ:抑揚:音量}テキスト\n"
-                    "- [SE名]: 動作や効果音（例：[ドアをノックする]）。不要な場合は省略可。\n"
-                    f"- {{スタイル}}: 次の中から必ず1つ選択: {style_str}\n"
-                    "- 速度:ピッチ:抑揚:音量 は各0〜100の整数（50=普通の状態）。会話の感情に合わせて変化させてください。\n"
-                    "- テキスト: キャラクターのセリフ。\n"
-                    "例：[ドアをノックする]{元気:65:55:70:50}失礼します！{驚き:75:60:80:55}え、本当に？\n"
-                    "スタイルとパラメータは全てのセグメントに必ず付けてください。"
-                )
+                _tts_text = tts_instruction_params if tts_instruction_params else DEFAULT_TTS_INSTRUCTION_PARAMS
             else:
-                # 通常形式（パラメータなし）
-                parts.append(
-                    "## 音声スタイル指示\n"
-                    "返答は以下の形式で記述してください：[SE名]{スタイル}テキスト\n"
-                    "- [SE名]: 動作や効果音（例：[ドアをノックする]）。不要な場合は省略可。\n"
-                    f"- {{スタイル}}: 次の中から必ず1つ選択: {style_str}\n"
-                    "- テキスト: キャラクターのセリフ。\n"
-                    "例：[ドアをノックする]{元気}失礼します。{ノーマル}初めまして。\n"
-                    "スタイルは全てのセグメントに必ず付けてください。"
-                )
+                _tts_text = tts_instruction if tts_instruction else DEFAULT_TTS_INSTRUCTION
+            parts.append(_tts_text.replace("{styles}", style_str))
 
     # STATEブロック指示はTTS指示の後に配置（最後に置くことでAIが確実に従う）
-    if _state_instruction:
-        parts.append(_state_instruction)
+    if _state_instruction_final:
+        parts.append(_state_instruction_final)
 
     return "\n\n".join(parts)
 

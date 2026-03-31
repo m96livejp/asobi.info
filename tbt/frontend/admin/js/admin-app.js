@@ -9,6 +9,7 @@ const AdminApp = {
         characters: CharactersSection,
         items: ItemsSection,
         settings: SettingsSection,
+        gacha: GachaSection,
         'npc-names': NpcNamesSection,
         tournaments: TournamentsSection,
         logs: LogsSection,
@@ -92,11 +93,6 @@ const AdminApp = {
             el.onclick = () => this.navigate(el.dataset.section);
         });
 
-        // ログアウト
-        document.getElementById('logout-btn').onclick = () => {
-            localStorage.removeItem('admin_token');
-            location.reload();
-        };
     },
 
     navigate(section) {

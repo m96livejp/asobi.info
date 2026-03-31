@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class GuestRegisterRequest(BaseModel):
     device_id: str
-    display_name: str = "プレイヤー"
+    display_name: str = "冒険者"
 
 
 class LoginRequest(BaseModel):
@@ -29,6 +29,7 @@ class UserResponse(BaseModel):
     item_gacha_tickets: int
     tutorial_completed: int
     created_at: datetime
+    asobi_user_id: int | None = None
 
     class Config:
         from_attributes = True

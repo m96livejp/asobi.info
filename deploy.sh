@@ -47,6 +47,7 @@ if [ -z "$SITE" ]; then
     echo "  bash deploy.sh dbd          # dbd全体をデプロイ"
     echo "  bash deploy.sh info         # メインサイト全体をデプロイ"
     echo "  bash deploy.sh shared       # 共通assets全体をデプロイ"
+    echo "  bash deploy.sh voice        # voice全体をデプロイ"
     echo "  bash deploy.sh aic          # aic全体をデプロイ"
     echo "  bash deploy.sh all          # 全サイトをデプロイ"
     exit 1
@@ -67,6 +68,8 @@ case "$SITE" in
     dbd)    deploy "dbd" "/opt/asobi/dbd" ;;
     info)   deploy "info" "/opt/asobi/info" ;;
     shared) deploy "shared" "/opt/asobi/shared" ;;
+    voice)  deploy "voice" "/opt/asobi/voice" ;;
+    game)   deploy "game" "/opt/asobi/game" ;;
     aic)    deploy_aic ;;
     all)
         deploy "shared" "/opt/asobi/shared"

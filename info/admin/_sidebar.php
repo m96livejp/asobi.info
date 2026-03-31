@@ -8,7 +8,7 @@
  *   // ... ページ本体 ...
  *   // 末尾に </main></div> を書く
  *
- * ページID: dashboard, users, banned-words, settings, font, todos, content-design, api-status, backup, access-logs
+ * ページID: dashboard, users, banned-words, settings, font, todos, content-design, api-status, backup, access-stats, access-logs
  */
 $adminActivePage = $adminActivePage ?? '';
 function _adminSbActive(string $page): string {
@@ -114,8 +114,11 @@ function _adminSbActive(string $page): string {
       <a href="/admin/backup.php" class="sidebar-link<?= _adminSbActive('backup') ?>">
         <span class="sb-icon">💾</span>バックアップ管理
       </a>
+      <a href="/admin/access-stats.php" class="sidebar-link<?= _adminSbActive('access-stats') ?>">
+        <span class="sb-icon">📊</span>アクセス統計
+      </a>
       <a href="/admin/access-logs.php" class="sidebar-link<?= _adminSbActive('access-logs') ?>">
-        <span class="sb-icon">📋</span>アクセスログ
+        <span class="sb-icon">📋</span>アクセス生ログ
       </a>
     </div>
     <div class="sidebar-divider"></div>

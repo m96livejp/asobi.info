@@ -219,23 +219,22 @@ register_shutdown_function('asobiLogAccess');
 
     <section class="games-section">
       <div class="games-grid">
-        <a href="https://tbt.asobi.info" class="game-card card-tbt" style="grid-column:1/-1;">
+        <a href="https://aic.asobi.info" class="game-card card-aic" style="grid-column:1/-1;">
+          <div class="game-card-inner">
+            <span class="game-card-arrow">&rarr;</span>
+            <div class="game-card-tag">AI Chat<span class="original-badge">ASOBI ORIGINAL</span></div>
+            <h2>AIC <span class="card-aic-badge">NEW</span></h2>
+            <p>AIキャラクターとチャットできるオリジナルサービス。好きなキャラクターと会話しよう！</p>
+          </div>
+        </a>
+
+        <a href="https://tbt.asobi.info" class="game-card card-tbt">
           <div class="game-card-bg" style="background-image:url('/assets/images/card-tbt.jpg')"></div>
           <div class="game-card-inner">
             <span class="game-card-arrow">&rarr;</span>
             <div class="game-card-tag">Original Game<span class="original-badge">ASOBI ORIGINAL</span></div>
             <h2>Tournament Battle</h2>
             <p>あそびオリジナルのトーナメントバトルゲーム。今すぐプレイしよう！</p>
-          </div>
-        </a>
-
-        <a href="https://dbd.asobi.info" class="game-card card-dbd">
-          <div class="game-card-bg" style="background-image:url('/assets/images/card-dbd.jpg')"></div>
-          <div class="game-card-inner">
-            <span class="game-card-arrow">&rarr;</span>
-            <div class="game-card-tag">Horror / Survival</div>
-            <h2>Dead by Daylight</h2>
-            <p>キラー・サバイバーのパーク検索、アドオン一覧、キラー能力・速度データベース</p>
           </div>
         </a>
 
@@ -249,16 +248,15 @@ register_shutdown_function('asobiLogAccess');
           </div>
         </a>
 
-        <?php if (asobiIsAdmin()): ?>
-        <a href="https://aic.asobi.info" class="game-card card-aic">
+        <a href="https://dbd.asobi.info" class="game-card card-dbd">
+          <div class="game-card-bg" style="background-image:url('/assets/images/card-dbd.jpg')"></div>
           <div class="game-card-inner">
             <span class="game-card-arrow">&rarr;</span>
-            <div class="game-card-tag">AI Chat<span class="card-aic-badge">開発中</span></div>
-            <h2>AIC</h2>
-            <p>AIキャラクターとチャットできるオリジナルサービス。</p>
+            <div class="game-card-tag">Horror / Survival</div>
+            <h2>Dead by Daylight</h2>
+            <p>キラー・サバイバーのパーク検索、アドオン一覧、キラー能力・速度データベース</p>
           </div>
         </a>
-        <?php endif; ?>
       </div>
     </section>
   </main>
@@ -270,11 +268,13 @@ register_shutdown_function('asobiLogAccess');
         &nbsp;·&nbsp;
         <a href="/about/currency.html" style="color:inherit;">あそびウォレット</a>
         &nbsp;·&nbsp;
+        <a href="/terms.html" style="color:inherit;">利用規約</a>
+        &nbsp;·&nbsp;
         <a href="/contact.php" style="color:inherit;">お問い合わせ</a>
       </p>
       <p>&copy; 2026 あそび - ゲーム情報ポータル</p>
     </div>
   </footer>
-  <script src="/assets/js/common.js?v=20260327e"></script>
+  <script src="/assets/js/common.js?v=20260327i"></script>
 </body>
 </html>

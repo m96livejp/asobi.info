@@ -55,7 +55,7 @@ SAMPLES = [
 
 async def init_sample_characters():
     async with async_session() as db:
-        result = await db.execute(select(Character).where(Character.is_sample == 1).limit(1))
+        result = await db.execute(select(Character).where(Character.is_recommended == 1).limit(1))
         if result.scalar_one_or_none():
             return  # 既に初期化済み
 
@@ -65,7 +65,7 @@ async def init_sample_characters():
                 name=s["name"],
                 ai_model=s["ai_model"],
                 is_public=1,
-                is_sample=1,
+                is_recommended=1,
                 char_name=s["char_name"],
                 char_age=s["char_age"],
                 profile=s["profile"],

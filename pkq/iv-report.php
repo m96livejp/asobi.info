@@ -83,13 +83,13 @@ if (isset($_GET['edit'])) {
         $msg_type = 'error';
     }
 }
-// 進化コピー（level/hp/atk を空にして新規登録）
+// 進化コピー（level/hp/atk を空にして新規登録）— 登録者本人のみ許可
 if (!$editRecord && isset($_GET['copy'])) {
     $copyId = (int)$_GET['copy'];
     $stmt = $db->prepare('SELECT * FROM iv_reports WHERE id = ?');
     $stmt->execute([$copyId]);
     $rec = $stmt->fetch();
-    if ($rec) {
+    if ($rec && canEditReport($rec, $isLoggedIn, $sessionUserId, getClientIp(), $isAdmin)) {
         $editRecord = $rec;
         $editRecord['id']    = null;  // 新規扱い
         $editRecord['level'] = '';
@@ -102,6 +102,9 @@ if (!$editRecord && isset($_GET['copy'])) {
         if ($evo) {
             $editRecord['pokemon_id'] = $evo['pokedex_no'];
         }
+    } elseif ($rec) {
+        $msg = 'この投稿の進化後登録は登録者本人のみ行えます。';
+        $msg_type = 'error';
     }
 }
 
@@ -1571,7 +1574,7 @@ $stats = $db->query("
     </div>
   </footer>
 
-  <script src="https://asobi.info/assets/js/common.js?v=20260327e"></script>
+  <script src="https://asobi.info/assets/js/common.js?v=20260327h"></script>
   <script>
   // 選択状態の初期化
   const initPot     = <?= json_encode(fv('pot_type')) ?>;

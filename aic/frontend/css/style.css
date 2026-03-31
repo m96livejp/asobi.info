@@ -251,6 +251,12 @@ body {
   word-break: break-word;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+@media (hover: hover) {
+  .msg { -webkit-user-select: text; user-select: text; }
 }
 .msg-user {
   background: rgba(253, 208, 228, 0.92);
@@ -290,11 +296,16 @@ body {
   white-space: nowrap;
   transition: opacity 0.15s, transform 0.15s;
   z-index: 1;
+  animation: tts-btn-appear 0.4s ease forwards;
 }
-.msg-ai:hover .tts-btn { opacity: 0.85; }
-.tts-btn:hover { opacity: 1 !important; transform: scale(1.1); }
-.tts-btn.tts-playing { opacity: 1; }
-.tts-btn.tts-loading { opacity: 0.9; }
+@keyframes tts-btn-appear {
+  from { opacity: 0; }
+  to   { opacity: 0.45; }
+}
+.msg-ai:hover .tts-btn:not(.tts-playing):not(.tts-loading) { opacity: 0.85; }
+.tts-btn:not(.tts-playing):not(.tts-loading):hover { opacity: 1 !important; transform: scale(1.1); }
+.tts-btn.tts-playing, .tts-btn.tts-loading { animation: none; opacity: 1; }
+.tts-btn.tts-playing:hover { transform: scale(1.1); }
 /* 秒数 */
 .tts-dur { font-size: 0.55rem; opacity: 0.9; letter-spacing: 0; }
 /* 再生中: 音波バー */
@@ -355,6 +366,10 @@ body {
   line-height: 1.6;
   white-space: pre-wrap;
 }
+
+/* 感情タグ表示（[...] / {...}）管理者チャット用 */
+.emotion-tag { display: none; font-size: 0.8em; color: #a07090; opacity: 0.8; }
+#chat-messages.show-emotions .emotion-tag { display: inline; }
 
 /* ステータス変化ログブロック（管理者チャット表示用） */
 .chat-state-block {
@@ -427,6 +442,7 @@ body {
   gap: 8px;
   flex-shrink: 0;
   position: relative;
+  z-index: 2;
 }
 
 /* チャット専用ヘッダー（背景画像の上に透過表示） */
@@ -887,8 +903,15 @@ body.kb-open .chat-header { padding: 6px 12px; }
   transition: background 0.15s;
   border: 1px solid var(--border);
   margin-bottom: 8px;
+  position: relative;
 }
 .chatlist-conv-item:hover { background: var(--bg-card); }
+.chatlist-conv-delete {
+  background: none; border: none; color: var(--sub); font-size: 1.1rem;
+  padding: 4px 8px; cursor: pointer; opacity: 0.4; transition: opacity 0.15s;
+  flex-shrink: 0; line-height: 1;
+}
+.chatlist-conv-delete:hover { opacity: 1; color: var(--accent); }
 .chatlist-conv-avatar {
   width: 44px; height: 44px; border-radius: 50%;
   background: var(--accent); color: #fff;
@@ -1255,6 +1278,12 @@ body.kb-open .chat-header { padding: 6px 12px; }
 .gen-gallery-item .gen-gallery-fav { opacity: 0; transition: opacity 0.15s; }
 .gen-gallery-item:hover .gen-gallery-fav,
 .gen-gallery-fav.active { opacity: 1; }
+.cr-gallery-used {
+  position: absolute; bottom: 4px; left: 4px;
+  font-size: 0.65rem; padding: 1px 5px; border-radius: 4px;
+  background: rgba(0,0,0,0.7); color: var(--accent);
+  pointer-events: none; font-weight: 600;
+}
 
 /* ギャラリーライトボックス */
 .cr-lightbox {
@@ -1576,10 +1605,14 @@ body.kb-open .chat-header { padding: 6px 12px; }
 .chat-menu-item.active { color: var(--accent-light); }
 .chat-menu-item.chat-menu-danger { color: var(--accent); }
 .chat-menu-item.chat-menu-danger:hover { background: rgba(216,27,96,0.12); }
+.chat-menu-item.toggle-on  { color: #4caf50; }
+.chat-menu-item.toggle-off { color: #f06060; }
 
-.auto-voice-icon { font-size: 1rem; line-height: 1; }
-.auto-voice-arrow { color: var(--text-secondary); font-size: 0.75rem; }
-#auto-voice-label { font-size: 0.88rem; flex: 1; }
+.chat-menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 5px 4px;
+}
 
 /* === スクロールバー === */
 ::-webkit-scrollbar { width: 6px; }

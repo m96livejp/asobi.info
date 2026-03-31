@@ -31,7 +31,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $values = ['username' => $username, 'display_name' => $displayName, 'email' => $email];
 
-    if ($password !== $password2) {
+    if (empty($_POST['agree_terms'])) {
+        $error = '利用規約への同意が必要です';
+    } elseif ($password !== $password2) {
         $error = 'パスワードが一致しません';
     } else {
         $check = asobiCheckBanned($username, 'username');
@@ -242,6 +244,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                autocomplete="email">
       </div>
 
+      <div class="field-group" style="margin-top:18px;">
+        <label style="display:flex; align-items:center; gap:8px; font-weight:400; cursor:pointer;">
+          <input type="checkbox" name="agree_terms" required style="width:18px; height:18px; accent-color:#a855f7; cursor:pointer;">
+          <span><a href="/terms.html" target="_blank" style="color:#a855f7; text-decoration:none; font-weight:600;">利用規約</a>に同意する</span>
+        </label>
+      </div>
+
       <button type="submit">登録してはじめる ✨</button>
     </form>
     <?php endif; ?>
@@ -251,6 +260,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <a href="/login.php<?= $redirect ? '?redirect=' . urlencode($redirect) : '' ?>">ログイン</a>
     </div>
   </div>
-<script src="/assets/js/common.js?v=20260327e"></script>
+<script src="/assets/js/common.js?v=20260327h"></script>
 </body>
 </html>

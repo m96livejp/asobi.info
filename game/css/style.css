@@ -1,0 +1,377 @@
+@import url('https://asobi.info/assets/css/font.php');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f8f8fc;
+  --bg2: #fff;
+  --text: #1a1a2e;
+  --text2: #555577;
+  --border: #e0e0ef;
+  --accent: #5c4ed4;
+  --accent2: #8b72ff;
+  --card-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+main {
+  font-family: 'Migu 1C', system-ui, sans-serif;
+}
+
+/* ─── ヘッダー ─── */
+.site-header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.site-header .container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  height: 54px;
+  gap: 16px;
+}
+.site-logo a {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: none;
+}
+.site-logo .sub {
+  font-size: 0.75rem;
+  color: var(--text2);
+  margin-left: 6px;
+}
+.site-nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.site-nav a {
+  font-size: 0.82rem;
+  color: var(--text2);
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+.site-nav a:hover, .site-nav a.active { background: var(--accent); color: #fff; }
+
+/* ─── レイアウト ─── */
+.container { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+.page-content { padding: 32px 20px 60px; max-width: 1100px; margin: 0 auto; }
+
+/* ─── ヒーロー ─── */
+.hero {
+  background: linear-gradient(135deg, #1a1a2e 0%, #2d2060 50%, #4a2080 100%);
+  color: #fff;
+  padding: 48px 20px;
+  text-align: center;
+}
+.hero h1 { font-size: 2.4rem; font-weight: 700; margin-bottom: 10px; }
+.hero p { font-size: 1.05rem; opacity: 0.8; max-width: 560px; margin: 0 auto; }
+
+/* ─── プラットフォームカード ─── */
+.platform-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 32px;
+}
+.platform-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 20px;
+  text-decoration: none;
+  color: var(--text);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  box-shadow: var(--card-shadow);
+}
+.platform-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(92,78,212,0.15);
+  border-color: var(--accent);
+}
+.platform-card .platform-icon { font-size: 2.4rem; }
+.platform-card .platform-name { font-size: 1rem; font-weight: 700; }
+.platform-card .platform-sub  { font-size: 0.78rem; color: var(--text2); }
+
+/* ─── ゲーム一覧 ─── */
+.search-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  max-width: 480px;
+}
+.search-bar input {
+  flex: 1;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: var(--bg2);
+  color: var(--text);
+  outline: none;
+}
+.search-bar input:focus { border-color: var(--accent); }
+.search-bar button {
+  padding: 9px 16px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
+}
+.game-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  text-decoration: none;
+  color: var(--text);
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: var(--card-shadow);
+}
+.game-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
+.game-card-img {
+  width: 100%;
+  aspect-ratio: 4/3;
+  background: linear-gradient(135deg, #2d2060, #4a2080);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  color: rgba(255,255,255,0.3);
+}
+.game-card-img img { width: 100%; height: 100%; object-fit: cover; }
+.game-card-info { padding: 10px 12px; }
+.game-card-title { font-size: 0.85rem; font-weight: 600; line-height: 1.4; }
+.game-card-sub   { font-size: 0.72rem; color: var(--text2); margin-top: 3px; }
+
+/* ─── ゲーム詳細 ─── */
+.breadcrumb { font-size: 0.8rem; color: var(--text2); margin-bottom: 16px; }
+.breadcrumb a { color: var(--accent); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
+.game-detail { display: grid; grid-template-columns: 280px 1fr; gap: 28px; }
+.game-detail-img {
+  background: linear-gradient(135deg, #2d2060, #4a2080);
+  border-radius: 12px;
+  aspect-ratio: 4/3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 4rem;
+  color: rgba(255,255,255,0.3);
+  overflow: hidden;
+}
+.game-detail-img img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; }
+.game-detail-body h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 8px; }
+.game-detail-body .game-en { font-size: 1rem; color: var(--text2); margin-bottom: 14px; }
+
+.game-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.game-meta-badge {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  color: var(--text2);
+}
+.game-meta-badge strong { color: var(--text); font-weight: 600; }
+
+.game-desc { font-size: 0.95rem; line-height: 1.8; color: var(--text2); }
+
+/* ─── コメント ─── */
+.comments-section { margin-top: 48px; }
+.comments-section h2 { font-size: 1.2rem; font-weight: 700; margin-bottom: 20px; border-bottom: 2px solid var(--accent); padding-bottom: 8px; }
+
+.comment-list { display: flex; flex-direction: column; gap: 14px; margin-bottom: 28px; }
+.comment-item {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.comment-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.comment-user { font-weight: 600; font-size: 0.88rem; }
+.comment-date { font-size: 0.75rem; color: var(--text2); }
+.comment-body { font-size: 0.9rem; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+.comment-empty { color: var(--text2); font-size: 0.9rem; padding: 12px 0; }
+
+.comment-form { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+.comment-form h3 { font-size: 1rem; font-weight: 700; margin-bottom: 14px; }
+.comment-form textarea {
+  width: 100%;
+  min-height: 100px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+.comment-form textarea:focus { border-color: var(--accent); }
+.comment-form .form-hint { font-size: 0.75rem; color: var(--text2); margin-top: 6px; margin-bottom: 12px; }
+.btn-submit {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 22px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-submit:hover { opacity: 0.88; }
+.btn-submit:disabled { opacity: 0.5; cursor: default; }
+.form-msg { margin-top: 10px; font-size: 0.88rem; padding: 8px 12px; border-radius: 6px; display: none; }
+.form-msg.ok  { background: #e8f5e9; color: #2e7d32; }
+.form-msg.err { background: #fff1f2; color: #c0392b; }
+
+/* ─── 裏技セクション ─── */
+.tips-section { margin-top: 48px; }
+.tips-section h2 { font-size: 1.2rem; font-weight: 700; margin-bottom: 20px; border-bottom: 2px solid var(--accent); padding-bottom: 8px; }
+
+.tips-list { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+.tip-item {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.tip-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.tip-category {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #fff;
+  white-space: nowrap;
+}
+.tip-cat-cheat { background: #e67e22; }
+.tip-cat-code  { background: #3498db; }
+.tip-cat-bug   { background: #e74c3c; }
+.tip-cat-other { background: #95a5a6; }
+.tip-title { font-weight: 600; font-size: 0.95rem; }
+.tip-body {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 6px;
+  font-family: 'Migu 1M', monospace, system-ui;
+}
+.tip-footer { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text2); margin-top: 8px; }
+
+.tips-form-toggle {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+.tips-form-toggle summary {
+  padding: 12px 16px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--accent);
+}
+.tips-form {
+  padding: 0 16px 16px;
+}
+.tips-form textarea {
+  width: 100%;
+  min-height: 100px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+.tips-form textarea:focus { border-color: var(--accent); }
+
+/* ─── フッター ─── */
+.site-footer {
+  background: var(--text);
+  color: rgba(255,255,255,0.5);
+  text-align: center;
+  padding: 24px 20px;
+  font-size: 0.8rem;
+  margin-top: 48px;
+}
+.site-footer a { color: rgba(255,255,255,0.6); text-decoration: none; }
+.site-footer a:hover { color: #fff; }
+
+/* ─── ページング ─── */
+.pagination { display: flex; gap: 6px; justify-content: center; margin-top: 28px; flex-wrap: wrap; }
+.pagination button {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.15s;
+}
+.pagination button:hover, .pagination button.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* ─── ローディング ─── */
+.loading { text-align: center; padding: 40px; color: var(--text2); }
+.spinner {
+  width: 32px; height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── ページタイトル ─── */
+.page-title { font-size: 1.6rem; font-weight: 700; margin-bottom: 6px; }
+.page-subtitle { font-size: 0.9rem; color: var(--text2); margin-bottom: 24px; }
+
+/* ─── レスポンシブ ─── */
+@media (max-width: 768px) {
+  .hero h1 { font-size: 1.7rem; }
+  .platform-grid { grid-template-columns: repeat(2, 1fr); }
+  .game-grid { grid-template-columns: repeat(2, 1fr); }
+  .game-detail { grid-template-columns: 1fr; }
+  .game-detail-img { max-width: 280px; }
+}

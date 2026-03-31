@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 
 from ..database import async_session
-from ..models.image import GenerationQueue, UserImage
+from ..models.image import GenerationQueue, UserImage, SceneImageTask
 from ..models.settings import SdSettings, SdSelectableModel
 
 IMAGE_DIR = "/opt/asobi/aic/frontend/images/avatars"
@@ -153,8 +153,32 @@ async def _process_job(job: GenerationQueue, db: AsyncSession):
         "batch_size": job.batch_size or BATCH_SIZE,
         "n_iter": 1,
     }
+    # モデル指定: Forge の Gradio /run/checkpoint_change で実際にモデルをVRAMにロードする
+    # （/sdapi/v1/options POST は名前を変えるだけでロードしない）
     if job.model:
-        payload["override_settings"] = {"sd_model_checkpoint": job.model}
+        from .scene_image_service import _resolve_model_for_options, _normalize_model_name
+        resolved_model = await _resolve_model_for_options(endpoint, job.model)
+        print(f"[queue_worker] job.model={job.model!r}  resolved={resolved_model!r}")
+        try:
+            # 現在のモデルを確認
+            async with httpx.AsyncClient(timeout=10) as mc:
+                opts_r = await mc.get(f"{endpoint}/sdapi/v1/options")
+                current = opts_r.json().get("sd_model_checkpoint") if opts_r.status_code == 200 else None
+            current_norm = _normalize_model_name(current) if current else ""
+            resolved_norm = _normalize_model_name(resolved_model)
+            print(f"[queue_worker] current={current!r} (norm={current_norm!r})  target={resolved_model!r} (norm={resolved_norm!r})")
+            if current_norm != resolved_norm:
+                print(f"[queue_worker] switching model via Gradio API...")
+                async with httpx.AsyncClient(timeout=300) as mc:
+                    switch_r = await mc.post(f"{endpoint}/run/checkpoint_change",
+                                  json={"data": [resolved_model]})
+                    print(f"[queue_worker] checkpoint_change response: {switch_r.status_code}")
+                    if switch_r.status_code != 200:
+                        print(f"[queue_worker] checkpoint_change error: {switch_r.text[:300]}")
+            else:
+                print(f"[queue_worker] model already loaded")
+        except Exception as e:
+            print(f"[queue_worker] model switch failed: {e}")
 
     try:
         async with httpx.AsyncClient(timeout=180) as client:
@@ -235,6 +259,7 @@ async def _process_job(job: GenerationQueue, db: AsyncSession):
             user_id=job.user_id,
             url=url,
             prompt=job.prompt,
+            original_prompt=getattr(job, 'original_prompt', None),
             template_id=job.template_id,
             model=job.model,
             seed=seed_val,
@@ -257,7 +282,7 @@ async def _process_job(job: GenerationQueue, db: AsyncSession):
 
 
 async def _worker_loop():
-    """メインワーカーループ: pending ジョブを1件ずつ処理"""
+    """メインワーカーループ: pending ジョブを1件ずつ処理（通常生成 + シーン画像）"""
     global _worker_stopped
     while True:
         try:
@@ -266,7 +291,7 @@ async def _worker_loop():
                 continue
 
             async with async_session() as db:
-                # 最古のpendingジョブを取得
+                # 最古のpendingジョブを取得（通常生成キュー）
                 result = await db.execute(
                     select(GenerationQueue)
                     .where(GenerationQueue.status == "pending")
@@ -275,25 +300,63 @@ async def _worker_loop():
                 )
                 job = result.scalar_one_or_none()
 
-                if not job:
-                    await asyncio.sleep(POLL_INTERVAL)
-                    continue
+                if job:
+                    # processing に更新
+                    job.status = "processing"
+                    job.started_at = datetime.now()
+                    await db.commit()
 
-                # processing に更新
-                job.status = "processing"
-                job.started_at = datetime.now()
-                await db.commit()
+                    # SD API に送信
+                    await _process_job(job, db)
+                    continue  # 次のジョブをすぐチェック
 
-                # SD API に送信
-                await _process_job(job, db)
+                # 通常キューが空 → シーン画像タスクをチェック
+                scene_result = await db.execute(
+                    select(SceneImageTask)
+                    .where(SceneImageTask.status == "pending")
+                    .order_by(SceneImageTask.id)
+                    .limit(1)
+                )
+                scene_task = scene_result.scalar_one_or_none()
+
+                if scene_task:
+                    from .scene_image_service import process_scene_task
+                    await process_scene_task(scene_task.id)
+                    continue  # 次のジョブをすぐチェック
+
+                # どちらもなければスリープ
+                await asyncio.sleep(POLL_INTERVAL)
 
         except Exception as e:
             print(f"[queue_worker] unexpected error: {e}")
             await asyncio.sleep(POLL_INTERVAL * 2)
 
 
+async def _recover_stale_jobs():
+    """起動時に processing のまま残ったジョブを pending に戻す（前回の異常終了対策）"""
+    try:
+        async with async_session() as db:
+            result = await db.execute(
+                select(GenerationQueue).where(GenerationQueue.status == "processing")
+            )
+            stale = result.scalars().all()
+            for job in stale:
+                job.status = "pending"
+                job.started_at = None
+                print(f"[queue_worker] recovered stale job {job.id} -> pending")
+            if stale:
+                await db.commit()
+    except Exception as e:
+        print(f"[queue_worker] recovery error: {e}")
+
+
 def start_worker():
     """ワーカーを起動する（FastAPI lifespan から呼ぶ）"""
     global _worker_task
-    _worker_task = asyncio.create_task(_worker_loop())
+
+    async def _init_and_run():
+        await _recover_stale_jobs()
+        await _worker_loop()
+
+    _worker_task = asyncio.create_task(_init_and_run())
     print("[queue_worker] started")

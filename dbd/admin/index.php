@@ -49,9 +49,9 @@ asobiRequireLogin('https://dbd.asobi.info/admin/');
   <div class="admin-container">
     <div class="admin-header">
       <h1>DbD 画像マッピング管理</h1>
-      <div style="display:flex;gap:8px;">
-        <button onclick="location.href='/'" style="padding:6px 12px;background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);border-radius:4px;cursor:pointer;">サイトへ</button>
-        <button onclick="location.href='https://asobi.info/logout.php'" style="padding:6px 12px;background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);border-radius:4px;cursor:pointer;">ログアウト</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button onclick="location.href='/'" style="padding:6px 12px;background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);border-radius:4px;cursor:pointer;">← サイトトップ</button>
+        <div id="asobi-user-area"></div>
       </div>
     </div>
 
@@ -207,5 +207,6 @@ asobiRequireLogin('https://dbd.asobi.info/admin/');
 
     loadData();
   </script>
+  <script src="https://asobi.info/assets/js/common.js?v=20260327h"></script>
 </body>
 </html>

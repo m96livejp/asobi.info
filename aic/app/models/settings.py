@@ -18,9 +18,15 @@ class SdSettings(Base):
     width            = Column(Integer, nullable=False, default=512)
     height           = Column(Integer, nullable=False, default=512)
     lt_endpoint      = Column(String, nullable=True)          # LibreTranslate ローカルエンドポイント（例: http://127.0.0.1:5000）
-    lt_mode          = Column(String, nullable=False, default="off")  # off / free / local / both
+    lt_mode          = Column(String, nullable=False, default="off")  # off / free / local / both / both_local_first
     lt_api_key       = Column(String, nullable=True)          # libretranslate.com APIキー（無料登録で取得）
     max_images       = Column(Integer, nullable=False, default=100)   # ユーザーごとの最大保存枚数
+    # 透かし設定
+    wm_enabled       = Column(Integer, nullable=False, default=0)    # 透かし有効フラグ
+    wm_text          = Column(String, nullable=True)                 # テキスト透かし（例: aic.asobi.info）
+    wm_image_path    = Column(String, nullable=True)                 # 画像透かしファイルパス
+    wm_opacity       = Column(Float, nullable=False, default=0.3)    # 透明度 0.0〜1.0
+    wm_scale         = Column(Float, nullable=False, default=0.15)   # 画像に対するサイズ比
     updated_at       = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
@@ -96,6 +102,9 @@ class AiSettings(Base):
     image_change_revert_turns = Column(Integer, nullable=False, default=10)  # 元画像に戻すまでのターン数
     daily_point_recovery_enabled   = Column(Integer, nullable=False, default=0)   # デイリーポイント回復 0=OFF 1=ON
     daily_point_recovery_threshold = Column(Integer, nullable=False, default=100) # 回復閾値・目標値（これ未満なら回復）
+    state_instruction = Column(Text, nullable=True)                              # STATEブロック指示テキスト（カスタム）
+    tts_instruction = Column(Text, nullable=True)                                # TTS音声スタイル指示テキスト（カスタム）
+    tts_instruction_params = Column(Text, nullable=True)                         # TTS音声スタイル指示テキスト（パラメータ付き）
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

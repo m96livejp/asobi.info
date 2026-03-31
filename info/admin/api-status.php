@@ -304,11 +304,11 @@ if ($ollamaEndpoint) {
   <!-- ── 設定フォーム ── -->
   <div class="api-grid" id="settings-grid">
 
-    <!-- Stable Diffusion 設定 -->
+    <!-- 画像生成API 設定 -->
     <div class="api-card">
       <div class="api-card-header">
         <div class="api-icon">🎨</div>
-        <div class="api-name">Stable Diffusion</div>
+        <div class="api-name">画像生成API</div>
         <span class="api-badge <?= ($sdEndpoint && $sdEnabled) ? 'enabled' : ($sdEndpoint ? 'disabled' : 'noconfig') ?>">
           <?= ($sdEndpoint && $sdEnabled) ? '有効' : ($sdEndpoint ? '無効' : '未設定') ?>
         </span>

@@ -173,10 +173,35 @@ $pvTotal = $db->query("SELECT COUNT(*) FROM access_logs")->fetchColumn();
           <div class="menu-card-title">禁止ワード管理</div>
           <div class="menu-card-desc">ニックネーム・コメントのフィルター</div>
         </a>
-        <a href="/admin/access-logs.php" class="menu-card">
-          <div class="menu-card-icon">📋</div>
-          <div class="menu-card-title">アクセスログ</div>
-          <div class="menu-card-desc">アクセス履歴・IP別詳細ログ</div>
+        <a href="/admin/access-stats.php" class="menu-card">
+          <div class="menu-card-icon">📊</div>
+          <div class="menu-card-title">アクセス統計</div>
+          <div class="menu-card-desc">PV/UVグラフ・人気ページ・ブラウザ統計</div>
+        </a>
+        <a href="/admin/todos.php" class="menu-card">
+          <div class="menu-card-icon">📝</div>
+          <div class="menu-card-title">TODO管理</div>
+          <div class="menu-card-desc">タスク・対応状況・優先度管理</div>
+        </a>
+        <a href="/admin/font.php" class="menu-card">
+          <div class="menu-card-icon">🔤</div>
+          <div class="menu-card-title">フォント設定</div>
+          <div class="menu-card-desc">サイト共通Webフォントの切り替え</div>
+        </a>
+        <a href="/admin/content-design.php" class="menu-card">
+          <div class="menu-card-icon">🗂️</div>
+          <div class="menu-card-title">コンテンツ構成</div>
+          <div class="menu-card-desc">サイト構成・ページ設計管理</div>
+        </a>
+        <a href="/admin/api-status.php" class="menu-card">
+          <div class="menu-card-icon">🔌</div>
+          <div class="menu-card-title">API接続確認</div>
+          <div class="menu-card-desc">外部API・サービスの疎通チェック</div>
+        </a>
+        <a href="/admin/backup.php" class="menu-card">
+          <div class="menu-card-icon">💾</div>
+          <div class="menu-card-title">バックアップ管理</div>
+          <div class="menu-card-desc">DBバックアップ・ダウンロード</div>
         </a>
       </div>
 

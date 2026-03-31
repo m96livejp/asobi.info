@@ -63,6 +63,12 @@ const App = {
         // ゲームタイトルクリックでトップへ
         document.querySelector('.game-title')?.addEventListener('click', () => this.navigate('home'));
 
+        // ハッシュ変更時にページ切り替え（ユーザーメニューからのリンク対応）
+        window.addEventListener('hashchange', () => {
+            const page = location.hash.replace('#', '');
+            if (this.pages[page] && page !== this.currentPage) this.navigate(page);
+        });
+
         // 初期画面（URLハッシュがあればそのページを表示）
         const initialPage = location.hash.replace('#', '');
         this.navigate(this.pages[initialPage] ? initialPage : 'home');

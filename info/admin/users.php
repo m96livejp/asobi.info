@@ -53,6 +53,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if ($action === 'resend_verify') {
+        $targetId = (int)($_POST['user_id'] ?? 0);
+        $stmt = $db->prepare("SELECT email, email_verified_at FROM users WHERE id = ?");
+        $stmt->execute([$targetId]);
+        $target = $stmt->fetch();
+        if (!$target || !$target['email']) {
+            $actionError = 'メールアドレスが設定されていません';
+        } elseif ($target['email_verified_at']) {
+            $actionError = 'このユーザーのメールは既に確認済みです';
+        } else {
+            // 管理者からの再送: 既存レコードを削除してレート制限をバイパス
+            $db->prepare("DELETE FROM email_verifications WHERE user_id = ?")->execute([$targetId]);
+            $result = asobiSendVerificationEmail($targetId, $target['email']);
+            if ($result === true) {
+                $actionMsg = "{$target['email']} に認証メールを再送しました";
+            } else {
+                $actionError = $result;
+            }
+        }
+    }
+
     if ($action === 'delete') {
         $targetId = (int)($_POST['user_id'] ?? 0);
         if ($targetId === $currentUser['id']) {
@@ -99,21 +120,9 @@ $users = $stmt->fetchAll();
       background: #f0f2f5;
       color: #1d2d3a;
       min-height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
-
-    /* ヘッダー */
-    .site-header { background: rgba(255,255,255,0.85); border-bottom: 1px solid #e0e0e0; }
-    .site-logo a { color: #1d1d1f; text-decoration: none; font-size: 1.5rem; font-weight: 700; }
-    .header-right { display: flex; align-items: center; gap: 24px; }
-    .site-nav ul { display: flex; list-style: none; gap: 24px; }
-    .site-nav a { color: #1d1d1f; font-weight: 500; font-size: 0.9rem; }
-    .admin-badge { display: inline-block; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; background: linear-gradient(135deg, #e74c3c, #c0392b); color: #fff; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
-    @media (max-width: 768px) {
-      .site-header .container { flex-direction: row; align-items: center; }
-      .site-nav { display: none; }
-    }
-
-    .admin-body { max-width: 1100px; margin: 0 auto; padding: 40px 24px 80px; }
 
     .page-header {
       display: flex;
@@ -222,6 +231,9 @@ $users = $stmt->fetchAll();
     .badge-user      { background: rgba(85,103,204,0.1);  color: #5567cc; border: 1px solid rgba(85,103,204,0.2); }
     .badge-active    { background: rgba(26,138,80,0.1);   color: #1a8a50; border: 1px solid rgba(26,138,80,0.2); }
     .badge-suspended { background: #f0f2f5; color: #637080; border: 1px solid #e0e4e8; }
+    .badge-verified   { background: rgba(26,138,80,0.1);  color: #1a8a50; border: 1px solid rgba(26,138,80,0.2); font-size: 0.7rem; }
+    .badge-unverified { background: rgba(230,126,0,0.1);  color: #c07000; border: 1px solid rgba(230,126,0,0.25); font-size: 0.7rem; }
+    .btn-resend { background: rgba(85,103,204,0.1); color: #5567cc; border: 1px solid rgba(85,103,204,0.2); }
 
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
@@ -234,25 +246,9 @@ $users = $stmt->fetchAll();
   </style>
 </head>
 <body>
-  <header class="site-header">
-    <div class="container">
-      <div class="site-logo"><a href="/admin/">あそび<span class="admin-badge">ADMIN</span></a></div>
-      <div class="header-right">
-        <nav class="site-nav">
-          <ul>
-            <li><a href="/">サイトトップ</a></li>
-            <li><a href="/admin/">ダッシュボード</a></li>
-            <li><a href="/admin/users.php">ユーザー管理</a></li>
-          </ul>
-        </nav>
-      </div>
-    </div>
-  </header>
+  <?php $adminActivePage = 'users'; require __DIR__ . '/_sidebar.php'; ?>
 
-  <div class="admin-body">
-    <div class="page-header">
-      <h1>ユーザー管理</h1>
-    </div>
+    <h1 style="font-size:1.4rem;margin-bottom:28px;">ユーザー管理</h1>
 
     <?php if ($actionMsg): ?><div class="message success"><?= htmlspecialchars($actionMsg) ?></div><?php endif; ?>
     <?php if ($actionError): ?><div class="message error"><?= htmlspecialchars($actionError) ?></div><?php endif; ?>
@@ -347,7 +343,24 @@ $users = $stmt->fetchAll();
                 </div>
               </div>
             </td>
-            <td style="color:#8888a0;font-size:0.83rem"><?= htmlspecialchars($u['email'] ?? '—') ?></td>
+            <td style="font-size:0.83rem">
+              <?php if ($u['email']): ?>
+                <div style="color:#8888a0"><?= htmlspecialchars($u['email']) ?></div>
+                <?php if ($u['email_verified_at']): ?>
+                  <span class="badge badge-verified">✓ 確認済</span>
+                <?php else: ?>
+                  <span class="badge badge-unverified">未確認</span>
+                  <form method="POST" action="" style="display:inline;margin-left:4px">
+                    <input type="hidden" name="action" value="resend_verify">
+                    <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
+                    <button type="button" class="btn btn-sm btn-resend"
+                            data-confirm="<?= htmlspecialchars($u['email']) ?> に認証メールを再送しますか？" data-confirm-ok="再送する">再送</button>
+                  </form>
+                <?php endif; ?>
+              <?php else: ?>
+                <span style="color:#8888a0">—</span>
+              <?php endif; ?>
+            </td>
             <td><span class="badge badge-<?= $u['role'] ?>"><?= $u['role'] === 'admin' ? '管理者' : 'ユーザー' ?></span></td>
             <td><span class="badge badge-<?= $u['status'] ?>"><?= $u['status'] === 'active' ? '有効' : '停止' ?></span></td>
             <td style="font-size:0.8rem;color:#8888a0;white-space:nowrap"><?= htmlspecialchars(substr($u['created_at'], 0, 10)) ?></td>
@@ -397,7 +410,8 @@ $users = $stmt->fetchAll();
         </tbody>
       </table>
     </div>
+  </main>
   </div>
-  <script src="/assets/js/common.js?v=20260327e"></script>
+  <script src="/assets/js/common.js?v=20260327h"></script>
 </body>
 </html>

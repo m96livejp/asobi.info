@@ -87,6 +87,11 @@ const AdminAPI = {
     deleteTournament(id) { return this.del(`/admin/tournaments/${id}`); },
     removeEntry(tournamentId, entryId) { return this.del(`/admin/tournaments/${tournamentId}/entries/${entryId}`); },
 
+    // Gacha
+    getGachaPools() { return this.get('/admin/gacha/pools'); },
+    updateGachaPool(id, data) { return this.patch(`/admin/gacha/pools/${id}`, data); },
+    updateGachaWeights(poolId, weights) { return this.patch(`/admin/gacha/pools/${poolId}/weights`, { weights }); },
+
     // Logs
     getAdRewards(params = {}) {
         const qs = new URLSearchParams(params).toString();

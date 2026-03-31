@@ -21,6 +21,10 @@ async def init_db():
         migrations = [
             "ALTER TABLE characters ADD COLUMN is_recommended INTEGER DEFAULT 0",
             "ALTER TABLE ai_settings ADD COLUMN tts_voice_params TEXT DEFAULT NULL",
+            "ALTER TABLE characters ADD COLUMN bgm_mode TEXT DEFAULT 'none'",
+            "ALTER TABLE characters ADD COLUMN bgm_track_id INTEGER DEFAULT NULL",
+            "ALTER TABLE bgm_tracks ADD COLUMN genre TEXT DEFAULT ''",
+            "ALTER TABLE bgm_tracks ADD COLUMN enabled INTEGER DEFAULT 0",
         ]
         for sql in migrations:
             try:

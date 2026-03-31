@@ -56,14 +56,15 @@ async def create_conversation(req: ConversationCreate, user: User = Depends(requ
     char = result.scalar_one_or_none()
     if not char:
         raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
-    if not char.is_public and not char.is_sample and char.creator_id != user.id:
+    if not char.is_public and char.creator_id != user.id:
         raise HTTPException(status_code=403, detail="非公開キャラクターです")
 
-    # 既存の会話があればそれを返す（1ユーザー1キャラ1会話）
+    # 既存の会話があればそれを返す（1ユーザー1キャラ1会話、削除済み除外）
     existing = await db.execute(
         select(Conversation).where(
             Conversation.user_id == user.id,
-            Conversation.character_id == req.character_id
+            Conversation.character_id == req.character_id,
+            Conversation.is_deleted == 0,
         ).order_by(Conversation.updated_at.desc()).limit(1)
     )
     existing_conv = existing.scalar_one_or_none()
@@ -244,6 +245,10 @@ async def reset_conversation(conv_id: int, user: User = Depends(require_user), d
     if char and char.first_message:
         first_msg = Message(conversation_id=conv_id, role="assistant", content=char.first_message)
         db.add(first_msg)
+
+    # updated_atを更新して会話リストの並びに反映
+    from datetime import datetime
+    conv.updated_at = datetime.now()
 
     await db.commit()
     return {"reset": True}

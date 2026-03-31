@@ -13,6 +13,7 @@ from ..models.character import Character
 from ..models.conversation import Conversation, Message, ConversationState, ConversationStateLog
 from ..models.balance import UserBalance, BalanceTransaction
 from ..models.settings import ChatStateConfig
+from ..models.image import UserImage
 from ..services.chat_service import build_system_prompt, get_stream_func, get_ai_settings, get_cost_from_settings
 from ..services.scene_image_service import create_scene_task, _get_sd_settings as _get_sd_settings_for_scene
 from pydantic import BaseModel
@@ -121,7 +122,10 @@ async def send_message(
     # システムプロンプト
     rg = (ai_settings.response_guideline if ai_settings and ai_settings.response_guideline is not None else None)
     tts_vp = ai_settings.tts_voice_params if ai_settings else None
-    system_prompt = build_system_prompt(char, conv_state=conv_state, state_enabled=state_enabled, response_guideline=rg, state_fields=state_fields, tts_voice_params=tts_vp)
+    _state_instr = (ai_settings.state_instruction if ai_settings and ai_settings.state_instruction else None)
+    _tts_instr = (ai_settings.tts_instruction if ai_settings and ai_settings.tts_instruction else None)
+    _tts_instr_p = (ai_settings.tts_instruction_params if ai_settings and ai_settings.tts_instruction_params else None)
+    system_prompt = build_system_prompt(char, conv_state=conv_state, state_enabled=state_enabled, response_guideline=rg, state_fields=state_fields, tts_voice_params=tts_vp, state_instruction=_state_instr, tts_instruction=_tts_instr, tts_instruction_params=_tts_instr_p)
     provider = ai_settings.provider if ai_settings else char.ai_model
     stream_func = get_stream_func(provider)
 
@@ -166,7 +170,25 @@ async def send_message(
         except Exception as e:
             import logging
             logging.getLogger("aic").error(f"Chat stream error: {e}")
-            err_msg = str(e) if user.role == 'admin' else "エラーが発生しました。しばらくしてから再試行してください。"
+            _err_str = str(e)
+            # エラーをapi_usage.logに記録
+            try:
+                _ip = request.client.host if request.client else ""
+                _model_name = ai_settings.model if ai_settings and ai_settings.model else (char.ai_model or "")
+                _append_api_usage_log({
+                    "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "type": "error",
+                    "user_id": user.id,
+                    "username": user.display_name or "",
+                    "char_name": char.name or "",
+                    "provider": provider or "",
+                    "model": _model_name,
+                    "error": _err_str,
+                    "ip": _ip,
+                })
+            except Exception:
+                pass
+            err_msg = _err_str if user.role == 'admin' else "エラーが発生しました。しばらくしてから再試行してください。"
             yield f"data: {json.dumps({'error': err_msg}, ensure_ascii=False)}\n\n"
             return
 
@@ -266,7 +288,40 @@ async def send_message(
         # 画像変化機能：ステータス変化がある場合にシーン画像タスクを作成
         if save_ok and state_enabled and state_snapshot_text and ai_settings and getattr(ai_settings, 'image_change_enabled', 0):
             try:
-                if char.sd_prompt and char.sd_seed is not None:
+                # SD設定取得: キャラ設定 → キャラのアバター画像 → ユーザーの最初の生成画像からフォールバック
+                _sd_prompt = char.sd_prompt
+                _sd_neg_prompt = char.sd_neg_prompt
+                _sd_seed = char.sd_seed
+                _sd_model = char.sd_model
+                if not _sd_prompt or _sd_seed is None:
+                    # まずキャラクターのアバター画像から取得
+                    _avatar_img = None
+                    if char.avatar_url:
+                        _avatar_result = await db.execute(
+                            select(UserImage)
+                            .where(UserImage.url == char.avatar_url, UserImage.seed.isnot(None), UserImage.prompt.isnot(None))
+                            .limit(1)
+                        )
+                        _avatar_img = _avatar_result.scalar_one_or_none()
+                    if _avatar_img:
+                        _sd_prompt = _sd_prompt or _avatar_img.prompt
+                        _sd_seed = _sd_seed if _sd_seed is not None else _avatar_img.seed
+                        _sd_model = _sd_model or _avatar_img.model
+                    else:
+                        # アバター画像がなければユーザーの最初の生成画像からフォールバック
+                        _first_img = await db.execute(
+                            select(UserImage)
+                            .where(UserImage.user_id == user.id, UserImage.seed.isnot(None), UserImage.prompt.isnot(None))
+                            .order_by(UserImage.id.asc())
+                            .limit(1)
+                        )
+                        _fi = _first_img.scalar_one_or_none()
+                        if _fi:
+                            _sd_prompt = _sd_prompt or _fi.prompt
+                            _sd_seed = _sd_seed if _sd_seed is not None else _fi.seed
+                            _sd_model = _sd_model or _fi.model
+
+                if _sd_prompt and _sd_seed is not None:
                     # state_jsonからステータス辞書を構築
                     _scene_state = {}
                     try:
@@ -282,11 +337,12 @@ async def send_message(
                             db=db,
                             conversation_id=conversation_id,
                             message_id=ai_msg_id,
-                            base_prompt=char.sd_prompt,
+                            base_prompt=_sd_prompt,
                             state_dict=_scene_state,
                             sd=_sd_settings,
-                            seed=char.sd_seed,
-                            model=char.sd_model,
+                            seed=_sd_seed,
+                            model=_sd_model,
+                            negative_prompt=_sd_neg_prompt,
                         )
                         if _scene_task:
                             _scene_task_id = _scene_task.id
@@ -305,7 +361,7 @@ async def send_message(
                 _append_api_usage_log({
                     "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "user_id": user.id,
-                    "username": user.username or "",
+                    "username": user.display_name or "",
                     "char_name": char.name or "",
                     "provider": provider or "",
                     "model": _model_name,
@@ -320,6 +376,8 @@ async def send_message(
                 pass
 
         done_payload: dict = {'done': True, 'cost': cost, 'currency': currency}
+        if user_msg and user_msg.id:
+            done_payload['user_msg_id'] = user_msg.id
         if state_snapshot_text:
             done_payload['state_snapshot'] = state_snapshot_text
         if ai_msg_id:

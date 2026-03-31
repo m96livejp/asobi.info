@@ -177,7 +177,7 @@ if (!$isRunning && $latest && $latest['status'] === 'ok') {
     <div>· Nginx設定ファイル</div>
     <div style="margin-top:10px;margin-bottom:8px;"><strong>バックアップ先</strong></div>
     <div>· WPXレンタルサーバー（sv6112.wpx.ne.jp）</div>
-    <div>· 保存パス: /home/m96/backups/asobi/YYYY-MM-DD/</div>
+    <div>· 保存パス: backups/asobi/YYYY-MM-DD/</div>
     <div>· 保持期間: 直近7日分</div>
     <div style="margin-top:10px;margin-bottom:8px;"><strong>自動実行</strong></div>
     <div>· 毎日 午前5時（Conoha VPS cron）</div>

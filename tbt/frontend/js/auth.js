@@ -72,7 +72,7 @@ const Auth = {
         }
     },
 
-    async autoLogin() {
+    async autoLogin(displayName) {
         const deviceId = Storage.getDeviceId();
         try {
             // 既存ユーザーでログイン
@@ -82,12 +82,12 @@ const Auth = {
             return await API.getProfile();
         } catch {
             // 新規ゲスト登録
-            return await this.register(deviceId);
+            return await this.register(deviceId, displayName);
         }
     },
 
-    async register(deviceId) {
-        const name = 'プレイヤー' + Math.floor(Math.random() * 9999);
+    async register(deviceId, displayName) {
+        const name = displayName || ('冒険者' + Math.floor(Math.random() * 9000 + 1000));
         const result = await API.guestRegister(deviceId, name);
         Storage.setToken(result.access_token);
         Storage.setUserId(result.user_id);

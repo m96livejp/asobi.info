@@ -43,6 +43,7 @@ body {
   align-items: flex-start;
   padding-top: 10px;
   padding-bottom: 10px;
+  min-height: 70px;
 }
 
 .site-nav {
@@ -93,6 +94,18 @@ body {
 @media (max-width: 768px) {
   .site-nav {
     gap: 8px;
+  }
+  /* メニュー開閉時にページコンテンツがずれないよう絶対配置でオーバーレイ表示 */
+  .site-nav.open {
+    display: flex;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: rgba(10, 10, 15, 0.97);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    z-index: 50;
   }
   .nav-group {
     flex-wrap: wrap;

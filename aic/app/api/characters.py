@@ -2,7 +2,7 @@
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select
 from ..database import get_db
 from ..deps import get_current_user, require_user
 from ..models.user import User
@@ -52,7 +52,6 @@ def char_to_dict(c: Character, hide_private: bool = False) -> dict:
         "avatar_url": c.avatar_url,
         "ai_model": c.ai_model,
         "is_public": c.is_public,
-        "is_sample": c.is_sample,
         "is_deleted": c.is_deleted,
         "review_status": c.review_status,
         "char_name": c.char_name,
@@ -85,8 +84,9 @@ def char_to_dict(c: Character, hide_private: bool = False) -> dict:
 
 @router.get("/sample")
 async def list_sample(db: AsyncSession = Depends(get_db)):
+    """おすすめキャラクター一覧（is_recommended=1）"""
     result = await db.execute(
-        select(Character).where(Character.is_sample == 1, Character.is_deleted == 0).order_by(Character.id)
+        select(Character).where(Character.is_recommended == 1, Character.is_deleted == 0, Character.is_public == 1).order_by(Character.id.desc())
     )
     return [char_to_dict(c, hide_private=True) for c in result.scalars()]
 
@@ -144,7 +144,7 @@ async def list_chatting_public(user: User = Depends(require_user), db: AsyncSess
         select(Character).where(
             Character.id.in_(char_ids),
             Character.creator_id != user.id,
-            or_(Character.is_public == 1, Character.is_sample == 1)
+            Character.is_public == 1
         ).order_by(Character.name)
     )
     out = []
@@ -170,7 +170,7 @@ async def get_character(char_id: int, user: User | None = Depends(get_current_us
             "id": c.id, "name": c.name, "avatar_url": c.avatar_url,
             "is_deleted": c.is_deleted, "is_owner": False, "is_admin": False,
         }
-    if not c.is_public and not c.is_sample and not is_owner and not is_admin:
+    if not c.is_public and not is_owner and not is_admin:
         raise HTTPException(status_code=403, detail="非公開キャラクターです")
     d = char_to_dict(c, hide_private=not is_owner and not is_admin)
     d["is_owner"] = bool(is_owner)
@@ -210,10 +210,11 @@ async def create_character(req: CharacterCreate, user: User = Depends(require_us
         tts_styles=json.dumps(req.tts_styles, ensure_ascii=False) if req.tts_styles else None,
         bgm_mode=req.bgm_mode or "none",
         bgm_track_id=req.bgm_track_id,
-        sd_prompt=req.sd_prompt or None,
-        sd_neg_prompt=req.sd_neg_prompt or None,
-        sd_seed=req.sd_seed,
-        sd_model=req.sd_model or None,
+        # SD設定は管理者のみ設定可能
+        sd_prompt=(req.sd_prompt or None) if user.role == "admin" else None,
+        sd_neg_prompt=(req.sd_neg_prompt or None) if user.role == "admin" else None,
+        sd_seed=req.sd_seed if user.role == "admin" else None,
+        sd_model=(req.sd_model or None) if user.role == "admin" else None,
     )
     db.add(c)
     await db.commit()
@@ -237,10 +238,12 @@ async def update_character(char_id: int, req: CharacterUpdate, user: User = Depe
     c.tts_styles = json.dumps(req.tts_styles, ensure_ascii=False) if req.tts_styles else None
     c.bgm_mode = req.bgm_mode or "none"
     c.bgm_track_id = req.bgm_track_id
-    c.sd_prompt = req.sd_prompt or None
-    c.sd_neg_prompt = req.sd_neg_prompt or None
-    c.sd_seed = req.sd_seed
-    c.sd_model = req.sd_model or None
+    # SD設定は管理者のみ変更可能
+    if user.role == "admin":
+        c.sd_prompt = req.sd_prompt or None
+        c.sd_neg_prompt = req.sd_neg_prompt or None
+        c.sd_seed = req.sd_seed
+        c.sd_model = req.sd_model or None
     await db.commit()
     await db.refresh(c)
     return char_to_dict(c)

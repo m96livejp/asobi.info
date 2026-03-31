@@ -123,6 +123,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resul
         $result = $ngReason ? 'NG: ' . $ngReason : 'NG';
     }
     if ($id > 0) {
+        // OK確認時: 既存のAI対応内容(result)を保持して結合
+        if ($resultType === 'OK') {
+            $curRes = $db->prepare("SELECT result FROM content_todos WHERE id = ?");
+            $curRes->execute([$id]);
+            $prevResult = trim($curRes->fetch()['result'] ?? '');
+            if ($prevResult !== '' && !str_starts_with($prevResult, 'OK') && !str_starts_with($prevResult, 'NG')) {
+                $result = $result . "\n" . $prevResult;
+            }
+        }
         $db->prepare("UPDATE content_todos SET result = ?, updated_at = datetime('now','localtime') WHERE id = ?")
            ->execute([$result, $id]);
         // 自動遷移
@@ -497,10 +506,15 @@ function buildQuery(array $overrides): string {
       <?php
         $resultRaw = $selItem['result'] ?? '';
         $isOk = str_starts_with($resultRaw, 'OK');
-        $okComment = ($isOk && strlen($resultRaw) > 2) ? trim(substr($resultRaw, 2), ': ') : '';
         $isNg = str_starts_with($resultRaw, 'NG');
-        $ngReason = $isNg ? trim(substr($resultRaw, 2), ': ') : '';
-        $isAiNote = !$isOk && !$isNg && $resultRaw !== '';
+        // OK/NG行とAI対応内容を分離（"OK: comment\n【対応内容】..."形式に対応）
+        $resultFirstLine = str_contains($resultRaw, "\n") ? trim(substr($resultRaw, 0, strpos($resultRaw, "\n"))) : $resultRaw;
+        $resultAiPart    = str_contains($resultRaw, "\n") ? trim(substr($resultRaw, strpos($resultRaw, "\n") + 1)) : '';
+        $okComment = ($isOk && strlen($resultFirstLine) > 2) ? trim(substr($resultFirstLine, 2), ': ') : '';
+        $ngReason  = ($isNg && strlen($resultFirstLine) > 2) ? trim(substr($resultFirstLine, 2), ': ') : '';
+        // AI対応内容: OK/NG以外のresult全体、またはOK/NG後のAI部分
+        $aiNoteText = ($isOk || $isNg) ? $resultAiPart : $resultRaw;
+        $isAiNote = $aiNoteText !== '';
       ?>
       <?php
         // 番号を動的に割り当て（順序: 対応状況→更新内容→対応メモ→確認結果）
@@ -529,7 +543,7 @@ function buildQuery(array $overrides): string {
         <!-- ② 更新内容（AI対応内容） -->
         <div class="action-group">
           <div class="action-group-title" style="color:#4338ca;"><?= $circled[$n_ainote-1] ?> 更新内容</div>
-          <div style="background:#f0f4ff;border-left:3px solid #667eea;border-radius:0 8px 8px 0;padding:10px 14px;font-size:0.85rem;line-height:1.6;white-space:pre-wrap;"><?= htmlspecialchars($resultRaw) ?></div>
+          <div style="background:#f0f4ff;border-left:3px solid #667eea;border-radius:0 8px 8px 0;padding:10px 14px;font-size:0.85rem;line-height:1.6;white-space:pre-wrap;"><?= htmlspecialchars($aiNoteText) ?></div>
         </div>
         <?php endif; ?>
 

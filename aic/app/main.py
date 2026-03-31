@@ -1,6 +1,13 @@
 """aic.asobi.info - AIチャットサービス"""
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+
+# aic名前空間のロガーをINFOレベルに設定（uvicornのハンドラに伝播）
+logging.basicConfig(level=logging.WARNING)
+_aic_logger = logging.getLogger("aic")
+_aic_logger.setLevel(logging.INFO)
+_aic_logger.addHandler(logging.StreamHandler())
 from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .database import init_db

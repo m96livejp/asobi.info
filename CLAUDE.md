@@ -177,6 +177,42 @@ CREATE TABLE contact_submissions (
 - LINE: `https://asobi.info/oauth/callback.php?provider=line`
 - Twitter: `https://asobi.info/oauth/callback.php?provider=twitter`
 
+### ログインメニュー共通ルール
+
+全サブドメインで統一されたヘッダーログインメニューの実装規則。
+
+#### ゲスト（未ログイン）
+- ヘッダー右端に「ログイン」リンクを表示
+- リンク先: `https://asobi.info/login.php?redirect=<現在のURL>`（ログイン後に元のページへ戻る）
+
+#### ログイン済みユーザー
+- ヘッダー右端にアバター画像（32px丸）+ 表示名を表示
+- クリックでドロップダウンメニューを開閉
+
+#### ドロップダウンメニュー構成
+メニュー項目は「サイト固有項目」→「asobi.info共通項目」の順で構成する。
+
+```
+[サイト固有の項目]          ← サブドメインごとに異なる
+──────────────────         ← 区切り線（divider）
+asobi.info TOP             ← 共通：https://asobi.info/ へのリンク
+🔒 asobi.info 管理          ← 共通：admin専用（role=admin のみ表示）
+```
+
+#### サイト固有メニュー例
+| サイト | 固有項目 |
+|--------|----------|
+| AIC (チャット画面 app.js) | サイトに戻る / プロフィール / 🔒 コンテンツ管理(admin) |
+| AIC (管理画面 admin.html) | チャットに戻る |
+| メインサイト (info) | プロフィール |
+| DbD・PKQ等 | （各サイトの管理画面リンク等） |
+
+#### 実装上の注意
+- AICのチャット画面ではメインヘッダーとチャットヘッダーの2箇所にログインメニューを配置（同一のメニュー構造を複製）
+- admin専用項目は `user.role === 'admin'` で表示制御する
+- ログイン状態の取得は `https://asobi.info/assets/php/me.php`（CORS対応済み）を使用
+- アバターURLが未設定の場合はデフォルトアイコン（SVGまたはプレースホルダー）を表示
+
 ---
 
 ## asobi.info メインサイト

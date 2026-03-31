@@ -114,7 +114,7 @@ if ($action === 'update_status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($status === '') _asobiApiError(400, 'status is required');
 
     $extra = '';
-    if ($status === '対応中' || $status === '再対応') {
+    if ($status === '対応中') {
         $extra = ", started_at = COALESCE(started_at, datetime('now','localtime'))";
     } elseif ($status === '完了') {
         $extra = ", completed_at = datetime('now','localtime')";
@@ -176,17 +176,17 @@ if ($action === 'update_result' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                ->execute([$id]);
             $newStatus = '完了';
         }
-        // 確認待ち + NG → 再対応（対応メモにNG理由を自動追記、確認結果リセット）
+        // 確認待ち + NG → 未着手（対応メモにNG理由を自動追記、確認結果リセット）
         elseif ($curRow && $curRow['status'] === '確認待ち' && str_starts_with($resultValue, 'NG')) {
             $noteStmt = $db->prepare("SELECT status_note FROM content_todos WHERE id = ?");
             $noteStmt->execute([$id]);
             $noteRow = $noteStmt->fetch();
-            $currentNote = $noteRow['status_note'] ?? '';
-            $ngAppend = "\n\n【NG: " . date('m/d H:i') . '】' . ($ngReason ?: '理由なし');
-            $newNote = rtrim($currentNote) . $ngAppend;
-            $db->prepare("UPDATE content_todos SET status = '再対応', status_note = ?, result = '', updated_at = datetime('now','localtime') WHERE id = ?")
+            $currentNote = trim($noteRow['status_note'] ?? '');
+            $ngAppend = '【NG: ' . date('m/d H:i') . '】' . ($ngReason ?: '理由なし');
+            $newNote = $currentNote !== '' ? $currentNote . "\n\n" . $ngAppend : $ngAppend;
+            $db->prepare("UPDATE content_todos SET status = '未着手', status_note = ?, result = '', updated_at = datetime('now','localtime') WHERE id = ?")
                ->execute([$newNote, $id]);
-            $newStatus = '再対応';
+            $newStatus = '未着手';
         }
     }
 
@@ -195,17 +195,17 @@ if ($action === 'update_result' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     _asobiApiJson(['ok' => true, 'message' => $msg, 'result' => $resultValue, 'status' => $newStatus]);
 }
 
-// ─── POST: 保留解除回答（→再対応） ───
+// ─── POST: 保留解除回答（→未着手） ───
 if ($action === 'hold_answer' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $id     = (int)($input['id'] ?? 0);
     $answer = trim($input['hold_answer'] ?? '');
     if ($id <= 0) _asobiApiError(400, 'id is required');
     if ($answer === '') _asobiApiError(400, 'hold_answer is required');
 
-    $db->prepare("UPDATE content_todos SET hold_answer = ?, status = '再対応', updated_at = datetime('now','localtime') WHERE id = ?")
+    $db->prepare("UPDATE content_todos SET hold_answer = ?, status = '未着手', updated_at = datetime('now','localtime') WHERE id = ?")
        ->execute([$answer, $id]);
 
-    _asobiApiJson(['ok' => true, 'message' => '保留解除回答を記入し、ステータスを「再対応」に変更しました', 'status' => '再対応']);
+    _asobiApiJson(['ok' => true, 'message' => '保留解除回答を記入し、ステータスを「未着手」に変更しました', 'status' => '未着手']);
 }
 
 // ─── POST: 削除 ───
