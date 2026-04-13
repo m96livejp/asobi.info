@@ -1,8 +1,9 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 asobiRequireAdmin();
 
-$db = asobiUsersDb();
+$db = asobiTodosDb();
 
 // セッションからフラッシュメッセージ取得
 session_start();
@@ -12,11 +13,12 @@ unset($_SESSION['todo_msg']);
 $defaultSiteList = [
     ['key' => 'common', 'label' => '全サイト共通'],
     ['key' => 'top',    'label' => 'asobi.info トップページ'],
+    ['key' => 'aic',    'label' => 'AI チャット'],
+    ['key' => 'tbt',    'label' => 'Tournament Battle'],
     ['key' => 'dbd',    'label' => 'Dead by Daylight'],
     ['key' => 'pkq',    'label' => 'ポケモンクエスト'],
-    ['key' => 'tbt',    'label' => 'Tournament Battle'],
-    ['key' => 'aic',    'label' => 'AI チャット'],
     ['key' => 'game',   'label' => 'レトロゲーム情報'],
+    ['key' => 'image',  'label' => '画像生成'],
 ];
 $siteListJson = asobiGetSetting('todo_sites', '');
 $siteList = $siteListJson ? json_decode($siteListJson, true) : null;
@@ -25,15 +27,35 @@ if (!is_array($siteList) || empty($siteList)) {
 }
 $siteLabels = array_column($siteList, 'label', 'key');
 $areaLabels     = ['general' => '一般', 'admin' => '管理'];
+$siteUrls = [
+    'common' => 'https://asobi.info/',
+    'top'    => 'https://asobi.info/',
+    'aic'    => 'https://aic.asobi.info/',
+    'tbt'    => 'https://tbt.asobi.info/',
+    'dbd'    => 'https://dbd.asobi.info/',
+    'pkq'    => 'https://pkq.asobi.info/',
+    'game'   => 'https://game.asobi.info/',
+    'image'  => 'https://image.asobi.info/',
+];
+$siteAdminUrls = [
+    'common' => 'https://asobi.info/admin/',
+    'top'    => 'https://asobi.info/admin/',
+    'aic'    => 'https://aic.asobi.info/admin.html',
+    'tbt'    => 'https://tbt.asobi.info/admin/',
+    'dbd'    => 'https://dbd.asobi.info/admin/',
+    'pkq'    => 'https://pkq.asobi.info/admin/',
+    'game'   => 'https://game.asobi.info/admin/',
+    'image'  => 'https://image.asobi.info/admin/',
+];
 $priorityLabels = ['high' => '高', 'medium' => '中', 'low' => '低'];
 $statusPresets  = ['未着手', '対応中', '確認待ち', '完了', '保留'];
 
 // ステータスグループ定義
 $statusGroups = [
-    'pending' => ['label' => '処理前',  'statuses' => ['未着手']],
-    'active'  => ['label' => '処理中',  'statuses' => ['対応中']],
+    'pending' => ['label' => '未着手',   'statuses' => ['未着手']],
+    'active'  => ['label' => '対応中',   'statuses' => ['対応中']],
     'review'  => ['label' => '確認待ち', 'statuses' => ['確認待ち', '保留']],
-    'done'    => ['label' => '完了',    'statuses' => ['完了']],
+    'done'    => ['label' => '完了',     'statuses' => ['完了']],
 ];
 $defaultGroup = 'review'; // デフォルト表示グループ（管理者対応が必要なもの）
 
@@ -289,7 +311,7 @@ function buildQuery(array $overrides): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TODO管理 - asobi.info</title>
-  <link rel="stylesheet" href="/assets/css/common.css?v=20260327f">
+  <link rel="stylesheet" href="/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -397,8 +419,8 @@ function buildQuery(array $overrides): string {
     .sel-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; font-size: 0.82rem; color: #637080; }
     .sel-meta .meta-label { font-weight: 600; color: #9ba8b5; margin-right: 4px; }
     .sel-content { background: #f8fafc; border: 1px solid #e0e4e8; border-radius: 8px; padding: 14px; margin-bottom: 16px; white-space: pre-wrap; line-height: 1.7; font-size: 0.9rem; }
-    .sel-actions { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
-    .sel-actions .action-group { flex: 1; min-width: 200px; }
+    .sel-actions { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+    @media (max-width: 700px) { .sel-actions { grid-template-columns: 1fr; } }
     .action-group-title { font-size: 0.78rem; font-weight: 600; color: #637080; margin-bottom: 8px; }
 
     /* フロー図 */
@@ -455,7 +477,18 @@ function buildQuery(array $overrides): string {
     <div class="card-panel sel-panel" id="sel-panel">
       <div class="sel-header">
         <span class="sel-title">TODO詳細 <span style="font-size:0.75rem;color:#9ba8b5;">#<?= $selItem['id'] ?></span></span>
-        <a href="/admin/todos.php" class="sel-close">✕ 閉じる</a>
+        <span style="display:flex;gap:10px;align-items:center;">
+          <?php
+          $selSite = $selItem['site'];
+          $selArea = $selItem['area'] ?? 'general';
+          $targetUrl = $selArea === 'admin'
+              ? ($siteAdminUrls[$selSite] ?? $siteUrls[$selSite] ?? '')
+              : ($siteUrls[$selSite] ?? '');
+          if ($targetUrl): ?>
+          <a href="<?= htmlspecialchars($targetUrl) ?>" target="_blank" rel="noopener" style="font-size:0.78rem;color:#667eea;text-decoration:none;white-space:nowrap;" title="対象ページを開く">↗ サイトを開く</a>
+          <?php endif; ?>
+          <a href="/admin/todos.php" class="sel-close">✕ 閉じる</a>
+        </span>
       </div>
       <div class="sel-meta">
         <span><span class="meta-label">対象:</span> <span class="badge badge-site"><?= htmlspecialchars($selItem['site']) ?></span> <?= $siteLabels[$selItem['site']] ?? '' ?></span>
@@ -769,7 +802,7 @@ function buildQuery(array $overrides): string {
         <tr class="<?= $selItem && $selItem['id'] == $t['id'] ? 'selected' : '' ?>"
             onclick="if(document.getElementById('todo-add-form').style.display!=='none')return;location.href='/admin/todos.php?sel=<?= $t['id'] ?>'">
           <td style="vertical-align:top;white-space:nowrap;width:1%;">
-            <span class="badge badge-<?= $t['priority'] ?>"><?= $priorityLabels[$t['priority']] ?? $t['priority'] ?></span>
+            <span style="font-size:0.7rem;color:#9ba8b5;font-family:monospace;margin-right:4px;">#<?= $t['id'] ?></span><span class="badge badge-<?= $t['priority'] ?>"><?= $priorityLabels[$t['priority']] ?? $t['priority'] ?></span>
             <div style="margin-top:4px;">
               <span class="badge badge-site"><?= htmlspecialchars($t['site']) ?></span>
               <span class="badge badge-<?= $t['area'] ?? 'general' ?>" style="margin-left:2px;"><?= $areaLabels[$t['area'] ?? 'general'] ?></span>
@@ -867,7 +900,7 @@ function buildQuery(array $overrides): string {
   </main>
   </div>
 
-  <script src="/assets/js/common.js?v=20260327h"></script>
+  <script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
   <?php if ($selItem): ?>
   <script>document.getElementById('sel-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });</script>
   <?php endif; ?>

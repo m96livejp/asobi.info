@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 asobiRequireAdmin();
 
 $db = asobiUsersDb();
@@ -27,6 +28,19 @@ $topPages = $db->query("
   FROM access_logs
   WHERE created_at >= datetime('now','localtime','-29 days')
   GROUP BY host, path ORDER BY cnt DESC LIMIT 15
+")->fetchAll(PDO::FETCH_ASSOC);
+
+// ── 国別統計（直近30日）
+$countries = $db->query("
+  SELECT
+    CASE WHEN country = 'JP' THEN '日本'
+         WHEN country = 'OTHER' THEN '海外'
+         ELSE '(不明)' END AS country_label,
+    country,
+    COUNT(*) AS cnt
+  FROM access_logs
+  WHERE created_at >= datetime('now','localtime','-29 days')
+  GROUP BY country ORDER BY cnt DESC
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── ブラウザ統計（直近30日）
@@ -87,7 +101,7 @@ for ($i = 29; $i >= 0; $i--) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>アクセス統計 - 管理画面</title>
-  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
+  <link rel="stylesheet" href="/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
     body { background: #f0f2f5; color: #1d2d3a; font-family: sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; min-height: 100vh; }
@@ -182,6 +196,28 @@ for ($i = 29; $i >= 0; $i--) {
         </div>
       </div>
 
+      <!-- 国別統計 -->
+      <div class="card">
+        <div class="card-title">国別アクセス（直近30日）</div>
+        <table class="stat-table">
+          <thead><tr><th>国</th><th style="text-align:right;">PV</th><th style="text-align:right;">割合</th></tr></thead>
+          <tbody>
+            <?php
+            $totalCountry = array_sum(array_column($countries, 'cnt'));
+            foreach ($countries as $c):
+              $pct = $totalCountry > 0 ? round($c['cnt'] / $totalCountry * 100, 1) : 0;
+              $color = $c['country'] === 'JP' ? '#4caf50' : ($c['country'] === 'OTHER' ? '#ff9800' : '#9e9e9e');
+            ?>
+            <tr>
+              <td><span style="display:inline-block;width:10px;height:10px;background:<?= $color ?>;border-radius:50%;margin-right:6px;"></span><?= htmlspecialchars($c['country_label']) ?></td>
+              <td style="text-align:right;"><?= number_format($c['cnt']) ?></td>
+              <td style="text-align:right;"><?= $pct ?>%</td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+
       <div class="two-col">
         <!-- 人気ページ -->
         <div class="card">
@@ -258,7 +294,7 @@ for ($i = 29; $i >= 0; $i--) {
     </main>
   </div>
 
-  <script src="/assets/js/common.js?v=20260327h"></script>
+  <script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
   <script>
   // ── 日別PV/UVグラフ
   new Chart(document.getElementById('dailyChart'), {

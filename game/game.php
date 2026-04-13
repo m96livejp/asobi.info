@@ -6,6 +6,7 @@
  */
 require_once __DIR__ . '/api/db.php';
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 session_write_close();
 
 $platform = $_GET['platform'] ?? '';
@@ -13,7 +14,8 @@ $slug     = $_GET['slug']     ?? '';
 
 if (!in_array($platform, $VALID_PLATFORMS, true) || !preg_match('/^[a-z0-9_\-]+$/', $slug)) {
     http_response_code(404);
-    exit('Not Found');
+    readfile(__DIR__ . '/error.html');
+    exit;
 }
 
 $db = gameDb();
@@ -23,8 +25,14 @@ $game = $stmt->fetch();
 
 if (!$game) {
     http_response_code(404);
-    exit('Not Found');
+    readfile(__DIR__ . '/error.html');
+    exit;
 }
+
+// サブ画像（スクリーンショット等を複数）
+$shotStmt = $db->prepare("SELECT * FROM game_screenshots WHERE game_id = ? ORDER BY sort_order, id");
+$shotStmt->execute([$game['id']]);
+$screenshots = $shotStmt->fetchAll();
 
 $platformLabels = [
     'nes' => 'ファミコン', 'snes' => 'スーパーファミコン',
@@ -39,13 +47,13 @@ $platformLabel = $platformLabels[$platform] ?? $platform;
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?= htmlspecialchars($game['title']) ?> - <?= htmlspecialchars($platformLabel) ?> | あそびゲーム情報</title>
   <meta name="description" content="<?= htmlspecialchars($game['title']) ?>（<?= htmlspecialchars($platformLabel) ?>）のゲーム情報。<?= $game['description'] ? htmlspecialchars(mb_substr($game['description'], 0, 80)) . '...' : '' ?>">
-  <link rel="stylesheet" href="/css/style.css?v=20260328a">
+  <link rel="stylesheet" href="/css/style.css?v=<?= assetVer('/css/style.css') ?>">
 </head>
 <body>
   <header class="site-header">
     <div class="container">
       <div class="site-logo">
-        <a href="/">ゲーム情報</a><span class="sub">by あそび</span>
+        <a href="/">ゲーム<span>.asobi.info</span></a>
       </div>
       <nav class="site-nav">
         <?php
@@ -66,11 +74,16 @@ $platformLabel = $platformLabels[$platform] ?? $platform;
         <?= htmlspecialchars($game['title']) ?>
       </div>
 
+      <?php
+        // 表示する画像を優先度順に決定
+        $primaryImg = $game['title_image'] ?? $game['box_image'] ?? $game['cart_image'] ?? null;
+        $hasGallery = !empty($game['box_image']) || !empty($game['title_image']) || !empty($game['cart_image']);
+      ?>
       <div class="game-detail">
         <div>
           <div class="game-detail-img">
-            <?php if ($game['image_path']): ?>
-            <img src="<?= htmlspecialchars($game['image_path']) ?>" alt="<?= htmlspecialchars($game['title']) ?>">
+            <?php if ($primaryImg): ?>
+            <img src="<?= htmlspecialchars($primaryImg) ?>" alt="<?= htmlspecialchars($game['title']) ?>">
             <?php else: ?>
             🎮
             <?php endif; ?>
@@ -111,13 +124,86 @@ $platformLabel = $platformLabels[$platform] ?? $platform;
             <?php if (!empty($game['catalog_no'])): ?>
             <span class="game-meta-badge"><strong>型番</strong> <?= htmlspecialchars($game['catalog_no']) ?></span>
             <?php endif; ?>
+            <?php if (!empty($game['md_number'])): ?>
+            <span class="game-meta-badge"><strong>ROM No.</strong> <?= htmlspecialchars($game['md_number']) ?></span>
+            <?php endif; ?>
           </div>
 
           <?php if ($game['description']): ?>
           <div class="game-desc"><?= nl2br(htmlspecialchars($game['description'])) ?></div>
           <?php endif; ?>
+
+          <?php if (!empty($game['description_en'])): ?>
+          <div class="game-desc-en">
+            <h3>Overview</h3>
+            <?= nl2br(htmlspecialchars($game['description_en'])) ?>
+          </div>
+          <?php endif; ?>
         </div>
       </div>
+
+      <?php
+        // メイン画像（パッケージ・タイトル画面・カートリッジ）
+        $mainImages = [
+            ['key' => 'box_image',   'label' => 'パッケージ'],
+            ['key' => 'title_image', 'label' => 'タイトル画面'],
+            ['key' => 'cart_image',  'label' => 'カートリッジ'],
+        ];
+        $hasMainImages = false;
+        foreach ($mainImages as $mi) {
+            if (!empty($game[$mi['key']])) { $hasMainImages = true; break; }
+        }
+        $hasAnyGallery = $hasMainImages || !empty($screenshots);
+      ?>
+      <?php if ($hasAnyGallery): ?>
+      <section class="game-gallery">
+        <h2>ギャラリー</h2>
+
+        <?php if ($hasMainImages): ?>
+        <div class="gallery-grid gallery-main">
+          <?php foreach ($mainImages as $mi):
+              if (empty($game[$mi['key']])) continue;
+          ?>
+          <figure class="gallery-item">
+            <button type="button" class="gallery-trigger"
+                    data-full="<?= htmlspecialchars($game[$mi['key']]) ?>"
+                    data-caption="<?= htmlspecialchars($game['title'] . ' / ' . $mi['label']) ?>">
+              <img src="<?= htmlspecialchars($game[$mi['key']]) ?>" alt="<?= htmlspecialchars($game['title']) ?> <?= $mi['label'] ?>" loading="lazy">
+            </button>
+            <figcaption><?= $mi['label'] ?></figcaption>
+          </figure>
+          <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!empty($screenshots)): ?>
+        <h3 class="gallery-subheading">スクリーンショット</h3>
+        <div class="gallery-grid gallery-screens">
+          <?php foreach ($screenshots as $s): ?>
+          <figure class="gallery-item">
+            <button type="button" class="gallery-trigger"
+                    data-full="<?= htmlspecialchars($s['image_path']) ?>"
+                    data-caption="<?= htmlspecialchars($s['caption'] ?: $game['title']) ?>">
+              <img src="<?= htmlspecialchars($s['image_path']) ?>" alt="<?= htmlspecialchars($s['caption'] ?: $game['title']) ?>" loading="lazy">
+            </button>
+            <?php if (!empty($s['caption'])): ?>
+            <figcaption><?= htmlspecialchars($s['caption']) ?></figcaption>
+            <?php endif; ?>
+          </figure>
+          <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!empty($game['source_url'])): ?>
+        <p class="gallery-source">
+          画像・概要出典:
+          <a href="<?= htmlspecialchars($game['source_url']) ?>" target="_blank" rel="noopener nofollow">
+            <?= htmlspecialchars($game['source_attribution'] ?: 'Sega Retro') ?>
+          </a>
+        </p>
+        <?php endif; ?>
+      </section>
+      <?php endif; ?>
 
       <!-- 裏技・コードセクション -->
       <section class="tips-section">
@@ -181,6 +267,15 @@ $platformLabel = $platformLabels[$platform] ?? $platform;
       </section>
     </div>
   </main>
+
+  <!-- 画像ライトボックス -->
+  <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="画像拡大">
+    <button type="button" class="lightbox-close" aria-label="閉じる">×</button>
+    <figure class="lightbox-figure">
+      <img src="" alt="" class="lightbox-img">
+      <figcaption class="lightbox-caption"></figcaption>
+    </figure>
+  </div>
 
   <footer class="site-footer">
     <p>
@@ -341,7 +436,48 @@ $platformLabel = $platformLabels[$platform] ?? $platform;
 
     loadComments();
   })();
+
+  // === ライトボックス（画像クリックで拡大） ===
+  (function() {
+    const lightbox = document.getElementById('lightbox');
+    if (!lightbox) return;
+    const img = lightbox.querySelector('.lightbox-img');
+    const cap = lightbox.querySelector('.lightbox-caption');
+    const closeBtn = lightbox.querySelector('.lightbox-close');
+
+    function open(src, caption) {
+      img.src = src;
+      img.alt = caption || '';
+      cap.textContent = caption || '';
+      lightbox.hidden = false;
+      document.documentElement.style.overflow = 'hidden';
+    }
+    function close() {
+      lightbox.hidden = true;
+      img.src = '';
+      document.documentElement.style.overflow = '';
+    }
+
+    document.querySelectorAll('.gallery-trigger').forEach(btn => {
+      btn.addEventListener('click', () => {
+        open(btn.dataset.full, btn.dataset.caption);
+      });
+    });
+
+    // 背景クリック / ボタンで閉じる
+    lightbox.addEventListener('click', e => {
+      if (e.target === lightbox || e.target === img || e.target.closest('.lightbox-close')) {
+        close();
+      }
+    });
+    closeBtn.addEventListener('click', close);
+
+    // ESC で閉じる
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !lightbox.hidden) close();
+    });
+  })();
   </script>
-  <script src="https://asobi.info/assets/js/common.js?v=20260327i"></script>
+  <script src="https://asobi.info/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
 </body>
 </html>

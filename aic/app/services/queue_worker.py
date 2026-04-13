@@ -11,6 +11,7 @@ import httpx
 from ..database import async_session
 from ..models.image import GenerationQueue, UserImage, SceneImageTask
 from ..models.settings import SdSettings, SdSelectableModel
+from . import append_api_usage_log
 
 IMAGE_DIR = "/opt/asobi/aic/frontend/images/avatars"
 IMAGE_URL_BASE = "/images/avatars"
@@ -129,6 +130,39 @@ async def get_queue_info(db: AsyncSession, user_id: int | None = None) -> dict:
     }
 
 
+FORGE_LOCK_PATH = "/tmp/asobi_forge.lock"
+
+
+def _acquire_forge_lock(timeout: float = 10.0):
+    """Forge排他ロック取得（image.asobi.infoのPHPワーカーとの競合防止）
+
+    短いタイムアウトで試行し、取得できなければNoneを返す。
+    呼び出し側がリトライ制御を行う。
+    """
+    import fcntl, time
+    fp = open(FORGE_LOCK_PATH, "a+")
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            fcntl.flock(fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fp
+        except (IOError, OSError):
+            time.sleep(0.5)
+    fp.close()
+    return None
+
+
+def _release_forge_lock(fp):
+    """Forge排他ロック解放"""
+    if fp:
+        import fcntl
+        try:
+            fcntl.flock(fp, fcntl.LOCK_UN)
+            fp.close()
+        except Exception:
+            pass
+
+
 async def _process_job(job: GenerationQueue, db: AsyncSession):
     """1件のジョブをSD APIに送信して処理する"""
     global _worker_stopped, _worker_stop_reason
@@ -180,7 +214,17 @@ async def _process_job(job: GenerationQueue, db: AsyncSession):
         except Exception as e:
             print(f"[queue_worker] model switch failed: {e}")
 
-    try:
+    # Forge排他ロック取得（image.asobi.infoとの競合防止）
+    lock = await asyncio.get_event_loop().run_in_executor(None, _acquire_forge_lock)
+    if not lock:
+        # ロック取得失敗 → pending に戻してリトライ（ワーカーは停止しない）
+        job.status = "pending"
+        job.started_at = None
+        print(f"[queue_worker] job {job.id}: Forge lock busy, returning to pending for retry")
+        await db.commit()
+        return
+
+    try:  # Forge排他ロック範囲（finally で解放）
         async with httpx.AsyncClient(timeout=180) as client:
             r = await client.post(f"{endpoint}/sdapi/v1/txt2img", json=payload)
             if r.status_code != 200:
@@ -221,6 +265,9 @@ async def _process_job(job: GenerationQueue, db: AsyncSession):
         job.completed_at = datetime.now()
         await db.commit()
         return
+    finally:
+        # Forge排他ロック解放
+        await asyncio.get_event_loop().run_in_executor(None, _release_forge_lock, lock)
 
     images = data.get("images", [])
     if not images:
@@ -269,6 +316,18 @@ async def _process_job(job: GenerationQueue, db: AsyncSession):
     job.status = "completed"
     job.completed_at = datetime.now()
 
+    # API利用ログ記録
+    append_api_usage_log({
+        "type": "image",
+        "site": "aic",
+        "endpoint": "/queue-worker",
+        "user_id": job.user_id,
+        "provider": "forge",
+        "model": job.model or "",
+        "input_chars": len(job.prompt or ""),
+        "output_chars": len(images),
+    })
+
     # 選択可能モデルの利用回数をカウントアップ
     if job.model:
         sel_result = await db.execute(
@@ -308,7 +367,12 @@ async def _worker_loop():
 
                     # SD API に送信
                     await _process_job(job, db)
-                    continue  # 次のジョブをすぐチェック
+
+                    # ロック取得失敗でpendingに戻された場合は少し待ってリトライ
+                    await db.refresh(job)
+                    if job.status == "pending":
+                        await asyncio.sleep(POLL_INTERVAL * 5)  # 10秒待ってリトライ
+                    continue
 
                 # 通常キューが空 → シーン画像タスクをチェック
                 scene_result = await db.execute(
@@ -322,7 +386,11 @@ async def _worker_loop():
                 if scene_task:
                     from .scene_image_service import process_scene_task
                     await process_scene_task(scene_task.id)
-                    continue  # 次のジョブをすぐチェック
+                    # ロック取得失敗でpendingに戻された場合は少し待ってリトライ
+                    await db.refresh(scene_task)
+                    if scene_task.status == "pending":
+                        await asyncio.sleep(POLL_INTERVAL * 5)  # 10秒待ってリトライ
+                    continue
 
                 # どちらもなければスリープ
                 await asyncio.sleep(POLL_INTERVAL)

@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 $currentUser = asobiIsLoggedIn() ? asobiGetCurrentUser() : null;
 session_write_close();
 // アクセスログはレスポンス送信後に記録
@@ -12,7 +13,8 @@ register_shutdown_function('asobiLogAccess');
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>あそび - ゲーム情報ポータル</title>
   <meta name="description" content="ゲーム攻略・情報サイト「あそび」。Dead by Daylight、ポケモンクエストなどの攻略情報をお届けします。">
-  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
+  <link rel="canonical" href="https://asobi.info/">
+  <link rel="stylesheet" href="/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
   <style>
     body {
       background: #f5f5f7;
@@ -153,6 +155,14 @@ register_shutdown_function('asobiLogAccess');
     }
     .card-aic h2 { color: #6edd8a; }
     .card-aic .game-card-tag { color: #6edd8a; }
+
+    .card-image { background: #1a0a2e; }
+    .card-image .game-card-inner {
+      background: linear-gradient(135deg, rgba(26,10,46,0.88) 0%, rgba(80,20,120,0.75) 40%, rgba(160,60,200,0.55) 100%);
+      border: 1px solid rgba(160,60,200,0.4);
+    }
+    .card-image h2 { color: #d88aff; }
+    .card-image .game-card-tag { color: #d88aff; }
     .card-aic-badge {
       display: inline-block;
       margin-left: 8px;
@@ -185,6 +195,14 @@ register_shutdown_function('asobiLogAccess');
       border: 1px solid rgba(231,76,60,0.3);
     }
     .card-dbd h2 { color: #e74c3c; }
+
+    .card-game { background: #1a1a0a; }
+    .card-game .game-card-inner {
+      background: linear-gradient(135deg, rgba(26,26,10,0.88) 0%, rgba(60,50,10,0.75) 40%, rgba(180,140,30,0.55) 100%);
+      border: 1px solid rgba(180,140,30,0.4);
+    }
+    .card-game h2 { color: #f0c040; }
+    .card-game .game-card-tag { color: #f0c040; }
 
     .card-pq { background: #c060d0; }
     .card-pq .game-card-inner {
@@ -228,6 +246,15 @@ register_shutdown_function('asobiLogAccess');
           </div>
         </a>
 
+        <a href="https://image.asobi.info" class="game-card card-image">
+          <div class="game-card-inner">
+            <span class="game-card-arrow">&rarr;</span>
+            <div class="game-card-tag">AI Image Generator<span class="original-badge">ASOBI ORIGINAL</span></div>
+            <h2>AI画像生成</h2>
+            <p>オリジナルAI画像生成ツール。プロンプトを入力して、AIが画像を生成します。</p>
+          </div>
+        </a>
+
         <a href="https://tbt.asobi.info" class="game-card card-tbt">
           <div class="game-card-bg" style="background-image:url('/assets/images/card-tbt.jpg')"></div>
           <div class="game-card-inner">
@@ -257,6 +284,15 @@ register_shutdown_function('asobiLogAccess');
             <p>キラー・サバイバーのパーク検索、アドオン一覧、キラー能力・速度データベース</p>
           </div>
         </a>
+
+        <a href="https://game.asobi.info" class="game-card card-game" style="grid-column:1/-1;">
+          <div class="game-card-inner">
+            <span class="game-card-arrow">&rarr;</span>
+            <div class="game-card-tag">Retro Game Database</div>
+            <h2>ゲームデータベース</h2>
+            <p>ファミコン・スーファミ・PCエンジン・メガドライブ・MSXなど、レトロゲームの全タイトル情報を網羅</p>
+          </div>
+        </a>
       </div>
     </section>
   </main>
@@ -275,6 +311,6 @@ register_shutdown_function('asobiLogAccess');
       <p>&copy; 2026 あそび - ゲーム情報ポータル</p>
     </div>
   </footer>
-  <script src="/assets/js/common.js?v=20260327i"></script>
+  <script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
 </body>
 </html>

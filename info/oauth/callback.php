@@ -187,7 +187,11 @@ function _oauthCurl(string $url, array $post = [], array $headers = [], ?string 
     curl_close($ch);
     if ($body === false) throw new Exception('curl failed');
     $json = json_decode($body, true) ?? [];
-    if ($code >= 400) throw new Exception($json['error_description'] ?? $json['error'] ?? "HTTP $code");
+    if ($code >= 400) {
+        $errMsg = $json['error_description'] ?? $json['error'] ?? "HTTP $code";
+        if (is_array($errMsg)) $errMsg = json_encode($errMsg, JSON_UNESCAPED_UNICODE);
+        throw new Exception((string)$errMsg . ' | body: ' . substr($body, 0, 500));
+    }
     return $json;
 }
 

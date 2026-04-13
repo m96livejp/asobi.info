@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 require_once '/opt/asobi/shared/assets/php/users_db.php';
 
 $currentUser = asobiGetCurrentUser();
@@ -101,7 +102,8 @@ $selType = $p['type'] ?? '個人';
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>お問い合わせ - あそび</title>
-  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
+  <link rel="canonical" href="https://asobi.info/contact.php">
+  <link rel="stylesheet" href="/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
   <style>
     main { max-width: 600px; margin: 0 auto; padding: 40px 16px 60px; }
     h1 { font-size: 1.4rem; margin-bottom: 8px; }
@@ -238,7 +240,7 @@ $selType = $p['type'] ?? '個人';
       <p>&copy; 2026 あそび - ゲーム情報ポータル</p>
     </div>
   </footer>
-  <script src="/assets/js/common.js?v=20260327h"></script>
+  <script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
   <script>
     function setType(type) {
       document.getElementById('type-input').value = type;

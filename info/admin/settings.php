@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 asobiRequireAdmin();
 
 $success = '';
@@ -190,7 +191,7 @@ $currentUser = asobiGetCurrentUser();
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>サイト設定 - asobi.info 管理画面</title>
-  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
+  <link rel="stylesheet" href="/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -406,6 +407,6 @@ $currentUser = asobiGetCurrentUser();
   </main>
   </div>
 
-  <script src="/assets/js/common.js?v=20260327h"></script>
+  <script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
 </body>
 </html>

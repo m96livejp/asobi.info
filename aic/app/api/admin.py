@@ -1,5 +1,7 @@
 """管理者API"""
 import os
+import shutil
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete, update
@@ -76,6 +78,11 @@ class AiSettingsUpdate(BaseModel):
 
 @router.get("/ai-settings")
 async def get_ai_settings(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    from ..services.chat_service import (
+        DEFAULT_RESPONSE_GUIDELINE, DEFAULT_STATE_INSTRUCTION,
+        DEFAULT_TTS_INSTRUCTION, DEFAULT_TTS_INSTRUCTION_PARAMS,
+    )
+    from ..services.review_service import DEFAULT_REVIEW_PROMPT
     s = await _get_or_create_settings(db)
     return {"provider": s.provider, "endpoint": s.endpoint, "api_key": s.api_key,
             "model": s.model, "max_tokens": s.max_tokens, "cost": s.cost,
@@ -92,7 +99,16 @@ async def get_ai_settings(admin: User = Depends(require_admin), db: AsyncSession
             "daily_point_recovery_threshold": s.daily_point_recovery_threshold or 100,
             "state_instruction": s.state_instruction or "",
             "tts_instruction": s.tts_instruction or "",
-            "tts_instruction_params": s.tts_instruction_params or ""}
+            "tts_instruction_params": s.tts_instruction_params or "",
+            "review_enabled": s.review_enabled or 0,
+            "review_prompt": s.review_prompt or "",
+            "defaults": {
+                "response_guideline": DEFAULT_RESPONSE_GUIDELINE,
+                "state_instruction": DEFAULT_STATE_INSTRUCTION,
+                "tts_instruction": DEFAULT_TTS_INSTRUCTION,
+                "tts_instruction_params": DEFAULT_TTS_INSTRUCTION_PARAMS,
+                "review_prompt": DEFAULT_REVIEW_PROMPT,
+            }}
 
 
 @router.put("/ai-settings")
@@ -120,6 +136,8 @@ class AiSettingsPatch(BaseModel):
     image_change_revert_turns: int | None = None
     daily_point_recovery_enabled: int | None = None
     daily_point_recovery_threshold: int | None = None
+    review_enabled: int | None = None
+    review_prompt: str | None = None
 
 
 @router.patch("/ai-settings")
@@ -146,6 +164,10 @@ async def patch_ai_settings(req: AiSettingsPatch, admin: User = Depends(require_
         s.daily_point_recovery_enabled = req.daily_point_recovery_enabled
     if req.daily_point_recovery_threshold is not None:
         s.daily_point_recovery_threshold = max(1, req.daily_point_recovery_threshold)
+    if req.review_enabled is not None:
+        s.review_enabled = req.review_enabled
+    if req.review_prompt is not None:
+        s.review_prompt = req.review_prompt or None
     await db.commit()
     return {"ok": True}
 
@@ -498,9 +520,9 @@ async def list_all_characters(
     creator_ids = list({c.creator_id for c in chars})
     creator_map: dict[int, str] = {}
     if creator_ids:
-        user_q = await db.execute(select(User.id, User.display_name, User.username).where(User.id.in_(creator_ids)))
+        user_q = await db.execute(select(User.id, User.display_name).where(User.id.in_(creator_ids)))
         for row in user_q:
-            creator_map[row.id] = row.display_name or row.username or f"ID:{row.id}"
+            creator_map[row.id] = row.display_name or f"ID:{row.id}"
     # キャラIDごとの不正報告数を一括取得
     report_q = await db.execute(
         select(CharacterReport.character_id, func.count(CharacterReport.id).label("cnt"))
@@ -508,9 +530,43 @@ async def list_all_characters(
         .group_by(CharacterReport.character_id)
     )
     report_map = {row.character_id: row.cnt for row in report_q}
+    # BGMトラック名を一括取得
+    from ..models.character import BgmTrack
+    bgm_ids = list({c.bgm_track_id for c in chars if c.bgm_track_id})
+    bgm_map: dict[int, str] = {}
+    if bgm_ids:
+        bgm_q = await db.execute(select(BgmTrack.id, BgmTrack.name).where(BgmTrack.id.in_(bgm_ids)))
+        for row in bgm_q:
+            bgm_map[row.id] = row.name
+    # 音声モデル名を一括取得
+    from ..models.settings import TtsVoiceModel
+    voice_uuids = list({c.voice_model for c in chars if c.voice_model})
+    voice_map: dict[str, str] = {}
+    if voice_uuids:
+        voice_q = await db.execute(select(TtsVoiceModel.speaker_uuid, TtsVoiceModel.display_name).where(TtsVoiceModel.speaker_uuid.in_(voice_uuids)))
+        for row in voice_q:
+            voice_map[row.speaker_uuid] = row.display_name
     return [{
         "id": c.id,
         "name": c.name,
+        "avatar_url": c.avatar_url,
+        "char_name": c.char_name,
+        "char_age": c.char_age,
+        "gender": c.gender,
+        "profile": c.profile,
+        "private_profile": c.private_profile,
+        "first_message": c.first_message,
+        "genre_story": c.genre_story,
+        "genre_char_type": c.genre_char_type,
+        "genre_personality": c.genre_personality,
+        "keywords": c.keywords,
+        "voice_model": c.voice_model,
+        "voice_name": voice_map.get(c.voice_model or "", ""),
+        "tts_styles": c.tts_styles,
+        "bgm_mode": c.bgm_mode,
+        "bgm_track_id": c.bgm_track_id,
+        "bgm_name": bgm_map.get(c.bgm_track_id or 0, ""),
+        "review_note": c.review_note,
         "creator_id": c.creator_id,
         "creator_name": creator_map.get(c.creator_id, f"ID:{c.creator_id}"),
         "is_deleted": c.is_deleted,
@@ -569,10 +625,37 @@ async def update_character(char_id: int, req: CharacterUpdate,
     c = result.scalar_one_or_none()
     if not c: raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
     if req.is_public is not None: c.is_public = req.is_public
+
+    # 審査ステータス変更時は通知を作成（管理者による手動変更も対象）
+    prev_status = c.review_status
     if req.review_status is not None and req.review_status in ("pending", "approved", "rejected"):
         c.review_status = req.review_status
+        if prev_status != req.review_status and req.review_status in ("approved", "rejected"):
+            from ..services.review_service import _notify_review_result
+            await _notify_review_result(
+                db, c,
+                approved=(req.review_status == "approved"),
+                reason=(c.review_note or "管理者により判定"),
+            )
+
     if req.is_recommended is not None: c.is_recommended = req.is_recommended
     await db.commit()
+    return {"ok": True}
+
+
+@router.post("/characters/{char_id}/review")
+async def trigger_character_review(char_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """AI再審査をトリガー"""
+    result = await db.execute(select(Character).where(Character.id == char_id))
+    c = result.scalar_one_or_none()
+    if not c: raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
+    c.review_status = "pending"
+    c.review_note = None
+    await db.commit()
+    # バックグラウンドで審査実行
+    import asyncio
+    from ..services.review_service import review_character
+    asyncio.create_task(review_character(char_id))
     return {"ok": True}
 
 
@@ -594,6 +677,30 @@ async def restore_character(char_id: int, admin: User = Depends(require_admin), 
     c = result.scalar_one_or_none()
     if not c: raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
     c.is_deleted = 0
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/characters/{char_id}/purge")
+async def purge_character(char_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """キャラクター完全削除（DBから物理削除、関連する会話・メッセージも全削除）"""
+    result = await db.execute(select(Character).where(Character.id == char_id))
+    c = result.scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
+    # 関連する会話を取得
+    conv_result = await db.execute(select(Conversation).where(Conversation.character_id == char_id))
+    convs = conv_result.scalars().all()
+    for conv in convs:
+        # メッセージ削除
+        await db.execute(delete(Message).where(Message.conversation_id == conv.id))
+        # ステータス削除
+        from ..models.conversation import ConversationState, ConversationStateLog
+        await db.execute(delete(ConversationStateLog).where(ConversationStateLog.conversation_id == conv.id))
+        await db.execute(delete(ConversationState).where(ConversationState.conversation_id == conv.id))
+        await db.delete(conv)
+    # キャラクター削除
+    await db.delete(c)
     await db.commit()
     return {"ok": True}
 
@@ -660,7 +767,7 @@ async def update_sd_settings(req: SdSettingsUpdate, admin: User = Depends(requir
     s.negative_prompt = req.negative_prompt; s.steps = req.steps
     s.cfg_scale = req.cfg_scale; s.width = req.width; s.height = req.height
     s.lt_endpoint = req.lt_endpoint or None
-    s.lt_mode = req.lt_mode if req.lt_mode in ("off", "free", "local", "both") else "off"
+    s.lt_mode = req.lt_mode if req.lt_mode in ("off", "free", "local", "both", "opus_mt", "opus_mt_first", "both_local_first") else "off"
     s.lt_api_key = req.lt_api_key or None
     s.max_images = max(1, req.max_images) if req.max_images else 100
     s.wm_enabled = req.wm_enabled
@@ -759,10 +866,51 @@ async def _test_lt_endpoint(endpoint: str, api_key: str = "") -> dict:
         return {"ok": False, "error": str(e), "endpoint": endpoint}
 
 
+async def _test_opus_mt() -> dict:
+    """opus-mt サーバー（localhost:5050）の接続テスト"""
+    import httpx
+    ep = "http://127.0.0.1:5050"
+    try:
+        api_key = ""
+        try:
+            api_key = open("/opt/asobi/translate/api_key.txt").read().strip()
+        except Exception:
+            pass
+        headers = {"X-Api-Key": api_key} if api_key else {}
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post(
+                f"{ep}/translate",
+                json={"text": "テスト", "mode": "opus_mt", "pipeline": True},
+                headers=headers,
+            )
+            r.raise_for_status()
+            data = r.json()
+            translated = data.get("translated_text", "")
+            return {"ok": bool(translated), "label": "opus-mt (サーバー内蔵)", "ja": True, "en": True, "endpoint": ep}
+    except httpx.ConnectError:
+        return {"ok": False, "label": "opus-mt (サーバー内蔵)", "error": f"接続できません: {ep}", "endpoint": ep}
+    except httpx.TimeoutException:
+        return {"ok": False, "label": "opus-mt (サーバー内蔵)", "error": f"タイムアウト: {ep}", "endpoint": ep}
+    except Exception as e:
+        return {"ok": False, "label": "opus-mt (サーバー内蔵)", "error": str(e), "endpoint": ep}
+
+
 @router.post("/lt-test")
 async def test_lt_connection(req: LtTestRequest = LtTestRequest(), admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     mode = req.mode or "local"
     s = await _get_or_create_sd(db)
+
+    # opus_mt モードのテスト
+    if mode in ("opus_mt", "opus_mt_first"):
+        opus_result = await _test_opus_mt()
+        results = [opus_result]
+        if mode == "opus_mt_first":
+            # フォールバック先（無料版）もテスト
+            r = await _test_lt_endpoint("https://libretranslate.com", req.api_key or s.lt_api_key or "")
+            r["label"] = "無料版 (libretranslate.com)"
+            results.append(r)
+        all_ok = all(r["ok"] for r in results)
+        return {"ok": all_ok, "results": results}
 
     # テスト対象エンドポイントを構築
     targets = []  # [(label, endpoint, api_key)]
@@ -853,6 +1001,7 @@ class SelectableModelBody(BaseModel):
 
 def _selmodel_dict(m: SdSelectableModel) -> dict:
     return {"id": m.id, "model_id": m.model_id, "display_name": m.display_name,
+            "preview_image": m.preview_image or "",
             "is_active": m.is_active, "sort_order": m.sort_order, "use_count": m.use_count or 0}
 
 
@@ -889,8 +1038,130 @@ async def delete_selectable_model(model_id: int, admin: User = Depends(require_a
     result = await db.execute(select(SdSelectableModel).where(SdSelectableModel.id == model_id))
     m = result.scalar_one_or_none()
     if not m: raise HTTPException(status_code=404, detail="モデルが見つかりません")
+    # プレビュー画像ファイルも削除
+    if m.preview_image:
+        preview_path = os.path.join(_FRONTEND_ROOT, m.preview_image.lstrip("/"))
+        if os.path.exists(preview_path):
+            try: os.remove(preview_path)
+            except OSError: pass
     await db.delete(m)
     await db.commit()
+    return {"ok": True}
+
+
+# ─────────────────────────────────────────────
+# モデル代表画像（プレビュー）管理
+# ─────────────────────────────────────────────
+
+_MODEL_PREVIEW_DIR = "/opt/asobi/aic/frontend/images/model_previews"
+_MODEL_PREVIEW_URL = "/images/model_previews"
+
+
+@router.get("/selectable-models/{sm_id}/preview-candidates")
+async def list_preview_candidates(
+    sm_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """そのモデルで過去に生成された画像一覧（プレビュー候補）"""
+    result = await db.execute(select(SdSelectableModel).where(SdSelectableModel.id == sm_id))
+    m = result.scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="モデルが見つかりません")
+
+    q = (
+        select(UserImage.id, UserImage.url, UserImage.prompt, UserImage.created_at)
+        .where(UserImage.model == m.model_id, UserImage.status.in_(["saved", "pending"]))
+        .order_by(UserImage.id.desc())
+        .limit(limit).offset(offset)
+    )
+    rows = (await db.execute(q)).all()
+    total_q = select(func.count()).select_from(UserImage).where(
+        UserImage.model == m.model_id, UserImage.status.in_(["saved", "pending"])
+    )
+    total = (await db.execute(total_q)).scalar()
+
+    return {
+        "total": total,
+        "images": [
+            {"id": r[0], "url": r[1], "prompt": r[2] or "", "created_at": str(r[3]) if r[3] else ""}
+            for r in rows
+        ],
+    }
+
+
+class SetPreviewBody(BaseModel):
+    image_id: int
+
+
+@router.post("/selectable-models/{sm_id}/preview")
+async def set_model_preview(
+    sm_id: int,
+    body: SetPreviewBody,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """ユーザー画像を代表画像としてコピー・設定する"""
+    result = await db.execute(select(SdSelectableModel).where(SdSelectableModel.id == sm_id))
+    m = result.scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="モデルが見つかりません")
+
+    img_result = await db.execute(select(UserImage).where(UserImage.id == body.image_id))
+    img = img_result.scalar_one_or_none()
+    if not img or not img.url:
+        raise HTTPException(status_code=404, detail="画像が見つかりません")
+
+    # 元画像のファイルパス
+    src_path = os.path.join(_FRONTEND_ROOT, img.url.lstrip("/"))
+    if not os.path.exists(src_path):
+        raise HTTPException(status_code=404, detail="元画像ファイルが見つかりません")
+
+    # プレビューディレクトリ作成
+    os.makedirs(_MODEL_PREVIEW_DIR, exist_ok=True)
+
+    # 旧プレビュー画像を削除
+    if m.preview_image:
+        old_path = os.path.join(_FRONTEND_ROOT, m.preview_image.lstrip("/"))
+        if os.path.exists(old_path):
+            try: os.remove(old_path)
+            except OSError: pass
+
+    # 新しいファイル名でコピー（元データ削除時のリンク切れ防止）
+    ext = os.path.splitext(src_path)[1] or ".png"
+    new_filename = f"model_{sm_id}_{uuid.uuid4().hex[:8]}{ext}"
+    dst_path = os.path.join(_MODEL_PREVIEW_DIR, new_filename)
+    shutil.copy2(src_path, dst_path)
+
+    # DB更新
+    m.preview_image = f"{_MODEL_PREVIEW_URL}/{new_filename}"
+    await db.commit()
+
+    return {"ok": True, "preview_image": m.preview_image}
+
+
+@router.delete("/selectable-models/{sm_id}/preview")
+async def delete_model_preview(
+    sm_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """代表画像を削除する"""
+    result = await db.execute(select(SdSelectableModel).where(SdSelectableModel.id == sm_id))
+    m = result.scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="モデルが見つかりません")
+
+    if m.preview_image:
+        file_path = os.path.join(_FRONTEND_ROOT, m.preview_image.lstrip("/"))
+        if os.path.exists(file_path):
+            try: os.remove(file_path)
+            except OSError: pass
+        m.preview_image = None
+        await db.commit()
+
     return {"ok": True}
 
 
@@ -903,25 +1174,62 @@ async def list_all_images(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     status: str | None = Query(None),
+    statuses: str | None = Query(None),  # カンマ区切り複数指定
     user_id: int | None = Query(None),
     rating: str | None = Query(None),   # "null"=未評価, "-1","1","2","3"=評価値
+    ratings: str | None = Query(None),  # カンマ区切り複数指定
     username: str | None = Query(None), # display_name 部分一致
     limit: int = Query(200, le=500),
     offset: int = Query(0, ge=0),
 ):
     """全ユーザーの生成画像一覧（管理者用）"""
+    from sqlalchemy import or_, and_
+
+    def _status_clause(stat_list):
+        clauses = []
+        for s in stat_list:
+            if s == "deleted":
+                clauses.append(UserImage.is_deleted == 1)
+            elif s in ("saved", "pending", "discarded"):
+                clauses.append(and_(UserImage.status == s, UserImage.is_deleted == 0))
+        return or_(*clauses) if clauses else None
+
+    def _rating_clause(rating_list):
+        clauses = []
+        for r in rating_list:
+            if r == "null":
+                clauses.append(UserImage.rating == None)  # noqa: E711
+            else:
+                try:
+                    clauses.append(UserImage.rating == int(r))
+                except ValueError:
+                    pass
+        return or_(*clauses) if clauses else None
+
     q = select(UserImage, User.display_name).join(User, User.id == UserImage.user_id, isouter=True)
-    if status:
-        q = q.where(UserImage.status == status)
+    # 複数ステータス
+    stat_list = []
+    if statuses:
+        stat_list = [s.strip() for s in statuses.split(',') if s.strip()]
+    elif status:
+        stat_list = [status]
+    sc = _status_clause(stat_list)
+    if sc is not None:
+        q = q.where(sc)
+
     if user_id:
         q = q.where(UserImage.user_id == user_id)
-    if rating == "null":
-        q = q.where(UserImage.rating == None)  # noqa: E711
+
+    # 複数評価
+    rating_list = []
+    if ratings:
+        rating_list = [r.strip() for r in ratings.split(',') if r.strip()]
     elif rating is not None:
-        try:
-            q = q.where(UserImage.rating == int(rating))
-        except ValueError:
-            pass
+        rating_list = [rating]
+    rc = _rating_clause(rating_list)
+    if rc is not None:
+        q = q.where(rc)
+
     if username:
         q = q.where(User.display_name.ilike(f"%{username}%"))
     q = q.order_by(UserImage.id.desc()).limit(limit).offset(offset)
@@ -930,17 +1238,12 @@ async def list_all_images(
 
     # total count
     cq = select(func.count()).select_from(UserImage).join(User, User.id == UserImage.user_id, isouter=True)
-    if status:
-        cq = cq.where(UserImage.status == status)
+    if sc is not None:
+        cq = cq.where(sc)
     if user_id:
         cq = cq.where(UserImage.user_id == user_id)
-    if rating == "null":
-        cq = cq.where(UserImage.rating == None)  # noqa: E711
-    elif rating is not None:
-        try:
-            cq = cq.where(UserImage.rating == int(rating))
-        except ValueError:
-            pass
+    if rc is not None:
+        cq = cq.where(rc)
     if username:
         cq = cq.where(User.display_name.ilike(f"%{username}%"))
     total = (await db.execute(cq)).scalar()
@@ -949,6 +1252,18 @@ async def list_all_images(
     from ..models.settings import SdSettings as _Sd
     sd_r = await db.execute(select(_Sd).where(_Sd.id == 1))
     sd = sd_r.scalar_one_or_none()
+
+    # キャラクターで使用中のURL一覧を取得（このページの画像URLのみ）
+    from ..models.character import Character
+    page_urls = [img.url for img, _ in rows if img.url]
+    used_urls: set[str] = set()
+    if page_urls:
+        char_q = await db.execute(
+            select(Character.avatar_url).where(
+                Character.avatar_url.in_(page_urls), Character.is_deleted == 0
+            )
+        )
+        used_urls = {r[0] for r in char_q.all() if r[0]}
 
     return {
         "total": total,
@@ -967,12 +1282,49 @@ async def list_all_images(
             "status": img.status,
             "rating": img.rating,
             "is_deleted": img.is_deleted,
+            "is_used": img.url in used_urls if img.url else False,
             "created_at": str(img.created_at) if img.created_at else "",
         } for img, display_name in rows],
     }
 
 
 _FRONTEND_ROOT = "/opt/asobi/aic/frontend"
+
+
+@router.delete("/images/purge-discarded")
+async def admin_purge_discarded_images(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """破棄済み・削除済み画像を一括削除（ファイル＋DB）。キャラクター使用中の画像は除外"""
+    from ..models.character import Character
+    from sqlalchemy import or_
+    used_q = await db.execute(
+        select(Character.avatar_url).where(Character.is_deleted == 0, Character.avatar_url.isnot(None))
+    )
+    used_urls = {r[0] for r in used_q.all()}
+
+    result = await db.execute(
+        select(UserImage).where(or_(UserImage.status == "discarded", UserImage.is_deleted == 1))
+    )
+    imgs = result.scalars().all()
+    deleted = 0
+    skipped = 0
+    for img in imgs:
+        if img.url and img.url in used_urls:
+            skipped += 1
+            continue
+        if img.url:
+            file_path = os.path.join(_FRONTEND_ROOT, img.url.lstrip("/"))
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
+        await db.delete(img)
+        deleted += 1
+    await db.commit()
+    return {"ok": True, "deleted": deleted, "skipped": skipped}
 
 
 @router.delete("/images/{image_id}")
@@ -989,6 +1341,16 @@ async def admin_delete_image(
     img = result.scalar_one_or_none()
     if not img:
         raise HTTPException(status_code=404, detail="画像が見つかりません")
+
+    # キャラクターで使用中チェック
+    if img.url:
+        from ..models.character import Character
+        char_q = await db.execute(
+            select(Character.name).where(Character.avatar_url == img.url, Character.is_deleted == 0)
+        )
+        used_char = char_q.scalar_one_or_none()
+        if used_char:
+            raise HTTPException(status_code=409, detail=f"「{used_char}」で使用中のため削除できません")
 
     # URL → ファイルパスに変換（例: /images/avatars/gen_xxx.png → /opt/asobi/aic/frontend/images/avatars/gen_xxx.png）
     file_deleted = False

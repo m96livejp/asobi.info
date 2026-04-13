@@ -18,6 +18,16 @@ check_old_paths() {
     echo "✅ パスチェックOK: $dir"
 }
 
+# ===== HTMLファイルのキャッシュバスティング =====
+# デプロイ後にHTMLファイル内の ?v=XXXXX をデプロイ時刻のタイムスタンプに置換
+stamp_html_versions() {
+    local dst=$1
+    local ts
+    ts=$(date +%s)
+    ssh -i "$KEY" "$HOST" "find $dst -name '*.html' -exec grep -l '?v=' {} + 2>/dev/null | while read f; do sed -i -E \"s/\\?v=[a-zA-Z0-9]+/\\?v=$ts/g\" \"\$f\"; done" && \
+        echo "  📌 HTMLバージョンスタンプ更新 (v=$ts)"
+}
+
 deploy() {
     local src=$1
     local dst=$2
@@ -25,6 +35,7 @@ deploy() {
     echo "=== $src → $dst ==="
     scp -r -i "$KEY" "$LOCAL_BASE/$src/"* "$HOST:$dst/"
     ssh -i "$KEY" "$HOST" "chown -R www-data:www-data $dst/"
+    stamp_html_versions "$dst"
     echo "✅ $src デプロイ完了"
 }
 
@@ -48,6 +59,7 @@ if [ -z "$SITE" ]; then
     echo "  bash deploy.sh info         # メインサイト全体をデプロイ"
     echo "  bash deploy.sh shared       # 共通assets全体をデプロイ"
     echo "  bash deploy.sh voice        # voice全体をデプロイ"
+    echo "  bash deploy.sh image        # image全体をデプロイ"
     echo "  bash deploy.sh aic          # aic全体をデプロイ"
     echo "  bash deploy.sh all          # 全サイトをデプロイ"
     exit 1
@@ -60,6 +72,7 @@ deploy_aic() {
     scp -r -i "$KEY" "$LOCAL_BASE/aic/frontend/"* "$HOST:/opt/asobi/aic/frontend/"
     scp -i "$KEY" "$LOCAL_BASE/aic/requirements.txt" "$HOST:/opt/asobi/aic/"
     ssh -i "$KEY" "$HOST" "chown -R root:root /opt/asobi/aic/ && systemctl restart aic-api.service"
+    stamp_html_versions "/opt/asobi/aic/frontend"
     echo "✅ aic デプロイ完了"
 }
 
@@ -69,6 +82,7 @@ case "$SITE" in
     info)   deploy "info" "/opt/asobi/info" ;;
     shared) deploy "shared" "/opt/asobi/shared" ;;
     voice)  deploy "voice" "/opt/asobi/voice" ;;
+    image)  deploy "image" "/opt/asobi/image" ;;
     game)   deploy "game" "/opt/asobi/game" ;;
     aic)    deploy_aic ;;
     all)

@@ -79,6 +79,7 @@ $currentPath = $_SERVER['REQUEST_URI'] ?? '';
       <div class="nav-section">コンテンツ</div>
       <a href="/admin/" class="<?= str_starts_with($currentPath, '/admin/') && !str_contains($currentPath, 'games') && !str_contains($currentPath, 'comments') ? 'active' : '' ?>">ダッシュボード</a>
       <a href="/admin/games.php" class="<?= str_contains($currentPath, 'games') ? 'active' : '' ?>">ゲーム管理</a>
+      <a href="/admin/featured.php" class="<?= str_contains($currentPath, 'featured') ? 'active' : '' ?>">注目ゲーム</a>
       <a href="/admin/comments.php" class="<?= str_contains($currentPath, 'comments') ? 'active' : '' ?>">コメント審査</a>
       <div class="nav-section">リンク</div>
       <a href="https://asobi.info/admin/" target="_blank">あそび管理</a>

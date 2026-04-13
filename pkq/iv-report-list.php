@@ -4,6 +4,7 @@ $currentUserId = null;
 $currentIp     = 'unknown';
 try {
     require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
     if (!empty($_SESSION['asobi_user_id'])) {
         $currentUserId = (int)$_SESSION['asobi_user_id'];
     }
@@ -92,8 +93,8 @@ $recipe_stats = $db->query("
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>料理結果一覧 - ポケモンクエスト情報</title>
-  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css?v=20260327e">
-  <link rel="stylesheet" href="/css/style.css?v=20260327c">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
+  <link rel="stylesheet" href="/css/style.css?v=<?= assetVer('/css/style.css') ?>">
   <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
   <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
   <style>
@@ -672,7 +673,7 @@ $recipe_stats = $db->query("
     </div>
   </footer>
 
-  <script src="https://asobi.info/assets/js/common.js?v=20260327h"></script>
+  <script src="https://asobi.info/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
   <script src="/js/comments.js"></script>
   <script>
   // コメント初期化

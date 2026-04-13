@@ -87,6 +87,9 @@ function _adminSbActive(string $page): string {
   <nav class="admin-sidebar">
     <div class="sidebar-section">
       <div class="sidebar-label">管理</div>
+      <a href="/admin/todos.php" class="sidebar-link<?= _adminSbActive('todos') ?>">
+        <span class="sb-icon">📝</span>TODO管理
+      </a>
       <a href="/admin/" class="sidebar-link<?= _adminSbActive('dashboard') ?>">
         <span class="sb-icon">📊</span>ダッシュボード
       </a>
@@ -102,23 +105,29 @@ function _adminSbActive(string $page): string {
       <a href="/admin/font.php" class="sidebar-link<?= _adminSbActive('font') ?>">
         <span class="sb-icon">🔤</span>フォント設定
       </a>
-      <a href="/admin/todos.php" class="sidebar-link<?= _adminSbActive('todos') ?>">
-        <span class="sb-icon">📝</span>TODO管理
-      </a>
       <a href="/admin/content-design.php" class="sidebar-link<?= _adminSbActive('content-design') ?>">
         <span class="sb-icon">🗂️</span>コンテンツ構成
       </a>
-      <a href="/admin/api-status.php" class="sidebar-link<?= _adminSbActive('api-status') ?>">
-        <span class="sb-icon">🔌</span>API接続確認
+      <a href="/admin/translate-dict.php" class="sidebar-link<?= _adminSbActive('translate-dict') ?>">
+        <span class="sb-icon">📖</span>翻訳辞書
       </a>
       <a href="/admin/backup.php" class="sidebar-link<?= _adminSbActive('backup') ?>">
         <span class="sb-icon">💾</span>バックアップ管理
+      </a>
+      <a href="/admin/wallet.php" class="sidebar-link<?= _adminSbActive('wallet') ?>">
+        <span class="sb-icon"><img src="/assets/images/asobi-card.svg" alt="" style="width:16px;height:16px;vertical-align:-3px;"></span>ウォレット管理
       </a>
       <a href="/admin/access-stats.php" class="sidebar-link<?= _adminSbActive('access-stats') ?>">
         <span class="sb-icon">📊</span>アクセス統計
       </a>
       <a href="/admin/access-logs.php" class="sidebar-link<?= _adminSbActive('access-logs') ?>">
         <span class="sb-icon">📋</span>アクセス生ログ
+      </a>
+      <a href="/admin/api-status.php" class="sidebar-link<?= _adminSbActive('api-status') ?>">
+        <span class="sb-icon">🔌</span>API接続確認
+      </a>
+      <a href="/admin/api-usage.php" class="sidebar-link<?= _adminSbActive('api-usage') ?>">
+        <span class="sb-icon">📈</span>API利用状況
       </a>
     </div>
     <div class="sidebar-divider"></div>
@@ -135,6 +144,12 @@ function _adminSbActive(string $page): string {
       </a>
       <a href="https://pkq.asobi.info/admin/" class="sidebar-link" target="_blank">
         <span class="sb-icon">🎮</span>ポケモンクエスト
+      </a>
+      <a href="https://game.asobi.info/admin/" class="sidebar-link" target="_blank">
+        <span class="sb-icon">🕹️</span>レトロゲーム
+      </a>
+      <a href="https://image.asobi.info/admin/" class="sidebar-link" target="_blank">
+        <span class="sb-icon">🖼️</span>画像生成
       </a>
     </div>
     <div class="sidebar-divider"></div>

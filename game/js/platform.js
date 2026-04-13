@@ -21,6 +21,8 @@
             limit: LIMIT,
         });
         if (q) params.set('q', q);
+        if (typeof FILTER_PUBLISHER !== 'undefined' && FILTER_PUBLISHER) params.set('publisher', FILTER_PUBLISHER);
+        if (typeof FILTER_GENRE !== 'undefined' && FILTER_GENRE) params.set('genre', FILTER_GENRE);
 
         try {
             const res = await fetch(`${API_BASE}/games.php?${params}`);
@@ -32,20 +34,25 @@
                 return;
             }
 
-            list.innerHTML = data.games.map(g => `
+            list.innerHTML = data.games.map(g => {
+                const thumb = g.title_image || g.box_image || g.cart_image || '';
+                return `
                 <a href="/${g.platform}/${g.slug}.html" class="game-card">
                     <div class="game-card-img">
-                        ${g.image_path
-                            ? `<img src="${escHtml(g.image_path)}" alt="${escHtml(g.title)}" loading="lazy">`
+                        ${thumb
+                            ? `<img src="${escHtml(thumb)}" alt="${escHtml(g.title)}" loading="lazy">`
                             : '🎮'}
                     </div>
                     <div class="game-card-info">
                         <div class="game-card-title">${escHtml(g.title)}</div>
                         ${g.title_en ? `<div class="game-card-sub">${escHtml(g.title_en)}</div>` : ''}
-                        ${g.release_year ? `<div class="game-card-sub">${g.release_year}年</div>` : ''}
+                        <div class="game-card-meta">
+                            ${g.genre ? `<span class="game-card-genre">${escHtml(g.genre)}</span>` : ''}
+                            ${g.release_year ? `<span>${g.release_year}年</span>` : ''}
+                        </div>
                     </div>
                 </a>
-            `).join('');
+            `;}).join('');
 
             // ページング
             const totalPages = Math.ceil(data.total / LIMIT);

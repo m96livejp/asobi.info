@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 asobiRequireAdmin();
 
 $db = asobiUsersDb();
@@ -105,6 +106,18 @@ $sql = 'SELECT * FROM users' . ($where ? ' WHERE ' . implode(' AND ', $where) : 
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $users = $stmt->fetchAll();
+
+// ソーシャルアカウント連携状態を取得
+$socialMap = [];
+if (!empty($users)) {
+    $ids = array_column($users, 'id');
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $sStmt = $db->prepare("SELECT user_id, provider FROM social_accounts WHERE user_id IN ($placeholders)");
+    $sStmt->execute($ids);
+    foreach ($sStmt->fetchAll() as $row) {
+        $socialMap[$row['user_id']][] = $row['provider'];
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -112,7 +125,7 @@ $users = $stmt->fetchAll();
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ユーザー管理 - asobi.info 管理画面</title>
-  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
+  <link rel="stylesheet" href="/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -243,6 +256,13 @@ $users = $stmt->fetchAll();
 
     .empty { text-align: center; padding: 40px; color: #9ba8b5; }
     .count-label { font-size: 0.85rem; color: #637080; margin-bottom: 12px; }
+
+    .social-icons { display: flex; gap: 4px; margin-top: 4px; }
+    .social-icon { width: 18px; height: 18px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
+    .social-icon.on-google  { background: #4285f4; color: #fff; }
+    .social-icon.on-line    { background: #06c755; color: #fff; }
+    .social-icon.on-twitter { background: #000; color: #fff; }
+    .social-icon.off { background: #e8eaed; color: #b0b8c1; }
   </style>
 </head>
 <body>
@@ -340,6 +360,12 @@ $users = $stmt->fetchAll();
                 <div>
                   <div class="user-name"><?= htmlspecialchars($u['display_name'] ?: $u['username']) ?></div>
                   <div class="user-id">@<?= htmlspecialchars($u['username']) ?> &nbsp;#<?= $u['id'] ?></div>
+                  <?php $linked = $socialMap[$u['id']] ?? []; ?>
+                  <div class="social-icons">
+                    <span class="social-icon <?= in_array('google',  $linked) ? 'on-google'  : 'off' ?>" title="Google<?= in_array('google',  $linked) ? ' 連携済' : ' 未連携' ?>">G</span>
+                    <span class="social-icon <?= in_array('line',    $linked) ? 'on-line'    : 'off' ?>" title="LINE<?= in_array('line',    $linked) ? ' 連携済' : ' 未連携' ?>">L</span>
+                    <span class="social-icon <?= in_array('twitter', $linked) ? 'on-twitter' : 'off' ?>" title="X/Twitter<?= in_array('twitter', $linked) ? ' 連携済' : ' 未連携' ?>">X</span>
+                  </div>
                 </div>
               </div>
             </td>
@@ -412,6 +438,6 @@ $users = $stmt->fetchAll();
     </div>
   </main>
   </div>
-  <script src="/assets/js/common.js?v=20260327h"></script>
+  <script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
 </body>
 </html>

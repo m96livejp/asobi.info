@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     session_write_close();
 }
@@ -41,6 +42,7 @@ $oauthBase = '/oauth/start.php?mode=login&redirect=' . urlencode($redirect);
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ログイン - asobi.info</title>
+  <link rel="canonical" href="https://asobi.info/login.php">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -267,6 +269,6 @@ $oauthBase = '/oauth/start.php?mode=login&redirect=' . urlencode($redirect);
       </a>
     </div>
   </div>
-<script src="/assets/js/common.js?v=20260327h"></script>
+<script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
 </body>
 </html>

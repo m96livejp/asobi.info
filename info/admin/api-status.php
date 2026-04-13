@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 asobiRequireAdmin();
 session_write_close();
 
@@ -10,6 +11,7 @@ $commonDb->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 $commonDb->exec("CREATE TABLE IF NOT EXISTS api_usage_logs (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     ts           TEXT NOT NULL,
+    type         TEXT NOT NULL DEFAULT '',
     user_id      INTEGER,
     username     TEXT NOT NULL DEFAULT '',
     char_name    TEXT NOT NULL DEFAULT '',
@@ -22,14 +24,18 @@ $commonDb->exec("CREATE TABLE IF NOT EXISTS api_usage_logs (
     cost         INTEGER NOT NULL DEFAULT 0,
     currency     TEXT NOT NULL DEFAULT 'points'
 )");
+// マイグレーション: 新規カラム追加
+foreach (['type TEXT NOT NULL DEFAULT \'\'', 'site TEXT NOT NULL DEFAULT \'\'', 'endpoint TEXT NOT NULL DEFAULT \'\''] as $_col) {
+    try { $commonDb->exec("ALTER TABLE api_usage_logs ADD COLUMN $_col"); } catch (Exception $e) {}
+}
 
 $_logFile = '/opt/asobi/aic/data/api_usage.log';
 $_tmpFile = $_logFile . '.import_lock';
 if (file_exists($_logFile) && !file_exists($_tmpFile) && filesize($_logFile) > 0) {
     if (@rename($_logFile, $_tmpFile)) {
         $stmt = $commonDb->prepare(
-            "INSERT INTO api_usage_logs(ts,user_id,username,char_name,provider,model,input_chars,output_chars,ip,user_agent,cost,currency)
-             VALUES(:ts,:uid,:uname,:char,:prov,:model,:inc,:outc,:ip,:ua,:cost,:cur)"
+            "INSERT INTO api_usage_logs(ts,type,site,endpoint,user_id,username,char_name,provider,model,input_chars,output_chars,ip,user_agent,cost,currency)
+             VALUES(:ts,:type,:site,:ep,:uid,:uname,:char,:prov,:model,:inc,:outc,:ip,:ua,:cost,:cur)"
         );
         $commonDb->beginTransaction();
         $imported = 0;
@@ -38,6 +44,9 @@ if (file_exists($_logFile) && !file_exists($_tmpFile) && filesize($_logFile) > 0
             if (!$d) continue;
             $stmt->execute([
                 ':ts'    => $d['ts']           ?? date('Y-m-d H:i:s'),
+                ':type'  => $d['type']         ?? '',
+                ':site'  => $d['site']         ?? '',
+                ':ep'    => $d['endpoint']     ?? '',
                 ':uid'   => $d['user_id']      ?? null,
                 ':uname' => $d['username']     ?? '',
                 ':char'  => $d['char_name']    ?? '',
@@ -57,15 +66,6 @@ if (file_exists($_logFile) && !file_exists($_tmpFile) && filesize($_logFile) > 0
     }
 }
 
-// ─── API利用統計取得（直近30日）───
-$usageTotal  = (int)$commonDb->query("SELECT COUNT(*) FROM api_usage_logs WHERE ts >= datetime('now','localtime','-30 days')")->fetchColumn();
-$usageToday  = (int)$commonDb->query("SELECT COUNT(*) FROM api_usage_logs WHERE date(ts)=date('now','localtime')")->fetchColumn();
-$usageByUser = $commonDb->query("SELECT COALESCE(NULLIF(username,''),'(不明)') AS username, COUNT(*) AS cnt FROM api_usage_logs WHERE ts >= datetime('now','localtime','-30 days') GROUP BY username ORDER BY cnt DESC LIMIT 10")->fetchAll();
-$usageByModel= $commonDb->query("SELECT COALESCE(NULLIF(model,''),'(不明)') AS model, provider, COUNT(*) AS cnt FROM api_usage_logs WHERE ts >= datetime('now','localtime','-30 days') GROUP BY model,provider ORDER BY cnt DESC LIMIT 10")->fetchAll();
-$usageByDay  = $commonDb->query("SELECT date(ts) AS day, COUNT(*) AS cnt FROM api_usage_logs WHERE ts >= datetime('now','localtime','-29 days') GROUP BY day ORDER BY day")->fetchAll();
-$usageByDayMap = []; foreach($usageByDay as $r) $usageByDayMap[$r['day']] = (int)$r['cnt'];
-$usageDayLabels = $usageDayData = [];
-for($i=29;$i>=0;$i--){$d=date('Y-m-d',strtotime("-{$i} days"));$usageDayLabels[]=date('m/d',strtotime($d));$usageDayData[]=$usageByDayMap[$d]??0;}
 
 function getSetting(PDO $db, string $key, string $default = ''): string {
     $r = $db->prepare("SELECT value FROM site_settings WHERE key=?");
@@ -82,7 +82,7 @@ function saveSetting(PDO $db, string $key, string $value): void {
 // ─── POST: 設定保存 ───
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_save'])) {
     header('Content-Type: application/json; charset=utf-8');
-    $fields = ['api_sd_endpoint','api_sd_enabled','api_lt_mode','api_lt_endpoint','api_lt_apikey',
+    $fields = ['api_sd_endpoint','api_sd_enabled','api_lt_mode',
                'api_ollama_endpoint','api_ollama_model','api_voicevox_url'];
     foreach ($fields as $f) {
         if (isset($_POST[$f])) saveSetting($commonDb, $f, trim($_POST[$f]));
@@ -113,39 +113,76 @@ if (isset($_GET['check'])) {
     exit;
 }
 
+// ─── AJAX: asobi-translate ヘルスチェック ───
+if (isset($_GET['translate_health'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    $t0 = microtime(true);
+    $ctx = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 5, 'ignore_errors' => true]]);
+    $res = @file_get_contents('http://127.0.0.1:5050/health', false, $ctx);
+    $ms = (int)((microtime(true) - $t0) * 1000);
+    if ($res !== false) {
+        $data = json_decode($res, true);
+        echo json_encode(['ok' => true, 'ms' => $ms, 'detail' => 'opus_mt=' . (($data['opus_mt'] ?? false) ? 'OK' : 'NG')], JSON_UNESCAPED_UNICODE);
+    } else {
+        echo json_encode(['ok' => false, 'ms' => $ms, 'detail' => 'サービスに接続できません'], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
 // ─── AJAX: 翻訳テスト ───
 if (isset($_GET['translate'])) {
     header('Content-Type: application/json; charset=utf-8');
-    $ltMode     = getSetting($commonDb, 'api_lt_mode', 'off');
-    $ltEndpoint = getSetting($commonDb, 'api_lt_endpoint');
-    $ltApiKey   = getSetting($commonDb, 'api_lt_apikey');
+    $ltMode = getSetting($commonDb, 'api_lt_mode', 'off');
     $text   = trim($_POST['text'] ?? '');
     $source = $_POST['source'] ?? 'ja';
     $target = $_POST['target'] ?? 'en';
     if (!$text) { echo json_encode(['ok' => false, 'error' => 'テキストを入力してください'], JSON_UNESCAPED_UNICODE); exit; }
-    $endpoints = [];
-    if (in_array($ltMode, ['local','both']) && $ltEndpoint)
-        $endpoints[] = ['url' => rtrim($ltEndpoint, '/'), 'key' => ''];
-    if (in_array($ltMode, ['free','both']))
-        $endpoints[] = ['url' => 'https://libretranslate.com', 'key' => $ltApiKey];
-    if (!$endpoints) { echo json_encode(['ok' => false, 'error' => 'LibreTranslate が無効または未設定です'], JSON_UNESCAPED_UNICODE); exit; }
-    $translated = null; $usedEp = ''; $ms = 0;
-    foreach ($endpoints as $ep) {
-        $payload = json_encode(['q' => $text, 'source' => $source, 'target' => $target, 'api_key' => $ep['key']]);
-        $t0 = microtime(true);
-        $ctx = stream_context_create(['http' => ['method' => 'POST',
-            'header' => "Content-Type: application/json\r\nContent-Length: " . strlen($payload),
-            'content' => $payload, 'timeout' => 8, 'ignore_errors' => true]]);
-        $res = @file_get_contents($ep['url'] . '/translate', false, $ctx);
-        $ms  = (int)((microtime(true) - $t0) * 1000);
-        if ($res !== false) {
-            $data = json_decode($res, true);
-            if (!empty($data['translatedText'])) { $translated = $data['translatedText']; $usedEp = $ep['url']; break; }
-        }
+    if ($ltMode === 'off') { echo json_encode(['ok' => false, 'error' => '翻訳が無効です'], JSON_UNESCAPED_UNICODE); exit; }
+
+    $t0 = microtime(true);
+
+    // opus_mt は ja→en 専用。それ以外の方向は mymemory に切り替え
+    $mode = $ltMode;
+    if (in_array($ltMode, ['opus_mt', 'opus_mt_first']) && $source !== 'ja') {
+        $mode = 'mymemory';
     }
-    echo $translated !== null
-        ? json_encode(['ok' => true, 'result' => $translated, 'endpoint' => $usedEp, 'ms' => $ms], JSON_UNESCAPED_UNICODE)
-        : json_encode(['ok' => false, 'error' => '翻訳に失敗しました（' . $ms . 'ms）'], JSON_UNESCAPED_UNICODE);
+
+    $apiKey  = trim(@file_get_contents('/opt/asobi/translate/api_key.txt') ?: '');
+    $pipeline = filter_var($_POST['pipeline'] ?? 'false', FILTER_VALIDATE_BOOLEAN);
+    $payload = json_encode(['text' => $text, 'mode' => $mode, 'source' => $source, 'target' => $target, 'pipeline' => $pipeline]);
+    $hdr = "Content-Type: application/json\r\nContent-Length: " . strlen($payload);
+    if ($apiKey) $hdr .= "\r\nX-Api-Key: $apiKey";
+    $ctx = stream_context_create(['http' => [
+        'method' => 'POST', 'header' => $hdr,
+        'content' => $payload, 'timeout' => 15, 'ignore_errors' => true,
+    ]]);
+    $res = @file_get_contents('http://127.0.0.1:5050/translate', false, $ctx);
+    $ms = (int)((microtime(true) - $t0) * 1000);
+
+    if ($res !== false) {
+        $data = json_decode($res, true);
+        $translated = $data['translated_text'] ?? null;
+        $src = $data['source'] ?? '';
+        if ($translated && $src !== 'original') {
+            echo json_encode(['ok' => true, 'result' => $translated, 'endpoint' => $src, 'ms' => $ms], JSON_UNESCAPED_UNICODE);
+        } else {
+            echo json_encode(['ok' => false, 'error' => '翻訳に失敗しました（' . $ms . 'ms）'], JSON_UNESCAPED_UNICODE);
+        }
+    } else {
+        // asobi-translate 停止時: MyMemory に直接フォールバック
+        $mmUrl = 'https://api.mymemory.translated.net/get?q=' . rawurlencode($text) . '&langpair=' . rawurlencode($source . '|' . $target);
+        $ctx2 = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 8, 'ignore_errors' => true]]);
+        $res2 = @file_get_contents($mmUrl, false, $ctx2);
+        $ms2  = (int)((microtime(true) - $t0) * 1000);
+        if ($res2 !== false) {
+            $d2 = json_decode($res2, true);
+            if (($d2['responseStatus'] ?? 0) == 200 && !empty($d2['responseData']['translatedText'])) {
+                echo json_encode(['ok' => true, 'result' => $d2['responseData']['translatedText'], 'endpoint' => 'MyMemory(fallback)', 'ms' => $ms2], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+        }
+        echo json_encode(['ok' => false, 'error' => 'asobi-translateサービスに接続できません（' . $ms . 'ms）'], JSON_UNESCAPED_UNICODE);
+    }
     exit;
 }
 
@@ -180,7 +217,7 @@ if (isset($_GET['voicevox'])) {
     // 2) synthesis
     $sUrl  = $vvBase . '/synthesis?speaker=' . $speaker;
     $body  = json_encode($qJson);
-    $ctx2  = stream_context_create(['http'=>['method'=>'POST','timeout'=>15,'ignore_errors'=>true,
+    $ctx2  = stream_context_create(['http'=>['method'=>'POST','timeout'=>60,'ignore_errors'=>true,
                'header'=>"Content-Type: application/json\r\nAccept: audio/wav\r\n",'content'=>$body]]);
     $audio = @file_get_contents($sUrl, false, $ctx2);
     if ($audio === false || strlen($audio) < 100) {
@@ -192,18 +229,74 @@ if (isset($_GET['voicevox'])) {
     exit;
 }
 
+// ─── AJAX: 画像生成API接続チェック（モデル情報付き）───
+if (isset($_GET['check_sd'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    $ep = rtrim(getSetting($commonDb, 'api_sd_endpoint', ''), '/');
+    if (!$ep) { echo json_encode(['ok' => false, 'detail' => 'エンドポイント未設定'], JSON_UNESCAPED_UNICODE); exit; }
+    $t0 = microtime(true);
+    $ch = curl_init($ep . '/sdapi/v1/options');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_CONNECTTIMEOUT => 5]);
+    $body = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    $ms = (int)((microtime(true) - $t0) * 1000);
+    if ($code === 200 && $body) {
+        $d = json_decode($body, true);
+        $model = $d['sd_model_checkpoint'] ?? '(不明)';
+        echo json_encode(['ok' => true, 'ms' => $ms, 'model' => $model, 'detail' => "モデル: $model"], JSON_UNESCAPED_UNICODE);
+    } else {
+        echo json_encode(['ok' => false, 'ms' => $ms, 'detail' => "接続失敗 (HTTP $code)"], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
+// ─── AJAX: Ollama接続チェック（モデル情報付き）───
+if (isset($_GET['check_ollama'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    $ep = rtrim(getSetting($commonDb, 'api_ollama_endpoint', ''), '/');
+    if (!$ep) { echo json_encode(['ok' => false, 'detail' => 'エンドポイント未設定'], JSON_UNESCAPED_UNICODE); exit; }
+    // ホスト部分を抽出してバージョン確認
+    $p = parse_url($ep);
+    $base = ($p['scheme'] ?? 'http') . '://' . ($p['host'] ?? '') . (isset($p['port']) ? ':' . $p['port'] : '');
+    $t0 = microtime(true);
+    // バージョン取得
+    $ch = curl_init($base . '/api/version');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 5, CURLOPT_CONNECTTIMEOUT => 3]);
+    $body = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    $ms = (int)((microtime(true) - $t0) * 1000);
+    if ($code !== 200) {
+        echo json_encode(['ok' => false, 'ms' => $ms, 'detail' => "接続失敗 (HTTP $code)"], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $ver = json_decode($body, true)['version'] ?? '?';
+    // ロード中モデル取得
+    $ch2 = curl_init($base . '/api/ps');
+    curl_setopt_array($ch2, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 5, CURLOPT_CONNECTTIMEOUT => 3]);
+    $body2 = curl_exec($ch2); curl_close($ch2);
+    $loaded = [];
+    if ($body2) {
+        $ps = json_decode($body2, true);
+        foreach (($ps['models'] ?? []) as $m) {
+            $vram = round(($m['size_vram'] ?? 0) / 1024 / 1024 / 1024, 1);
+            $loaded[] = $m['name'] . " ({$vram}GB)";
+        }
+    }
+    // 設定モデル
+    $cfgModel = getSetting($commonDb, 'api_ollama_model', '(未設定)');
+    $loadedStr = $loaded ? implode(', ', $loaded) : 'なし';
+    $detail = "ver: $ver / 設定モデル: $cfgModel / ロード中: $loadedStr";
+    echo json_encode(['ok' => true, 'ms' => $ms, 'version' => $ver, 'config_model' => $cfgModel, 'loaded_models' => $loaded, 'detail' => $detail], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // ─── 設定読み込み ───
 $sdEndpoint     = getSetting($commonDb, 'api_sd_endpoint');
 $sdEnabled      = (int)getSetting($commonDb, 'api_sd_enabled', '0');
 $ltMode         = getSetting($commonDb, 'api_lt_mode', 'off');
-$ltEndpoint     = getSetting($commonDb, 'api_lt_endpoint');
-$ltApiKey       = getSetting($commonDb, 'api_lt_apikey');
 $ollamaEndpoint = getSetting($commonDb, 'api_ollama_endpoint');
 $ollamaModel    = getSetting($commonDb, 'api_ollama_model');
 $voicevoxUrl    = getSetting($commonDb, 'api_voicevox_url', 'http://133.117.75.23:50021');
 
 $sdCheckUrl      = $sdEndpoint ? rtrim($sdEndpoint, '/') . '/sdapi/v1/options' : '';
-$ltCheckUrl      = $ltEndpoint ? rtrim($ltEndpoint, '/') . '/languages' : '';
 $voicevoxCheckUrl = rtrim($voicevoxUrl, '/') . '/version';
 $ollamaCheckUrl  = '';
 if ($ollamaEndpoint) {
@@ -217,7 +310,7 @@ if ($ollamaEndpoint) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>API管理 - 管理画面</title>
-  <link rel="stylesheet" href="/assets/css/common.css?v=20260327f">
+  <link rel="stylesheet" href="/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
   <style>*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1d2d3a; min-height: 100vh; display: flex; flex-direction: column; }</style>
 </head>
@@ -326,11 +419,9 @@ if ($ollamaEndpoint) {
       </div>
       <div style="display:flex;gap:6px;margin-top:4px">
         <button class="btn btn-primary" onclick="saveCard(this)">保存</button>
-        <?php if ($sdCheckUrl): ?>
-        <button class="btn-check" onclick="checkApi(this, <?= htmlspecialchars(json_encode($sdCheckUrl)) ?>)">接続テスト</button>
-        <?php endif; ?>
+        <button class="btn-check" onclick="checkSd(this)">接続テスト</button>
       </div>
-      <div class="check-result"></div>
+      <div class="check-result" id="sd-check-result"></div>
     </div>
 
     <!-- Ollama 設定 -->
@@ -350,20 +441,23 @@ if ($ollamaEndpoint) {
       </div>
       <div style="display:flex;gap:6px;margin-top:4px">
         <button class="btn btn-primary" onclick="saveCard(this)">保存</button>
-        <?php if ($ollamaCheckUrl): ?>
-        <button class="btn-check" onclick="checkApi(this, <?= htmlspecialchars(json_encode($ollamaCheckUrl)) ?>)">接続テスト</button>
-        <?php endif; ?>
+        <button class="btn-check" onclick="checkOllama(this)">接続テスト</button>
       </div>
-      <div class="check-result"></div>
+      <div class="check-result" id="ollama-check-result"></div>
     </div>
 
-    <!-- LibreTranslate 設定 -->
+    <!-- 翻訳（asobi-translate）設定 -->
     <div class="api-card">
       <div class="api-card-header">
         <div class="api-icon">🌐</div>
-        <div class="api-name">LibreTranslate</div>
+        <div class="api-name">翻訳（asobi-translate）</div>
         <?php
-        $ltLabel = match($ltMode) { 'local'=>'ローカル', 'free'=>'無料API', 'both'=>'両方', default=>'無効' };
+        $ltLabel = match($ltMode) {
+            'opus_mt'       => 'Local_translate',
+            'opus_mt_first' => 'Local_translate優先',
+            'mymemory'      => 'MyMemory',
+            default         => '無効'
+        };
         $ltClass = $ltMode !== 'off' ? 'enabled' : 'disabled';
         ?>
         <span class="api-badge <?= $ltClass ?>"><?= $ltLabel ?></span>
@@ -371,33 +465,29 @@ if ($ollamaEndpoint) {
       <div class="field">
         <label>モード</label>
         <select name="api_lt_mode">
-          <option value="off"   <?= $ltMode==='off'   ? 'selected' : '' ?>>無効</option>
-          <option value="local" <?= $ltMode==='local'  ? 'selected' : '' ?>>ローカルのみ</option>
-          <option value="free"  <?= $ltMode==='free'   ? 'selected' : '' ?>>無料版のみ（libretranslate.com）</option>
-          <option value="both"  <?= $ltMode==='both'   ? 'selected' : '' ?>>ローカル優先→無料版</option>
+          <option value="off"           <?= $ltMode==='off'           ? 'selected' : '' ?>>無効</option>
+          <option value="opus_mt"       <?= $ltMode==='opus_mt'       ? 'selected' : '' ?>>Local_translate（ja→en専用）</option>
+          <option value="opus_mt_first" <?= $ltMode==='opus_mt_first' ? 'selected' : '' ?>>Local_translate → MyMemory</option>
+          <option value="mymemory"      <?= $ltMode==='mymemory'      ? 'selected' : '' ?>>MyMemory（無料API）</option>
         </select>
-      </div>
-      <div class="field">
-        <label>ローカルエンドポイント</label>
-        <input type="text" name="api_lt_endpoint" value="<?= htmlspecialchars($ltEndpoint) ?>" placeholder="例: http://153.242.124.35:17212">
-      </div>
-      <div class="field">
-        <label>APIキー（libretranslate.com 無料版用）</label>
-        <input type="text" name="api_lt_apikey" value="<?= htmlspecialchars($ltApiKey) ?>" placeholder="未登録の場合は空欄">
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
         <button class="btn btn-primary" onclick="saveCard(this)">保存</button>
-        <?php if ($ltCheckUrl): ?>
-        <button class="btn-check" onclick="checkApi(this, <?= htmlspecialchars(json_encode($ltCheckUrl)) ?>)">ローカルテスト</button>
-        <?php endif; ?>
-        <button class="btn-check" onclick="checkApi(this, 'https://libretranslate.com/languages', document.getElementById('lt-free-result'))">無料版テスト</button>
+        <button class="btn-check" onclick="checkTranslateService(this)">サービス確認</button>
+        <button class="btn-check" onclick="testMyMemory(this)">MyMemoryテスト</button>
       </div>
-      <div class="check-result"></div>
-      <div class="check-result" id="lt-free-result"></div>
+      <div class="check-result" id="translate-svc-result"></div>
+      <div class="check-result" id="mm-result"></div>
 
       <?php if ($ltMode !== 'off'): ?>
       <div class="test-section">
-        <div class="test-section-title">翻訳テスト（2段階確認）</div>
+        <div class="test-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+          翻訳テスト（2段階確認）
+          <label style="display:flex;align-items:center;gap:5px;font-size:0.78rem;font-weight:400;cursor:pointer;">
+            <input type="checkbox" id="lt-pipeline" checked>
+            補正翻訳（pipeline）
+          </label>
+        </div>
         <div class="lt-trans-grid">
           <div class="lt-trans-col">
             <textarea id="lt-ja" placeholder="日本語テキストを入力..."></textarea>
@@ -458,63 +548,6 @@ if ($ollamaEndpoint) {
 
   </div>
 
-  <!-- ─── API利用状況 ─── -->
-  <hr style="border:none;border-top:1px solid #e0e4e8;margin:28px 0 22px">
-  <h2 style="font-size:1rem;font-weight:700;margin-bottom:16px;color:#1d2d3a;">📊 API利用状況</h2>
-
-  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
-    <div style="background:#fff;border:1px solid #e0e4e8;border-radius:10px;padding:14px 22px;flex:1 1 120px;min-width:110px;">
-      <div style="font-size:0.72rem;color:#9ba8b5;margin-bottom:4px;">本日</div>
-      <div style="font-size:1.5rem;font-weight:700;color:#5567cc;"><?= number_format($usageToday) ?></div>
-    </div>
-    <div style="background:#fff;border:1px solid #e0e4e8;border-radius:10px;padding:14px 22px;flex:1 1 120px;min-width:110px;">
-      <div style="font-size:0.72rem;color:#9ba8b5;margin-bottom:4px;">直近30日</div>
-      <div style="font-size:1.5rem;font-weight:700;color:#1d2d3a;"><?= number_format($usageTotal) ?></div>
-    </div>
-  </div>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-    <!-- 日別グラフ -->
-    <div style="grid-column:1/-1;background:#fff;border:1px solid #e0e4e8;border-radius:10px;padding:16px 18px;">
-      <div style="font-size:0.85rem;font-weight:600;color:#637080;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #f0f2f7;">日別チャット回数（直近30日）</div>
-      <div style="position:relative;height:160px;"><canvas id="usageDayChart"></canvas></div>
-    </div>
-    <!-- ユーザー別 -->
-    <div style="background:#fff;border:1px solid #e0e4e8;border-radius:10px;padding:16px 18px;">
-      <div style="font-size:0.85rem;font-weight:600;color:#637080;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f0f2f7;">ユーザー別（直近30日）</div>
-      <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
-        <thead><tr><th style="text-align:left;padding:4px 6px;color:#637080;font-size:0.74rem;">ユーザー</th><th style="text-align:right;padding:4px 6px;color:#637080;font-size:0.74rem;">回数</th></tr></thead>
-        <tbody>
-          <?php $maxU = max(1,(int)(($usageByUser[0]['cnt']??1)));
-          foreach($usageByUser as $r): $pct=round($r['cnt']/$maxU*100); ?>
-          <tr>
-            <td style="padding:4px 6px;"><?= htmlspecialchars($r['username']) ?><div style="background:#eef1fb;border-radius:3px;height:4px;margin-top:2px;"><div style="background:#7b8ed4;border-radius:3px;height:4px;width:<?=$pct?>%"></div></div></td>
-            <td style="text-align:right;padding:4px 6px;font-weight:600;color:#5567cc;"><?= number_format($r['cnt']) ?></td>
-          </tr>
-          <?php endforeach; ?>
-          <?php if(empty($usageByUser)): ?><tr><td colspan="2" style="padding:8px 6px;color:#9ba8b5;text-align:center;">データなし</td></tr><?php endif; ?>
-        </tbody>
-      </table>
-    </div>
-    <!-- モデル別 -->
-    <div style="background:#fff;border:1px solid #e0e4e8;border-radius:10px;padding:16px 18px;">
-      <div style="font-size:0.85rem;font-weight:600;color:#637080;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f0f2f7;">モデル別（直近30日）</div>
-      <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
-        <thead><tr><th style="text-align:left;padding:4px 6px;color:#637080;font-size:0.74rem;">モデル</th><th style="text-align:right;padding:4px 6px;color:#637080;font-size:0.74rem;">回数</th></tr></thead>
-        <tbody>
-          <?php $maxM = max(1,(int)(($usageByModel[0]['cnt']??1)));
-          foreach($usageByModel as $r): $pct=round($r['cnt']/$maxM*100); ?>
-          <tr>
-            <td style="padding:4px 6px;"><?= htmlspecialchars($r['model'] ?: $r['provider'] ?: '(不明)') ?><div style="background:#eef1fb;border-radius:3px;height:4px;margin-top:2px;"><div style="background:#6edd8a;border-radius:3px;height:4px;width:<?=$pct?>%"></div></div></td>
-            <td style="text-align:right;padding:4px 6px;font-weight:600;color:#5567cc;"><?= number_format($r['cnt']) ?></td>
-          </tr>
-          <?php endforeach; ?>
-          <?php if(empty($usageByModel)): ?><tr><td colspan="2" style="padding:8px 6px;color:#9ba8b5;text-align:center;">データなし</td></tr><?php endif; ?>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
   <div class="save-toast" id="save-toast">保存しました</div>
 
   <script>
@@ -537,6 +570,51 @@ if ($ollamaEndpoint) {
       } finally { btn.disabled = false; }
   }
 
+  // ── MyMemoryテスト ──
+  async function testMyMemory(btn) {
+      const resultEl = document.getElementById('mm-result');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'テスト中...';
+      resultEl.style.display = 'block'; resultEl.className = 'check-result'; resultEl.textContent = 'テスト中...';
+      try {
+          const t0 = performance.now();
+          const res = await fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent('テスト') + '&langpair=ja|en');
+          const ms = Math.round(performance.now() - t0);
+          const data = await res.json();
+          if (data.responseStatus === 200 && data.responseData && data.responseData.translatedText) {
+              resultEl.className = 'check-result ok';
+              resultEl.textContent = 'MyMemory OK (' + ms + 'ms) → ' + data.responseData.translatedText;
+          } else {
+              resultEl.className = 'check-result ng';
+              resultEl.textContent = 'MyMemory エラー: status=' + data.responseStatus;
+          }
+      } catch (e) {
+          resultEl.className = 'check-result ng';
+          resultEl.textContent = 'MyMemory 接続失敗: ' + e.message;
+      } finally { btn.disabled = false; btn.textContent = orig; }
+  }
+
+  // ── asobi-translate サービス確認 ──
+  async function checkTranslateService(btn) {
+      const resultEl = document.getElementById('translate-svc-result');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = '確認中...';
+      resultEl.style.display = 'block'; resultEl.className = 'check-result'; resultEl.textContent = '確認中...';
+      try {
+          const t0 = performance.now();
+          const res = await fetch('/admin/api-status.php?translate_health=1');
+          const ms = Math.round(performance.now() - t0);
+          const data = await res.json();
+          resultEl.className = 'check-result ' + (data.ok ? 'ok' : 'ng');
+          resultEl.textContent = data.ok
+              ? 'サービス稼働中 (' + (data.ms ?? ms) + 'ms) — ' + (data.detail ?? '')
+              : 'エラー: ' + (data.detail || 'サービスに接続できません');
+      } catch (e) {
+          resultEl.className = 'check-result ng';
+          resultEl.textContent = '接続失敗: ' + e.message;
+      } finally { btn.disabled = false; btn.textContent = orig; }
+  }
+
   // ── 接続テスト ──
   async function checkApi(btn, url, resultEl) {
       const card = btn.closest('.api-card');
@@ -550,6 +628,42 @@ if ($ollamaEndpoint) {
           resultEl.className = 'check-result ' + (data.ok ? 'ok' : 'ng');
           resultEl.style.display = 'block';
           resultEl.textContent = data.ok ? '接続OK (' + data.ms + 'ms)' : 'エラー: ' + (data.detail || '接続できませんでした');
+      } catch (e) {
+          resultEl.className = 'check-result ng'; resultEl.style.display = 'block';
+          resultEl.textContent = 'リクエストに失敗しました';
+      } finally { btn.disabled = false; btn.textContent = orig; }
+  }
+
+  // ── 画像生成API接続テスト（モデル情報付き） ──
+  async function checkSd(btn) {
+      const resultEl = document.getElementById('sd-check-result');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = '確認中...';
+      resultEl.style.display = 'none';
+      try {
+          const res = await fetch('/admin/api-status.php?check_sd=1');
+          const data = await res.json();
+          resultEl.className = 'check-result ' + (data.ok ? 'ok' : 'ng');
+          resultEl.style.display = 'block';
+          resultEl.textContent = data.ok ? '接続OK (' + data.ms + 'ms) — ' + data.detail : 'エラー: ' + (data.detail || '接続できませんでした');
+      } catch (e) {
+          resultEl.className = 'check-result ng'; resultEl.style.display = 'block';
+          resultEl.textContent = 'リクエストに失敗しました';
+      } finally { btn.disabled = false; btn.textContent = orig; }
+  }
+
+  // ── Ollama接続テスト（モデル情報付き） ──
+  async function checkOllama(btn) {
+      const resultEl = document.getElementById('ollama-check-result');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = '確認中...';
+      resultEl.style.display = 'none';
+      try {
+          const res = await fetch('/admin/api-status.php?check_ollama=1');
+          const data = await res.json();
+          resultEl.className = 'check-result ' + (data.ok ? 'ok' : 'ng');
+          resultEl.style.display = 'block';
+          resultEl.textContent = data.ok ? '接続OK (' + data.ms + 'ms) — ' + data.detail : 'エラー: ' + (data.detail || '接続できませんでした');
       } catch (e) {
           resultEl.className = 'check-result ng'; resultEl.style.display = 'block';
           resultEl.textContent = 'リクエストに失敗しました';
@@ -576,6 +690,7 @@ if ($ollamaEndpoint) {
       try {
           const fd = new FormData();
           fd.append('text', text); fd.append('source', src); fd.append('target', tgt);
+          fd.append('pipeline', document.getElementById('lt-pipeline')?.checked ? 'true' : 'false');
           const res = await fetch('/admin/api-status.php?translate=1', { method: 'POST', body: fd });
           const data = await res.json();
           if (data.ok) {
@@ -747,30 +862,6 @@ if ($ollamaEndpoint) {
   document.addEventListener('DOMContentLoaded', loadVvSpeakers);
   </script>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script>
-  new Chart(document.getElementById('usageDayChart'), {
-    type: 'bar',
-    data: {
-      labels: <?= json_encode($usageDayLabels, JSON_UNESCAPED_UNICODE) ?>,
-      datasets: [{
-        label: 'チャット回数',
-        data: <?= json_encode($usageDayData) ?>,
-        backgroundColor: 'rgba(101,120,210,0.7)',
-        borderRadius: 3,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 15 }, grid: { display: false } },
-        y: { ticks: { font: { size: 10 } }, beginAtZero: true, grid: { color: '#f0f2f7' } }
-      }
-    }
-  });
-  </script>
-
-  <script src="/assets/js/common.js?v=20260327h"></script>
+  <script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
 </body>
 </html>

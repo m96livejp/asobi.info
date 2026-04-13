@@ -143,9 +143,11 @@ window.location.replace('/');
 </script></body></html>""")
     except (jwt.InvalidTokenError, ValueError, Exception):
         return HTMLResponse(content="""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"></head>
-<body><p style="text-align:center;margin-top:40px;color:#e74c3c">認証エラーが発生しました</p>
-<script>setTimeout(function(){window.location.replace('/');},2000);</script>
+<html><head><meta charset="UTF-8"><meta http-equiv="refresh" content="1;url=/"></head>
+<body style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a2e;color:#ccc;font-family:system-ui,sans-serif">
+<div style="text-align:center"><p style="margin-bottom:12px">ログイン処理中...</p>
+<p style="font-size:0.85rem;color:#888">自動的に移動します</p></div>
+<script>window.location.replace('/');</script>
 </body></html>""")
 
 

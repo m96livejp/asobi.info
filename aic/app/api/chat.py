@@ -16,22 +16,43 @@ from ..models.settings import ChatStateConfig
 from ..models.image import UserImage
 from ..services.chat_service import build_system_prompt, get_stream_func, get_ai_settings, get_cost_from_settings
 from ..services.scene_image_service import create_scene_task, _get_sd_settings as _get_sd_settings_for_scene
+from ..services import append_api_usage_log as _append_api_usage_log
 from pydantic import BaseModel
 import json
 
-_API_USAGE_LOG = "/opt/asobi/aic/data/api_usage.log"
-
-
-def _append_api_usage_log(entry: dict):
-    """API利用ログをファイルに追記（JSON Lines形式）"""
-    try:
-        with open(_API_USAGE_LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-
 # STATEタグのパターン
 _STATE_TAG_RE = re.compile(r'<<<STATE>>>(.*?)<<</STATE>>>', re.DOTALL)
+
+# TTSスタイルタグのパターン: {スタイル} or {スタイル:速度:ピッチ:抑揚:音量}
+_TTS_STYLE_RE = re.compile(r'\{([^}]+)\}')
+
+
+def _fix_tts_styles(text: str, tts_styles_json: str | None) -> str:
+    """AIが生成したテキスト内の無効なTTSスタイル名を修正する"""
+    if not tts_styles_json:
+        return text
+    try:
+        styles = json.loads(tts_styles_json)
+        valid_names = {s["name"] for s in styles if "name" in s}
+    except Exception:
+        return text
+    if not valid_names:
+        return text
+    default_style = next(iter(valid_names))
+
+    def _replace(m):
+        raw = m.group(1)
+        parts = raw.split(":")
+        style = parts[0].strip()
+        if style in valid_names:
+            return m.group(0)  # 有効 → そのまま
+        # 部分一致を試行
+        matched = next((n for n in valid_names if n in style or style in n), None)
+        replacement = matched or default_style
+        parts[0] = replacement
+        return "{" + ":".join(parts) + "}"
+
+    return _TTS_STYLE_RE.sub(_replace, text)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -178,6 +199,8 @@ async def send_message(
                 _append_api_usage_log({
                     "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "type": "error",
+                    "site": "aic",
+                    "endpoint": "/api/chat",
                     "user_id": user.id,
                     "username": user.display_name or "",
                     "char_name": char.name or "",
@@ -239,6 +262,10 @@ async def send_message(
                     import logging
                     logging.getLogger("aic").warning(f"STATE parse error: {e}")
 
+        # TTSスタイル名の修正（リスト外のスタイル名をフォールバック）
+        if char.voice_model and char.tts_styles:
+            visible_text = _fix_tts_styles(visible_text, char.tts_styles)
+
         # AIレスポンス保存 & ポイント消費（リトライ付き）
         state_snapshot_text = None
         _scene_task_id = None  # 画像変化タスクID
@@ -250,6 +277,12 @@ async def send_message(
         currency = "points"
         save_ok = False
         ai_msg_id = None
+        if not visible_text.strip():
+            # AI応答が空の場合は保存せずスキップ（ポイント消費もしない）
+            import logging
+            logging.getLogger("aic").warning(f"Empty AI response for conv={conversation_id}, skipping save")
+            yield f"data: {json.dumps({'error': '応答がありませんでした。もう一度お試しください。'}, ensure_ascii=False)}\n\n"
+            return
         for _retry in range(3):
             try:
                 ai_msg = Message(conversation_id=conversation_id, role="assistant", content=visible_text,
@@ -360,6 +393,8 @@ async def send_message(
                 _output_chars = len(visible_text)
                 _append_api_usage_log({
                     "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "site": "aic",
+                    "endpoint": "/api/chat",
                     "user_id": user.id,
                     "username": user.display_name or "",
                     "char_name": char.name or "",

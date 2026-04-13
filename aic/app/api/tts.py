@@ -9,6 +9,7 @@ from ..models.user import User
 from ..models.character import Character
 from ..models.conversation import Conversation, SEMissLog
 from ..models.settings import AiSettings, TtsVoiceModel
+from ..services import append_api_usage_log
 from pydantic import BaseModel
 import httpx
 import json
@@ -80,6 +81,59 @@ async def list_voice_models(gender: str | None = None, db: AsyncSession = Depend
     return out
 
 
+class PreviewRequest(BaseModel):
+    style_id: int
+    text: str = "こんにちは、よろしくお願いします。"
+
+
+@router.post("/preview")
+async def preview_voice(
+    req: PreviewRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """音声モデル試聴（キャラクター作成・編集時のプレビュー用）"""
+    vv_url = await _get_vv_url(db)
+    text = req.text.strip()[:100] or "こんにちは"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            q_res = await client.post(
+                f"{vv_url}/audio_query",
+                params={"text": text, "speaker": req.style_id},
+            )
+            q_res.raise_for_status()
+            s_res = await client.post(
+                f"{vv_url}/synthesis",
+                params={"speaker": req.style_id},
+                json=q_res.json(),
+                headers={"Content-Type": "application/json"},
+            )
+            s_res.raise_for_status()
+            return Response(content=s_res.content, media_type="audio/wav")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"VOICEVOX error: {str(e)}")
+
+
+@router.post("/se-miss")
+async def log_se_miss(
+    req: SEMissRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """存在しないSE名をDBに記録"""
+    name = req.name.strip()[:100]
+    if not name:
+        return {"ok": False}
+    result = await db.execute(select(SEMissLog).where(SEMissLog.se_name == name))
+    row = result.scalar_one_or_none()
+    if row:
+        row.count = (row.count or 0) + 1
+    else:
+        db.add(SEMissLog(se_name=name, count=1))
+    await db.commit()
+    return {"ok": True}
+
+
 @router.post("/{conversation_id}")
 async def synthesize(
     conversation_id: int,
@@ -144,29 +198,19 @@ async def synthesize(
                 headers={"Content-Type": "application/json"},
             )
             s_res.raise_for_status()
+            append_api_usage_log({
+                "type": "tts",
+                "site": "aic",
+                "endpoint": "/api/tts",
+                "user_id": user.id if user else None,
+                "provider": "voicevox",
+                "model": char.voice_model or "",
+                "input_chars": len(text),
+                "output_chars": len(s_res.content),
+            })
             return Response(content=s_res.content, media_type="audio/wav")
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"VOICEVOX error: {str(e)}")
-
-
-@router.post("/se-miss")
-async def log_se_miss(
-    req: SEMissRequest,
-    user: User = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """存在しないSE名をDBに記録"""
-    name = req.name.strip()[:100]
-    if not name:
-        return {"ok": False}
-    result = await db.execute(select(SEMissLog).where(SEMissLog.se_name == name))
-    row = result.scalar_one_or_none()
-    if row:
-        row.count = (row.count or 0) + 1
-    else:
-        db.add(SEMissLog(se_name=name, count=1))
-    await db.commit()
-    return {"ok": True}
 
 
 # === 管理者用エンドポイント ===

@@ -35,8 +35,26 @@
     <header class="main-header">
       <button id="menu-btn" class="menu-btn" onclick="toggleSidebar()">☰</button>
       <div class="header-title" id="header-title">AIチャット</div>
+      <button id="notif-bell" class="notif-bell" onclick="openNotifPanel()" title="お知らせ" style="display:none">
+        🔔
+        <span id="notif-badge" class="notif-badge" style="display:none">0</span>
+      </button>
       <div id="header-user-area" class="hdr-user-area"></div>
     </header>
+
+    <!-- 通知パネル -->
+    <div id="notif-panel" class="notif-panel" hidden>
+      <div class="notif-panel-header">
+        <span class="notif-panel-title">お知らせ</span>
+        <button class="notif-panel-close" onclick="closeNotifPanel()">×</button>
+      </div>
+      <div id="notif-panel-list" class="notif-panel-list">
+        <div class="notif-empty">読み込み中...</div>
+      </div>
+      <div class="notif-panel-footer">
+        <button class="notif-mark-all-btn" onclick="markAllNotifRead()">すべて既読にする</button>
+      </div>
+    </div>
 
     <!-- ホーム画面 -->
     <div id="screen-home" class="screen active">
@@ -113,7 +131,7 @@
           <a id="create-login-link" class="btn btn-primary" onclick="location.href=LOGIN_URL">asobi.info でログイン</a>
         </div>
       </div>
-      <!-- ログイン済み向けフォーム（2ステップ） -->
+      <!-- ログイン済み向けフォーム -->
       <div class="create-form" id="create-form">
         <!-- ─── アバター選択 ─── -->
         <div id="cr-step-1">
@@ -123,7 +141,8 @@
               <p style="font-size:0.88rem;font-weight:600;color:var(--text)">生成済みギャラリー</p>
               <span id="cr-gallery-count-badge" style="font-size:0.75rem;color:var(--text-secondary)"></span>
             </div>
-            <div id="avatar-gen-section">
+            <div id="avatar-gen-section" style="display:none;display:flex;gap:6px">
+              <button class="btn btn-secondary btn-sm" style="color:var(--accent)" onclick="deleteAllGalleryImages()">一覧をすべて削除</button>
               <button class="btn btn-secondary btn-sm" onclick="goToGenerate()">新規画像生成</button>
             </div>
           </div>
@@ -139,10 +158,33 @@
 
           <input type="hidden" id="cr-avatar-url">
 
+          <!-- シーン画像切り替え（作成者/管理者のみ、シーン画像がある場合） -->
+          <div id="cr-scene-switch" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+            <p style="font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:8px">シーン画像に切り替え</p>
+            <div style="display:flex;gap:8px;align-items:stretch">
+              <div id="cr-scene-original" class="cr-scene-option selected" onclick="selectSceneAvatar('original')" style="flex:1;cursor:pointer;border-radius:8px;overflow:hidden;border:3px solid var(--accent);position:relative">
+                <img id="cr-scene-original-img" src="" alt="" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">
+                <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);color:#fff;font-size:0.72rem;text-align:center;padding:2px">現在</div>
+              </div>
+              <div id="cr-scene-new" class="cr-scene-option" onclick="selectSceneAvatar('scene')" style="flex:1;cursor:pointer;border-radius:8px;overflow:hidden;border:3px solid transparent;position:relative">
+                <img id="cr-scene-new-img" src="" alt="" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">
+                <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);color:#fff;font-size:0.72rem;text-align:center;padding:2px">シーン画像</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- チャットからの編集モード用保存ボタン（通常は非表示） -->
+          <div id="cr-chat-save-actions" class="form-actions" style="display:none;margin-top:12px">
+            <button class="btn btn-secondary" onclick="cancelEditCharacter()">キャンセル</button>
+            <button class="btn btn-primary" onclick="saveAvatarOnly()">画像を保存</button>
+          </div>
         </div>
 
         <!-- ─── キャラクター設定 ─── -->
-        <div id="cr-step-2" style="display:none">
+        <div id="cr-step-2" style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px">
+          <div id="cr-step2-back" style="display:none;margin-bottom:12px">
+            <button class="btn btn-ghost btn-sm" onclick="crGoToStep1()">← ギャラリーに戻る</button>
+          </div>
           <div class="form-group">
             <label>キャラクター名 <span class="required">*</span></label>
             <input type="text" id="cr-name" placeholder="表示名" oninput="clearInlineError('cr-name-error')">
@@ -209,15 +251,25 @@
           </div>
           <div class="form-group">
             <label><input type="checkbox" id="cr-public"> 公開する</label>
+            <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:4px">公開するとAIによる自動審査が行われます。審査完了後にコミュニティに表示されます。</div>
           </div>
           <!-- TTS設定 -->
           <div class="form-group" id="cr-tts-section" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-            <label>音声設定（VOICEVOX）</label>
+            <label>音声設定</label>
             <select id="cr-voice-model" onchange="onCrVoiceModelChange()">
               <option value="">音声なし</option>
             </select>
             <div id="cr-tts-styles-preview" style="margin-top:6px;font-size:0.82rem;color:var(--text-secondary)"></div>
             <input type="hidden" id="cr-tts-styles-json" value="[]">
+            <!-- 試聴 -->
+            <div id="cr-tts-preview-wrap" style="display:none;margin-top:8px">
+              <label style="font-size:0.82rem;color:var(--text-secondary)">試聴スタイル</label>
+              <select id="cr-tts-preview-style" style="width:100%;margin-bottom:4px"></select>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="text" id="cr-tts-preview-text" placeholder="試聴テキストを入力..." value="こんにちは、よろしくお願いします。" style="flex:1">
+                <button type="button" class="btn btn-sm" id="cr-tts-preview-btn" onclick="previewVoice()" style="white-space:nowrap">▶ 試聴</button>
+              </div>
+            </div>
           </div>
           <!-- BGM設定 -->
           <div class="form-group" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
@@ -292,6 +344,7 @@
           <button class="chat-menu-item" onclick="viewCurrentCharProfile()">👤 キャラクタープロフィール</button>
           <button class="chat-menu-item" id="char-edit-btn" onclick="editCurrentChar()" style="display:none">✏️ キャラクター編集</button>
           <button class="chat-menu-item" id="force-scene-btn" onclick="forceSceneChange()" style="display:none">🖼 今すぐ画像変更</button>
+          <button class="chat-menu-item" id="apply-scene-avatar-btn" onclick="applySceneAsAvatar()" style="display:none">🎨 シーン画像に変更</button>
           <button class="chat-menu-item chat-menu-danger" onclick="resetConversation()">🔄 全会話リセット</button>
           <button class="chat-menu-item chat-menu-danger" id="purge-conv-btn" onclick="purgeConversation()" style="display:none">🗑️ 全会話完全削除</button>
           <!-- BGMコントロール -->
@@ -309,6 +362,9 @@
           <button class="chat-menu-item toggle-off" id="state-display-btn" onclick="toggleStateDisplay()" style="display:none">🧠 感情表示 オフ</button>
           <button class="chat-menu-item toggle-off" id="state-change-btn" onclick="toggleStateChange()" style="display:none">📊 ステータス変化 オフ</button>
           <button class="chat-menu-item toggle-off" id="proc-state-btn" onclick="toggleProcState()" style="display:none">🔍 処理状態表示 オフ</button>
+          <div class="chat-menu-sep"></div>
+          <button class="chat-menu-item" id="chat-hide-btn" onclick="toggleChatHide()">💬 チャット非表示</button>
+          <button class="chat-menu-item" onclick="copyConversation()">📋 会話をコピー</button>
         </div>
         <button class="chat-menu-btn" id="chat-menu-btn" onclick="toggleChatMenu(event)">☰</button>
         <div id="chat-input" contenteditable="true" enterkeyhint="send"
@@ -451,7 +507,7 @@
 <div id="gen-gallery-lightbox" class="cr-lightbox" onclick="glbBgClick(event)">
   <div class="cr-lightbox-inner">
     <div class="cr-lightbox-top">
-      <button class="cr-lightbox-icon-btn cr-lightbox-del" title="削除" onclick="glbDelete()">🗑</button>
+      <button class="cr-lightbox-icon-btn cr-lightbox-del" title="削除" onclick="glbDelete()">🗑 この画像を削除</button>
       <button class="cr-lightbox-icon-btn cr-lightbox-close" title="とじる" onclick="closeGalleryLightbox()">✕</button>
     </div>
     <img id="glb-img" class="cr-lightbox-img" src="" alt="" onclick="closeGalleryLightbox()">
@@ -466,7 +522,7 @@
 <div id="cr-lightbox" class="cr-lightbox" onclick="crLightboxBgClick(event)">
   <div class="cr-lightbox-inner">
     <div class="cr-lightbox-top">
-      <button class="cr-lightbox-icon-btn cr-lightbox-del" id="lb-del-btn" title="削除" onclick="deleteFromCrLightbox()">🗑</button>
+      <button class="cr-lightbox-icon-btn cr-lightbox-del" id="lb-del-btn" title="削除" onclick="deleteFromCrLightbox()">🗑 この画像を削除</button>
       <button class="cr-lightbox-icon-btn cr-lightbox-close" title="とじる" onclick="closeCrLightbox()">✕</button>
     </div>
     <img id="lb-img" class="cr-lightbox-img" src="" alt="" onclick="closeCrLightbox()">

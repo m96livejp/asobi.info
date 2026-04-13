@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /oauth/
+Disallow: /auth/
+Disallow: /logout.php
+Disallow: /verify-email.php
+
+Sitemap: https://asobi.info/sitemap.xml

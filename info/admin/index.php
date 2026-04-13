@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 asobiRequireAdmin();
 
 $db = asobiUsersDb();
@@ -21,7 +22,7 @@ $pvTotal = $db->query("SELECT COUNT(*) FROM access_logs")->fetchColumn();
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>管理画面 - asobi.info</title>
-  <link rel="stylesheet" href="/assets/css/common.css?v=20260327f">
+  <link rel="stylesheet" href="/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -118,6 +119,8 @@ $pvTotal = $db->query("SELECT COUNT(*) FROM access_logs")->fetchColumn();
     .menu-card.dbd:hover { border-color: #e74c3c; }
     .menu-card.pq:hover  { border-color: #f093fb; }
     .menu-card.aic:hover { border-color: #6edd8a; }
+    .menu-card.game:hover  { border-color: #7c6aee; }
+    .menu-card.image:hover { border-color: #e17055; }
 
     .content-section { margin-top: 32px; }
   </style>
@@ -158,6 +161,11 @@ $pvTotal = $db->query("SELECT COUNT(*) FROM access_logs")->fetchColumn();
       <!-- 管理メニュー -->
       <div class="section-title">管理メニュー</div>
       <div class="menu-grid">
+        <a href="/admin/todos.php" class="menu-card">
+          <div class="menu-card-icon">📝</div>
+          <div class="menu-card-title">TODO管理</div>
+          <div class="menu-card-desc">タスク・対応状況・優先度管理</div>
+        </a>
         <a href="/admin/users.php" class="menu-card">
           <div class="menu-card-icon">👥</div>
           <div class="menu-card-title">ユーザー管理</div>
@@ -177,11 +185,6 @@ $pvTotal = $db->query("SELECT COUNT(*) FROM access_logs")->fetchColumn();
           <div class="menu-card-icon">📊</div>
           <div class="menu-card-title">アクセス統計</div>
           <div class="menu-card-desc">PV/UVグラフ・人気ページ・ブラウザ統計</div>
-        </a>
-        <a href="/admin/todos.php" class="menu-card">
-          <div class="menu-card-icon">📝</div>
-          <div class="menu-card-title">TODO管理</div>
-          <div class="menu-card-desc">タスク・対応状況・優先度管理</div>
         </a>
         <a href="/admin/font.php" class="menu-card">
           <div class="menu-card-icon">🔤</div>
@@ -229,11 +232,21 @@ $pvTotal = $db->query("SELECT COUNT(*) FROM access_logs")->fetchColumn();
             <div class="menu-card-title">ポケモンクエスト</div>
             <div class="menu-card-desc">pkq.asobi.info 管理画面</div>
           </a>
+          <a href="https://game.asobi.info/admin/" class="menu-card game" target="_blank">
+            <div class="menu-card-icon">🕹️</div>
+            <div class="menu-card-title">レトロゲーム</div>
+            <div class="menu-card-desc">game.asobi.info 管理画面</div>
+          </a>
+          <a href="https://image.asobi.info/admin/" class="menu-card image" target="_blank">
+            <div class="menu-card-icon">🖼️</div>
+            <div class="menu-card-title">画像生成</div>
+            <div class="menu-card-desc">image.asobi.info 管理画面</div>
+          </a>
         </div>
       </div>
     </main>
   </div>
 
-  <script src="/assets/js/common.js?v=20260327h"></script>
+  <script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
 </body>
 </html>

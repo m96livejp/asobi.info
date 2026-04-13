@@ -11,7 +11,7 @@ _aic_logger.addHandler(logging.StreamHandler())
 from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .database import init_db
-from .api import auth, characters, conversations, chat, balance, admin, generate, tts, bgm, scene
+from .api import auth, characters, conversations, chat, balance, admin, generate, tts, bgm, scene, notifications
 
 settings = get_settings()
 
@@ -49,6 +49,7 @@ app.include_router(generate.router)
 app.include_router(tts.router)
 app.include_router(bgm.router)
 app.include_router(scene.router)
+app.include_router(notifications.router)
 
 @app.get("/api/health")
 async def health():

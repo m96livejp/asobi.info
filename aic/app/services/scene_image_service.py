@@ -14,6 +14,7 @@ logger = logging.getLogger("aic.scene")
 from ..database import async_session
 from ..models.image import SceneImageTask
 from ..models.settings import SdSettings
+from . import append_api_usage_log
 
 SCENE_IMAGE_DIR = "/opt/asobi/aic/frontend/images/scenes"
 SCENE_IMAGE_URL_BASE = "/images/scenes"
@@ -25,13 +26,72 @@ async def _get_sd_settings(db: AsyncSession) -> SdSettings | None:
     return result.scalar_one_or_none()
 
 
+_OPUS_MT_ENDPOINT = "http://127.0.0.1:5050"
+_OPUS_MT_KEY_FILE = "/opt/asobi/translate/api_key.txt"
+
+
+def _read_opus_mt_key() -> str:
+    try:
+        return open(_OPUS_MT_KEY_FILE).read().strip()
+    except Exception:
+        return ""
+
+
+def _contains_japanese(text: str) -> bool:
+    """テキストに日本語文字（ひらがな・カタカナ・漢字）が含まれるかチェック"""
+    import unicodedata
+    for ch in text:
+        try:
+            name = unicodedata.name(ch, "")
+        except ValueError:
+            continue
+        if any(k in name for k in ("CJK", "HIRAGANA", "KATAKANA")):
+            return True
+    return False
+
+
 async def _translate_to_english(sd: SdSettings, text: str) -> str:
-    """日本語テキストを英語に翻訳（LibreTranslate使用。失敗時は原文）"""
+    """日本語テキストを英語に翻訳（失敗時は原文）"""
     if not text:
         return text
     lt_mode = (sd.lt_mode if sd else None) or "off"
     if lt_mode == "off":
         return text
+
+    # 日本語文字が含まれない場合は翻訳不要
+    if not _contains_japanese(text):
+        return text
+
+    # opus_mt モード
+    if lt_mode in ("opus_mt", "opus_mt_first"):
+        try:
+            api_key = _read_opus_mt_key()
+            headers = {"X-Api-Key": api_key} if api_key else {}
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(
+                    f"{_OPUS_MT_ENDPOINT}/translate",
+                    json={"text": text, "mode": "opus_mt", "pipeline": True},
+                    headers=headers,
+                )
+                r.raise_for_status()
+                data = r.json()
+                result = data.get("translated_text", "")
+                if result and result != text and data.get("source") != "original":
+                    append_api_usage_log({
+                        "type": "translate",
+                        "site": "aic",
+                        "endpoint": "/scene/translate",
+                        "provider": "opus_mt",
+                        "model": "ja→en",
+                        "input_chars": len(text),
+                        "output_chars": len(result),
+                    })
+                    return result
+        except Exception:
+            pass
+        if lt_mode == "opus_mt":
+            return text
+
     lt_api_key = (sd.lt_api_key or "") if sd else ""
     LT_FREE = "https://libretranslate.com"
     endpoints = []
@@ -51,6 +111,15 @@ async def _translate_to_english(sd: SdSettings, text: str) -> str:
                 r.raise_for_status()
                 result = r.json().get("translatedText", "")
                 if result:
+                    append_api_usage_log({
+                        "type": "translate",
+                        "site": "aic",
+                        "endpoint": "/scene/translate",
+                        "provider": "auto-scene",
+                        "model": "ja→en",
+                        "input_chars": len(text),
+                        "output_chars": len(result),
+                    })
                     return result
         except Exception:
             pass
@@ -209,6 +278,16 @@ async def process_scene_task(task_id: int):
 
             logger.info(f"process_scene_task: sending to {endpoint}/sdapi/v1/txt2img model={task.model} prompt={payload['prompt'][:60]} seed={payload.get('seed')}")
 
+            # Forge排他ロック取得（image.asobi.infoとの競合防止）
+            from .queue_worker import _acquire_forge_lock, _release_forge_lock
+            lock = await asyncio.get_event_loop().run_in_executor(None, _acquire_forge_lock)
+            if not lock:
+                # ロック取得失敗 → pending に戻してリトライ
+                logger.info(f"process_scene_task: forge lock busy, returning to pending for retry")
+                task.status = "pending"
+                await db.commit()
+                return
+
             try:
                 async with httpx.AsyncClient(timeout=120) as client:
                     r = await client.post(f"{endpoint}/sdapi/v1/txt2img", json=payload)
@@ -228,6 +307,8 @@ async def process_scene_task(task_id: int):
                 task.completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 await db.commit()
                 return
+            finally:
+                await asyncio.get_event_loop().run_in_executor(None, _release_forge_lock, lock)
 
             # 実際に使われたモデルをログに記録
             try:
@@ -261,6 +342,17 @@ async def process_scene_task(task_id: int):
             task.image_url = f"{SCENE_IMAGE_URL_BASE}/{filename}"
             task.completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             await db.commit()
+
+            append_api_usage_log({
+                "type": "image",
+                "site": "aic",
+                "endpoint": "/scene/image",
+                "user_id": task.user_id if hasattr(task, 'user_id') else None,
+                "provider": "forge-scene",
+                "model": task.model or "",
+                "input_chars": len(task.prompt or ""),
+                "output_chars": 1,
+            })
             logger.info(f"process_scene_task: done id={task_id} url={task.image_url}")
 
 

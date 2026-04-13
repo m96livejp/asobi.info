@@ -9,7 +9,7 @@
 require_once '/opt/asobi/shared/assets/php/api_auth.php';
 asobiRequireApiKey();
 
-$db = asobiUsersDb();
+$db = asobiTodosDb();
 $action = $_GET['action'] ?? '';
 
 $defaultSiteList = [
@@ -112,6 +112,19 @@ if ($action === 'update_status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $status = trim($input['status'] ?? '');
     if ($id <= 0) _asobiApiError(400, 'id is required');
     if ($status === '') _asobiApiError(400, 'status is required');
+
+    // 【強制ルール】確認待ちへの遷移はstatus_note（対応メモ）必須
+    // 対応メモなしの確認待ち遷移をAPI側で拒否する（何度も発生したため仕組みで防止）
+    if ($status === '確認待ち') {
+        $appendNote = trim($input['status_note'] ?? '');
+        if ($appendNote === '') {
+            _asobiApiError(400, '確認待ちにするにはstatus_note（対応メモ）が必須です。変更ファイル・実装内容を具体的に記述してください。');
+        }
+        // 内容のないメモも拒否
+        if (mb_strlen($appendNote) < 10) {
+            _asobiApiError(400, '対応メモが短すぎます（10文字以上必要）。変更ファイル・実装内容を具体的に記述してください。');
+        }
+    }
 
     $extra = '';
     if ($status === '対応中') {

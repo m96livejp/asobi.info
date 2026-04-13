@@ -47,13 +47,14 @@ class SdSelectableModel(Base):
     """画像生成画面でユーザーが選択できるモデル一覧（管理者が登録）"""
     __tablename__ = "sd_selectable_models"
 
-    id           = Column(Integer, primary_key=True, autoincrement=True)
-    model_id     = Column(String,  nullable=False)           # SDのモデル識別子
-    display_name = Column(String,  nullable=False)           # 表示名（例: リアル系、アニメ系）
-    is_active    = Column(Integer, nullable=False, default=1)
-    sort_order   = Column(Integer, nullable=False, default=0)
-    use_count    = Column(Integer, nullable=False, default=0) # 利用回数
-    created_at   = Column(DateTime, server_default=func.now())
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    model_id      = Column(String,  nullable=False)           # SDのモデル識別子
+    display_name  = Column(String,  nullable=False)           # 表示名（例: リアル系、アニメ系）
+    preview_image = Column(String,  nullable=True)            # 代表プレビュー画像パス（/images/model_previews/...）
+    is_active     = Column(Integer, nullable=False, default=1)
+    sort_order    = Column(Integer, nullable=False, default=0)
+    use_count     = Column(Integer, nullable=False, default=0) # 利用回数
+    created_at    = Column(DateTime, server_default=func.now())
 
 
 # ビルトインキー（DBカラムに直接マップ、プレフィックスなし）
@@ -105,6 +106,8 @@ class AiSettings(Base):
     state_instruction = Column(Text, nullable=True)                              # STATEブロック指示テキスト（カスタム）
     tts_instruction = Column(Text, nullable=True)                                # TTS音声スタイル指示テキスト（カスタム）
     tts_instruction_params = Column(Text, nullable=True)                         # TTS音声スタイル指示テキスト（パラメータ付き）
+    review_enabled = Column(Integer, nullable=False, default=0)                  # 自動審査 0=OFF 1=ON
+    review_prompt = Column(Text, nullable=True)                                  # 自動審査プロンプト（不適切キャラの判定基準）
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

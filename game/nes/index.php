@@ -1,1 +1,1 @@
-<?php $PLATFORM_KEY = 'nes'; require_once dirname(__DIR__) . '/platform.php';
+<?php $PLATFORM_KEY = 'nes'; require_once dirname(__DIR__) . '/platform_top.php';

@@ -1,7 +1,7 @@
 <?php
 // 許可オリジン（asobi.info サブドメインのみ）
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowed = ['https://dbd.asobi.info', 'https://pkq.asobi.info', 'https://tbt.asobi.info', 'https://aic.asobi.info', 'https://asobi.info'];
+$allowed = ['https://dbd.asobi.info', 'https://pkq.asobi.info', 'https://tbt.asobi.info', 'https://aic.asobi.info', 'https://image.asobi.info', 'https://asobi.info'];
 if (in_array($origin, $allowed)) {
     header("Access-Control-Allow-Origin: $origin");
     header('Access-Control-Allow-Credentials: true');

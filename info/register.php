@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 asobiLogAccess();
 
 $redirect = '';
@@ -68,6 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>新規登録 - asobi.info</title>
+  <link rel="canonical" href="https://asobi.info/register.php">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -260,6 +262,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <a href="/login.php<?= $redirect ? '?redirect=' . urlencode($redirect) : '' ?>">ログイン</a>
     </div>
   </div>
-<script src="/assets/js/common.js?v=20260327h"></script>
+<script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
 </body>
 </html>

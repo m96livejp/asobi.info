@@ -31,7 +31,11 @@ DEFAULT_TTS_INSTRUCTION = (
     "## 音声スタイル指示\n"
     "返答は以下の形式で記述する：[SE名]{スタイル}テキスト\n"
     "- [SE名]: 動作や効果音（例：[ドアをノックする]）。不要な場合は省略可。\n"
-    "- {スタイル}: 次の中から必ず1つ選択: {styles}\n"
+    "- {スタイル}: 次の許可リストから【完全一致で】1つ選択:\n"
+    "  許可スタイル: [{styles}]\n"
+    "  【重要】上記のスタイル名のみ使用可能。これ以外のスタイル名は一切存在しない。\n"
+    "  自分で新しいスタイル名を作ったり、似た名前に変えたりしてはならない。\n"
+    "  必ず上記リストからコピーして使う。迷ったらリスト先頭のスタイルを使う。\n"
     "- テキスト: キャラクターのセリフ。\n"
     "- セグメントは意味のまとまり（文や節）ごとに区切る。1文字ずつ区切らない。\n"
     "- 記号のみ（？！…など）のセグメントにはスタイルを付けない。\n"
@@ -43,7 +47,11 @@ DEFAULT_TTS_INSTRUCTION_PARAMS = (
     "## 音声スタイル指示\n"
     "返答は以下の形式で記述する：[SE名]{スタイル:速度:ピッチ:抑揚:音量}テキスト\n"
     "- [SE名]: 動作や効果音（例：[ドアをノックする]）。不要な場合は省略可。\n"
-    "- {スタイル}: 次の中から必ず1つ選択: {styles}\n"
+    "- {スタイル}: 次の許可リストから【完全一致で】1つ選択:\n"
+    "  許可スタイル: [{styles}]\n"
+    "  【重要】上記のスタイル名のみ使用可能。これ以外のスタイル名は一切存在しない。\n"
+    "  自分で新しいスタイル名を作ったり、似た名前に変えたりしてはならない。\n"
+    "  必ず上記リストからコピーして使う。迷ったらリスト先頭のスタイルを使う。\n"
     "- 速度:ピッチ:抑揚:音量 は各0〜100の整数（50=普通の状態）。会話の感情に合わせて変化させる。\n"
     "- テキスト: キャラクターのセリフ。\n"
     "- セグメントは意味のまとまり（文や節）ごとに区切る。1文字ずつ区切らない。\n"
@@ -177,7 +185,7 @@ def build_system_prompt(character, conv_state=None, state_enabled: bool = False,
         except Exception:
             style_names = []
         if style_names:
-            style_str = "、".join(style_names)
+            style_str = " | ".join(style_names)
             if tts_voice_params:
                 _tts_text = tts_instruction_params if tts_instruction_params else DEFAULT_TTS_INSTRUCTION_PARAMS
             else:
@@ -249,6 +257,7 @@ async def stream_ollama(system_prompt: str, messages: list, ai_settings: AiSetti
         messages=api_messages,
         max_tokens=ai_settings.max_tokens or 1024,
         stream=True,
+        extra_body={"think": False},
     )
     async for chunk in stream:
         delta = chunk.choices[0].delta

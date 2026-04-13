@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 asobiRequireLogin();
 $user = asobiGetCurrentUser();
 
@@ -153,7 +154,8 @@ $lastSentAt   = $pendingRow ? $pendingRow['last_sent_at'] : null;
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>プロフィール - asobi.info</title>
-  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
+  <link rel="canonical" href="https://asobi.info/profile.php">
+  <link rel="stylesheet" href="/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body {
@@ -708,7 +710,7 @@ $lastSentAt   = $pendingRow ? $pendingRow['last_sent_at'] : null;
       <p>&copy; 2026 あそび</p>
     </div>
   </footer>
-  <script src="/assets/js/common.js?v=20260327h"></script>
+  <script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
   <?php if ($socialMsg): ?>
   <div id="toast" class="toast <?= in_array($socialMsg, ['linked', 'success']) ? 'success' : 'error' ?>">
     <?php

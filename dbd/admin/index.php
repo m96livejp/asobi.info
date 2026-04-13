@@ -1,4 +1,5 @@
 <?php
+require_once '/opt/asobi/shared/assets/php/version.php';
 require_once __DIR__ . '/auth.php';
 asobiRequireLogin('https://dbd.asobi.info/admin/');
 ?>
@@ -8,7 +9,7 @@ asobiRequireLogin('https://dbd.asobi.info/admin/');
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DbD 管理画面 - 画像マッピング</title>
-  <link rel="stylesheet" href="/css/style.css?v=20260327b">
+  <link rel="stylesheet" href="/css/style.css?v=<?= assetVer('/css/style.css') ?>">
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
     .admin-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
@@ -207,6 +208,6 @@ asobiRequireLogin('https://dbd.asobi.info/admin/');
 
     loadData();
   </script>
-  <script src="https://asobi.info/assets/js/common.js?v=20260327h"></script>
+  <script src="https://asobi.info/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
 </body>
 </html>

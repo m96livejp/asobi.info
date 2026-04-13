@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 
 $token = trim($_GET['token'] ?? '');
 
@@ -70,6 +71,6 @@ $success = ($result === true);
       <a href="/profile.php" class="btn">プロフィールへ</a>
     <?php endif; ?>
   </div>
-<script src="/assets/js/common.js?v=20260327h"></script>
+<script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
 </body>
 </html>

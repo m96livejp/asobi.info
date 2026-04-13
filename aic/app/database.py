@@ -25,6 +25,8 @@ async def init_db():
             "ALTER TABLE characters ADD COLUMN bgm_track_id INTEGER DEFAULT NULL",
             "ALTER TABLE bgm_tracks ADD COLUMN genre TEXT DEFAULT ''",
             "ALTER TABLE bgm_tracks ADD COLUMN enabled INTEGER DEFAULT 0",
+            "ALTER TABLE ai_settings ADD COLUMN review_enabled INTEGER DEFAULT 0",
+            "ALTER TABLE ai_settings ADD COLUMN review_prompt TEXT DEFAULT NULL",
         ]
         for sql in migrations:
             try:

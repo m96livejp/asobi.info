@@ -111,7 +111,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 /* 確認ダイアログ（中央オーバーレイ） */
 .adm-confirm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;align-items:center;justify-content:center}
 .adm-confirm-overlay.show{display:flex}
-.adm-confirm-box{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:28px 28px 22px;min-width:300px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);animation:adm-dlg-in 0.15s ease}
+.adm-confirm-box{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:28px 28px 22px;min-width:300px;max-width:640px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);animation:adm-dlg-in 0.15s ease}
 @keyframes adm-dlg-in{from{transform:scale(0.92);opacity:0}to{transform:scale(1);opacity:1}}
 .adm-confirm-msg{font-size:0.95rem;line-height:1.6;margin-bottom:20px;white-space:pre-wrap}
 .adm-confirm-btns{display:flex;gap:10px;justify-content:flex-end}
@@ -152,7 +152,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 /* 生成画像グリッド */
 .img-filter-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
 .img-filter-bar select,.img-filter-bar input{padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.85rem;font-family:inherit}
-.img-filter-bar input{width:120px}
+.img-filter-bar input[type=text],.img-filter-bar input[type=number]{width:120px}
+.img-flt{display:inline-flex;align-items:center;gap:3px;font-size:0.78rem;color:var(--text);cursor:pointer;white-space:nowrap;padding:3px 6px;border-radius:4px}
+.img-flt input{margin:0;width:auto;padding:0}
+.img-flt:hover{background:rgba(255,255,255,0.05)}
 .img-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
 .img-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;position:relative}
 .img-card img{width:100%;aspect-ratio:var(--admin-img-ratio,1);object-fit:cover;display:block;background:var(--bg3)}
@@ -205,7 +208,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
     <button class="nav-item" onclick="showSection('tts')">🔊 音声設定</button>
     <button class="nav-item" onclick="showSection('bgm')">🎵 BGM設定</button>
     <button class="nav-item" onclick="showSection('users')">👥 ユーザー</button>
-    <button class="nav-item" onclick="showSection('characters')">✨ キャラクター</button>
+    <button class="nav-item" onclick="showSection('characters')">✨ キャラクター <span id="char-rejected-badge" style="display:none;background:var(--accent);color:#fff;font-size:0.7rem;padding:1px 6px;border-radius:8px;margin-left:4px" title="審査NG（要対応）"></span></button>
     <button class="nav-item" onclick="showSection('images')">🖼 生成画像</button>
     <button class="nav-item" onclick="showSection('queue')">📋 生成キュー</button>
     <button class="nav-item" onclick="showSection('errorlogs')">🚨 エラーログ</button>
@@ -299,26 +302,44 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         <span id="daily-recovery-result" style="margin-left:8px;font-size:0.82rem;color:var(--text-secondary)"></span>
       </div>
       <div class="form-group">
-        <label>レスポンス指示文</label>
-        <textarea id="response-guideline" rows="4" placeholder="例: キャラクターとして自然に会話してください。返答は20〜70文字程度を目安に簡潔にしてください。ただし、内容に応じて長くなっても構いません。"></textarea>
+        <label style="display:flex;align-items:center;gap:8px">レスポンス指示文 <button type="button" class="btn btn-secondary btn-sm" onclick="fillDefault('response-guideline')">デフォルトに設定</button></label>
+        <textarea id="response-guideline" rows="4"></textarea>
         <div class="hint">空欄の場合はデフォルト指示文が使用されます。全キャラクター共通のシステムプロンプト末尾に追加されます。</div>
       </div>
       <div class="form-group" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-        <label style="font-weight:600;margin-bottom:4px;display:block">📋 STATEブロック指示</label>
-        <textarea id="state-instruction" rows="6" placeholder="空欄の場合はデフォルト指示が使用されます"></textarea>
+        <label style="font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px">📋 STATEブロック指示 <button type="button" class="btn btn-secondary btn-sm" onclick="fillDefault('state-instruction')">デフォルトに設定</button></label>
+        <textarea id="state-instruction" rows="6"></textarea>
         <div class="hint">ステータス機能有効時にAIへ送る指示文。この後にステータスのJSONテンプレートが自動付加されます。</div>
       </div>
       <div class="form-group">
-        <label style="font-weight:600;margin-bottom:4px;display:block">🔊 音声スタイル指示（通常）</label>
-        <textarea id="tts-instruction" rows="6" placeholder="空欄の場合はデフォルト指示が使用されます"></textarea>
+        <label style="font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px">🔊 音声スタイル指示（通常） <button type="button" class="btn btn-secondary btn-sm" onclick="fillDefault('tts-instruction')">デフォルトに設定</button></label>
+        <textarea id="tts-instruction" rows="6"></textarea>
         <div class="hint">TTS有効時にAIへ送る音声スタイル指示文。{styles} はキャラの音声スタイル一覧に自動置換されます。</div>
       </div>
       <div class="form-group">
-        <label style="font-weight:600;margin-bottom:4px;display:block">🔊 音声スタイル指示（パラメータ付き）</label>
-        <textarea id="tts-instruction-params" rows="6" placeholder="空欄の場合はデフォルト指示が使用されます"></textarea>
+        <label style="font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px">🔊 音声スタイル指示（パラメータ付き） <button type="button" class="btn btn-secondary btn-sm" onclick="fillDefault('tts-instruction-params')">デフォルトに設定</button></label>
+        <textarea id="tts-instruction-params" rows="6"></textarea>
         <div class="hint">音声パラメータ（速度:ピッチ:抑揚:音量）有効時の指示文。{styles} は自動置換されます。</div>
       </div>
       <button class="btn btn-primary" id="btn-save" onclick="saveAiSettings()">保存</button>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">🔍 キャラクター自動審査</div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="review-enabled" onchange="saveReviewSettings()" style="width:auto">
+          自動審査を有効にする
+        </label>
+        <div class="hint">有効時、キャラクター作成・更新時にAIが自動で審査します。無効時は自動承認されます。</div>
+      </div>
+      <div class="form-group">
+        <label style="font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px">審査プロンプト <button type="button" class="btn btn-secondary btn-sm" onclick="fillDefault('review-prompt')">デフォルトに設定</button></label>
+        <textarea id="review-prompt" rows="8"></textarea>
+        <div class="hint">AIに送信する審査基準のプロンプト。キャラクターの名前・プロフィール等がユーザーメッセージとして渡されます。JSON形式 {"result":"OK"} または {"result":"NG","reason":"理由"} で回答するよう指示してください。</div>
+      </div>
+      <button class="btn btn-primary" onclick="saveReviewSettings()">審査設定を保存</button>
+      <span id="review-save-result" style="margin-left:8px;font-size:0.82rem;color:var(--text-secondary)"></span>
     </div>
 
     <div class="card" style="margin-top:20px">
@@ -335,7 +356,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
         <div id="state-fields-list" style="margin-bottom:10px;overflow-x:auto"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
           <input type="text" id="new-field-key" placeholder="変数名（a-z 0-9）" style="width:140px" oninput="this.value=this.value.replace(/[^a-z0-9]/g,'')">
-          <input type="text" id="new-field-label" placeholder="表示名" style="width:110px">
+          <input type="text" id="new-field-label" placeholder="表示名" style="width:180px">
           <input type="text" id="new-field-default" placeholder="初期値" style="width:110px">
           <button class="btn btn-secondary btn-sm" onclick="addStateField()">＋ 追加</button>
         </div>
@@ -375,7 +396,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
   <div id="sec-characters" class="section">
     <div class="section-title">✨ キャラクター管理</div>
     <div class="card">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <div style="display:flex;justify-content:flex-end;gap:12px;margin-bottom:8px;flex-wrap:wrap">
+        <select id="char-review-filter" onchange="loadCharacters()" style="font-size:0.83rem;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:#2a2a3e;color:#e0e0e0;max-width:140px">
+          <option value="" style="background:#2a2a3e;color:#e0e0e0">全て</option>
+          <option value="pending" style="background:#2a2a3e;color:#e0e0e0">審査中</option>
+          <option value="rejected" style="background:#2a2a3e;color:#e0e0e0">審査NG</option>
+          <option value="approved" style="background:#2a2a3e;color:#e0e0e0">承認済み</option>
+        </select>
         <label style="display:flex;align-items:center;gap:6px;font-size:0.83rem;cursor:pointer;color:var(--sub)">
           <input type="checkbox" id="char-show-deleted" onchange="loadCharacters()"> 削除済みを表示
         </label>
@@ -645,11 +672,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 
     <!-- 翻訳エンドポイント -->
     <div class="card">
-      <div class="card-title">翻訳（LibreTranslate）</div>
+      <div class="card-title">翻訳設定</div>
       <div class="form-group">
         <label>翻訳モード</label>
         <select id="sd-lt-mode" onchange="updateLtModeUI()">
           <option value="off">無効（翻訳ボタン非表示）</option>
+          <option value="opus_mt">opus-mt（サーバー内蔵・高速）のみ</option>
+          <option value="opus_mt_first">opus-mt → 無料版（フォールバック）</option>
           <option value="free">無料版のみ（libretranslate.com）</option>
           <option value="local">ローカルのみ</option>
           <option value="both">無料版 → ローカル（フォールバック）</option>
@@ -810,24 +839,27 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
   <div id="sec-images" class="section">
     <div class="section-title">🖼 生成画像一覧</div>
     <div class="card">
-      <div class="img-filter-bar">
-        <select id="img-filter-status" onchange="loadImages()">
-          <option value="">全ステータス</option>
-          <option value="saved">保存済み</option>
-          <option value="pending">Pending</option>
-          <option value="discarded">破棄済み</option>
-        </select>
-        <select id="img-filter-rating" onchange="loadImages()">
-          <option value="">全評価</option>
-          <option value="null">未評価</option>
-          <option value="3">⭐⭐⭐ 凄く良い</option>
-          <option value="2">⭐⭐ 良い</option>
-          <option value="1">⭐ まあ良い</option>
-          <option value="-1">👎 悪い</option>
-        </select>
+      <div class="img-filter-bar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <strong style="font-size:0.78rem;color:var(--sub)">状態:</strong>
+          <label class="img-flt"><input type="checkbox" class="img-flt-status" value="saved" checked onchange="onImgFilterChange()"><span>保存済み</span></label>
+          <label class="img-flt"><input type="checkbox" class="img-flt-status" value="pending" checked onchange="onImgFilterChange()"><span>Pending</span></label>
+          <label class="img-flt"><input type="checkbox" class="img-flt-status" value="discarded" onchange="onImgFilterChange()"><span>破棄済み</span></label>
+          <label class="img-flt"><input type="checkbox" class="img-flt-status" value="deleted" onchange="onImgFilterChange()"><span>削除済み</span></label>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <strong style="font-size:0.78rem;color:var(--sub)">評価:</strong>
+          <label class="img-flt"><input type="checkbox" class="img-flt-rating" value="null" checked onchange="onImgFilterChange()"><span>未評価</span></label>
+          <label class="img-flt"><input type="checkbox" class="img-flt-rating" value="3" checked onchange="onImgFilterChange()"><span>⭐⭐⭐</span></label>
+          <label class="img-flt"><input type="checkbox" class="img-flt-rating" value="2" checked onchange="onImgFilterChange()"><span>⭐⭐</span></label>
+          <label class="img-flt"><input type="checkbox" class="img-flt-rating" value="1" checked onchange="onImgFilterChange()"><span>⭐</span></label>
+          <label class="img-flt"><input type="checkbox" class="img-flt-rating" value="-1" checked onchange="onImgFilterChange()"><span>👎</span></label>
+        </div>
         <input type="text" id="img-filter-username" placeholder="ユーザー名で絞り込み" oninput="loadImages()" style="min-width:140px">
         <input type="number" id="img-filter-user" placeholder="ユーザーID" oninput="loadImages()">
         <button class="btn btn-ghost btn-sm" onclick="loadImages()">🔄 再読み込み</button>
+        <button class="btn btn-danger btn-sm" onclick="purgeDiscardedImages()">🗑 破棄・削除済みを一括完全削除</button>
+        <label class="img-flt"><input type="checkbox" id="img-skip-confirm"><span>削除確認をスキップ</span></label>
         <span id="img-total" style="font-size:0.85rem;color:var(--sub)"></span>
       </div>
       <div id="img-grid" class="img-grid"></div>
@@ -1026,8 +1058,10 @@ function showConfirm(msg, onOk, okLabel = 'OK', okClass = 'btn-danger') {
   // HTML or plain text
   if (msg.includes('<')) { msgEl.innerHTML = msg; } else { msgEl.textContent = msg; }
   okBtn.className = 'btn ' + okClass;
-  okBtn.textContent = okLabel;
-  okBtn.onclick = () => { admConfirmClose(); onOk(); };
+  okBtn.textContent = okLabel || '';
+  okBtn.style.display = (onOk && okLabel) ? '' : 'none';
+  okBtn.onclick = () => { admConfirmClose(); if (onOk) onOk(); };
+  document.getElementById('adm-confirm-cancel').textContent = (onOk && okLabel) ? 'キャンセル' : '閉じる';
   overlay.classList.add('show');
 }
 function openDialog(msg, onOk, okLabel = 'OK') {
@@ -1040,6 +1074,21 @@ function admConfirmClose() {
 document.getElementById('adm-confirm-overlay')?.addEventListener('click', function(e) {
   if (e.target === this) admConfirmClose();
 });
+
+// ─── デフォルト値管理 ───
+let _aiDefaults = {};
+const _defaultKeyMap = {
+  'response-guideline': 'response_guideline',
+  'state-instruction': 'state_instruction',
+  'tts-instruction': 'tts_instruction',
+  'tts-instruction-params': 'tts_instruction_params',
+  'review-prompt': 'review_prompt',
+};
+function fillDefault(fieldId) {
+  const key = _defaultKeyMap[fieldId];
+  if (!key || !_aiDefaults[key]) return;
+  document.getElementById(fieldId).value = _aiDefaults[key];
+}
 
 // ─── セクション切り替え ───
 function showSection(id) {
@@ -1115,6 +1164,8 @@ async function loadAiSettings() {
   document.getElementById('state-instruction').value = d.state_instruction || '';
   document.getElementById('tts-instruction').value = d.tts_instruction || '';
   document.getElementById('tts-instruction-params').value = d.tts_instruction_params || '';
+  // デフォルト値を保持
+  if (d.defaults) _aiDefaults = d.defaults;
   onProviderChange();
 
   // チャットステータス設定ロード
@@ -1130,6 +1181,9 @@ async function loadAiSettings() {
   // デイリーポイント回復設定ロード
   document.getElementById('daily-recovery-enabled').checked = !!d.daily_point_recovery_enabled;
   document.getElementById('daily-recovery-threshold').value = d.daily_point_recovery_threshold ?? 100;
+  // 自動審査設定ロード
+  document.getElementById('review-enabled').checked = !!d.review_enabled;
+  document.getElementById('review-prompt').value = d.review_prompt || '';
 }
 
 async function loadPayloadConvs() {
@@ -1233,7 +1287,7 @@ function renderStateFields() {
       <thead><tr>
         <th style="width:36px;text-align:center">有効</th>
         <th>変数名</th>
-        <th>表示名</th>
+        <th style="min-width:160px">表示名</th>
         <th>初期値</th>
         <th style="width:36px"></th>
       </tr></thead>
@@ -1314,6 +1368,17 @@ async function saveAiSettings() {
   const r = await api('/admin/ai-settings', { method: 'PUT', body: JSON.stringify(body) });
   btn.disabled = false; btn.textContent = '保存';
   r.ok ? toast('設定を保存しました') : toast('保存に失敗しました', 'err');
+}
+
+async function saveReviewSettings() {
+  const body = {
+    review_enabled: document.getElementById('review-enabled').checked ? 1 : 0,
+    review_prompt: document.getElementById('review-prompt').value || null,
+  };
+  const r = await api('/admin/ai-settings', { method: 'PATCH', body: JSON.stringify(body) });
+  const el = document.getElementById('review-save-result');
+  el.textContent = r.ok ? '保存しました' : '保存に失敗しました';
+  setTimeout(() => el.textContent = '', 3000);
 }
 
 async function testConnection() {
@@ -1674,7 +1739,7 @@ async function playTts(btn) {
     const reset = () => { URL.revokeObjectURL(url); btn.textContent = '▶'; btn.disabled = false; btn.onclick = () => playTts(btn); };
     audio.onended = reset;
     btn.onclick = () => { audio.pause(); reset(); };
-    audio.play();
+    try { await audio.play(); } catch { /* autoplay policy */ }
   } catch(e) {
     btn.textContent = '✗';
     setTimeout(() => { btn.textContent = '▶'; btn.disabled = false; }, 2000);
@@ -1700,9 +1765,17 @@ document.getElementById('msgs').scrollTop = 999999;
 // ─── キャラクター管理 ───
 async function loadCharacters() {
   const showDeleted = document.getElementById('char-show-deleted')?.checked ? 1 : 0;
+  const reviewFilter = document.getElementById('char-review-filter')?.value || '';
   const r = await api('/admin/characters?include_deleted=' + showDeleted);
   if (!r.ok) return;
-  const chars = await r.json();
+  let chars = await r.json();
+  // 審査NGバッジ更新（人の対応が必要）
+  const rejectedCount = chars.filter(c => c.review_status === 'rejected' && !c.is_deleted).length;
+  const rejectedBadge = document.getElementById('char-rejected-badge');
+  if (rejectedBadge) { rejectedBadge.textContent = rejectedCount || ''; rejectedBadge.style.display = rejectedCount ? '' : 'none'; }
+  // キャッシュに保存
+  chars.forEach(c => _charCache[c.id] = c);
+  if (reviewFilter) chars = chars.filter(c => c.review_status === reviewFilter);
   const tbody = document.getElementById('char-tbody');
   if (!chars.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--sub);padding:20px">キャラクターがいません</td></tr>'; return; }
   tbody.innerHTML = chars.map(c => {
@@ -1717,12 +1790,13 @@ async function loadCharacters() {
       ? `<span style="color:var(--accent);font-weight:700">${c.report_count}</span>`
       : '<span style="color:var(--sub)">0</span>';
     const actionBtns = isDeleted
-      ? `<button class="btn btn-sm btn-ok" onclick="restoreChar(${c.id},'${esc(c.name)}')">復元</button>`
+      ? `<button class="btn btn-sm btn-ok" onclick="restoreChar(${c.id},'${esc(c.name)}')">復元</button>
+         <button class="btn btn-sm btn-danger" onclick="purgeChar(${c.id},'${esc(c.name)}')" title="完全削除">完全削除</button>`
       : `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem">
           <input type="checkbox" ${c.is_public ? 'checked' : ''} onchange="setCharFlag(${c.id},{is_public:this.checked?1:0})"> 公開
         </label>
-        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem;color:${c.review_status==='approved'?'var(--ok)':'var(--sub)'}">
-          <input type="checkbox" ${c.review_status === 'approved' ? 'checked' : ''} onchange="setCharFlag(${c.id},{review_status:this.checked?'approved':'pending'})"> 審査
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem;color:${c.review_status==='approved'?'var(--ok)':(c.review_status==='rejected'?'var(--accent)':'#e68a00')}">
+          <input type="checkbox" ${c.review_status === 'approved' ? 'checked' : ''} onchange="setCharFlag(${c.id},{review_status:this.checked?'approved':'pending'})"> ${c.review_status==='approved'?'承認':(c.review_status==='rejected'?'却下':'審査中')}
         </label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.82rem;color:${c.is_recommended?'var(--accent)':'var(--sub)'}">
           <input type="checkbox" ${c.is_recommended ? 'checked' : ''} onchange="setCharFlag(${c.id},{is_recommended:this.checked?1:0})"> おすすめ
@@ -1731,7 +1805,7 @@ async function loadCharacters() {
         <button class="btn btn-sm btn-danger" onclick="deleteChar(${c.id},'${esc(c.name)}')">削除</button>`;
     return `<tr${rowStyle}>
       <td style="color:var(--sub)">${c.id}</td>
-      <td>${esc(c.name)}${deletedBadge}</td>
+      <td><a href="#" onclick="event.preventDefault();showCharDetail(${c.id})" style="color:var(--primary);text-decoration:underline;cursor:pointer">${esc(c.name)}</a>${deletedBadge}</td>
       <td style="color:var(--sub);font-size:0.78rem;white-space:nowrap" title="ID:${c.creator_id}">${esc(c.creator_name)}<br><span style="font-size:0.7rem">ID:${c.creator_id}</span></td>
       <td>${c.like_count}</td>
       <td title="ユニークユーザー数">${c.use_count}</td>
@@ -1741,6 +1815,78 @@ async function loadCharacters() {
       <td style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${actionBtns}</td>
     </tr>`;
   }).join('');
+}
+
+async function triggerCharReview(id) {
+  const r = await api(`/admin/characters/${id}/review`, { method: 'POST' });
+  if (!r.ok) { toast('リクエストに失敗しました', 'err'); return; }
+  toast('AI再審査をリクエストしました（処理中...）');
+  admConfirmClose();
+  // ポーリング: 最大60秒、3秒間隔で結果を確認
+  let attempts = 0;
+  const maxAttempts = 20;
+  const poll = async () => {
+    attempts++;
+    await loadCharacters();
+    const updated = _charCache[id];
+    if (updated && updated.review_status !== 'pending') {
+      const result = updated.review_status === 'approved' ? '承認' : '却下';
+      toast(`AI再審査完了: ${result}`, updated.review_status === 'approved' ? 'ok' : 'err');
+      return;
+    }
+    if (attempts < maxAttempts) {
+      setTimeout(poll, 3000);
+    } else {
+      toast('審査が完了しませんでした（タイムアウト）', 'err');
+    }
+  };
+  setTimeout(poll, 3000);
+}
+
+function showImageOverlay(url) {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;cursor:pointer';
+  ov.innerHTML = `<img src="${url}" style="max-width:90vw;max-height:90vh;object-fit:contain">`;
+  ov.onclick = () => ov.remove();
+  document.body.appendChild(ov);
+}
+
+let _charCache = {};
+function showCharDetail(id) {
+  const c = _charCache[id];
+  if (!c) return;
+  const avatar = c.avatar_url ? `<img src="${esc(c.avatar_url)}" style="width:180px;height:180px;object-fit:cover;border-radius:12px;border:1px solid var(--border);cursor:pointer;flex-shrink:0" onclick="showImageOverlay('${esc(c.avatar_url)}')">` : '<div style="width:180px;height:180px;background:var(--surface);border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--sub);flex-shrink:0">No Image</div>';
+  const reviewBadge = c.review_status === 'approved' ? '<span style="color:var(--ok)">承認済み</span>'
+    : c.review_status === 'rejected' ? '<span style="color:var(--accent)">審査NG</span>'
+    : '<span style="color:#e68a00">審査中</span>';
+  const gender = {'female':'女性','male':'男性','other':'その他'}[c.gender] || c.gender || '-';
+  // タグ解析
+  const parseTags = (json) => { try { const a = JSON.parse(json || '[]'); return a.length ? a.join(', ') : ''; } catch(e) { return ''; } };
+  const tags = [parseTags(c.genre_story), parseTags(c.genre_char_type), parseTags(c.genre_personality), parseTags(c.keywords)].filter(Boolean).join(' / ');
+
+  let html = `<div style="text-align:left;max-height:75vh;overflow-y:auto">
+    <div style="display:flex;gap:10px;margin-bottom:8px">
+      <div style="flex-shrink:0">${avatar}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:1.05rem;font-weight:700">${esc(c.name)} <span style="font-size:0.78rem;font-weight:400;color:var(--sub)">${esc(c.char_name || '')} / ${esc(c.char_age || '-')} / ${gender}</span></div>
+        ${tags ? `<div style="font-size:0.78rem;color:var(--primary);margin-top:2px">${esc(tags)}</div>` : ''}
+        ${c.profile ? `<div style="font-size:0.72rem;font-weight:600;color:var(--sub);margin-top:6px">プロフィール</div><div style="font-size:0.82rem;white-space:pre-wrap;background:var(--surface);padding:5px 8px;border-radius:6px;max-height:80px;overflow-y:auto">${esc(c.profile)}</div>` : ''}
+        ${c.private_profile ? `<div style="font-size:0.72rem;font-weight:600;color:var(--accent);margin-top:4px">非公開プロフィール</div><div style="font-size:0.82rem;white-space:pre-wrap;background:var(--surface);border-left:3px solid var(--accent);padding:5px 8px;border-radius:0 6px 6px 0;max-height:80px;overflow-y:auto">${esc(c.private_profile)}</div>` : ''}
+        ${c.first_message ? `<div style="font-size:0.72rem;font-weight:600;color:var(--sub);margin-top:4px">初回メッセージ</div><div style="font-size:0.82rem;white-space:pre-wrap;background:var(--surface);padding:5px 8px;border-radius:6px;max-height:60px;overflow-y:auto">${esc(c.first_message)}</div>` : ''}
+      </div>
+    </div>`;
+  // ボイス/BGM情報
+  const voiceTxt = c.voice_name ? `🔊 ${esc(c.voice_name)}` : (c.voice_model ? '🔊 設定あり' : '🔇 なし');
+  const bgmTxt = c.bgm_mode === 'auto' ? '🎵 自動選択' : (c.bgm_mode === 'manual' && c.bgm_name ? `🎵 ${esc(c.bgm_name)}` : '🔇 なし');
+  html += `<div style="font-size:0.78rem;color:var(--sub);margin-bottom:6px">${voiceTxt} / ${bgmTxt}</div>`;
+  if (c.review_note) html += `<div style="font-size:0.78rem;color:var(--accent);margin-bottom:6px">AI審査: ${esc(c.review_note)}</div>`;
+  html += `<div style="display:flex;gap:8px;align-items:center">`;
+  if (c.review_status !== 'approved') html += `<button class="btn btn-sm btn-ok" onclick="setCharFlag(${c.id},{review_status:'approved'});admConfirmClose()">承認</button>`;
+  if (c.review_status !== 'rejected') html += `<button class="btn btn-sm btn-danger" onclick="setCharFlag(${c.id},{review_status:'rejected'});admConfirmClose()">却下</button>`;
+  html += `<button class="btn btn-sm btn-info" onclick="triggerCharReview(${c.id})">🔍 AI再審査</button>`;
+  html += `<span style="font-size:0.7rem;color:var(--sub);margin-left:auto">${esc(c.creator_name)} / ${(c.created_at||'').slice(0,10)}</span>`;
+  html += `</div></div>`;
+  openDialog(html, null, null);
 }
 
 // ─── キャラクター会話一覧モーダル ───
@@ -1807,6 +1953,13 @@ async function restoreChar(id, name) {
     const r = await api(`/admin/characters/${id}/restore`, { method: 'PUT' });
     r.ok ? (toast('復元しました'), loadCharacters()) : toast('復元に失敗しました', 'err');
   }, '復元する');
+}
+
+async function purgeChar(id, name) {
+  showConfirm(`「${name}」を完全削除しますか？\n会話・メッセージもすべて削除されます。\nこの操作は元に戻せません。`, async () => {
+    const r = await api(`/admin/characters/${id}/purge`, { method: 'DELETE' });
+    r.ok ? (toast('完全削除しました'), loadCharacters()) : toast('削除に失敗しました', 'err');
+  }, '完全削除');
 }
 
 // ─── SD設定 ───
@@ -1925,7 +2078,10 @@ async function loadSelectableModels() {
   if (!models.length) { el.innerHTML = '<p style="color:var(--sub);font-size:0.85rem">登録されていません</p>'; return; }
   el.innerHTML = models.map(m => `
     <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div style="flex-shrink:0;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="openPreviewPicker(${m.id})" title="代表画像を選択">
+          ${m.preview_image ? `<img src="${esc(m.preview_image)}" style="width:100%;height:100%;object-fit:cover">` : '<span style="font-size:0.7rem;color:var(--sub);text-align:center;line-height:1.2">画像<br>未設定</span>'}
+        </div>
         <div style="min-width:0;flex:1">
           <span style="font-weight:600">${esc(m.display_name)}</span>
           <span style="font-size:0.75rem;color:var(--sub);margin-left:4px">順: ${m.sort_order}</span>
@@ -1933,13 +2089,77 @@ async function loadSelectableModels() {
           <div style="font-size:0.78rem;color:var(--sub);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.model_id)}</div>
           <div style="font-size:0.78rem;color:var(--sub);margin-top:1px">利用: ${m.use_count ?? 0}回</div>
         </div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
+        <div style="display:flex;gap:6px;flex-shrink:0;align-self:center">
           <button class="btn btn-sm btn-info" onclick="editSelectableModel(${m.id})">編集</button>
           <button class="btn btn-sm ${m.is_active ? 'btn-ghost' : 'btn-ok'}" onclick="toggleSelectableModel(${m.id},${m.is_active})">${m.is_active ? '無効化' : '有効化'}</button>
           <button class="btn btn-sm btn-danger" onclick="deleteSelectableModel(${m.id},'${esc(m.display_name)}')">削除</button>
         </div>
       </div>
     </div>`).join('');
+}
+
+// ─── 代表画像選択 ───
+let _previewPickerOffset = 0;
+async function openPreviewPicker(smId, offset = 0) {
+  _previewPickerOffset = offset;
+  const r = await api(`/admin/selectable-models/${smId}/preview-candidates?limit=30&offset=${offset}`);
+  if (!r.ok) { toast('候補画像の取得に失敗しました', 'err'); return; }
+  const data = await r.json();
+  const total = data.total;
+  const images = data.images;
+
+  let html = '<div style="text-align:left">';
+  html += '<p style="font-size:0.85rem;color:var(--sub);margin-bottom:10px">このモデルで生成された画像から代表画像を選択してください（' + total + '件）</p>';
+
+  if (!images.length) {
+    html += '<p style="color:var(--sub);font-size:0.85rem">このモデルで生成された画像がありません</p>';
+  } else {
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;max-height:400px;overflow-y:auto">';
+    images.forEach(img => {
+      html += `<div style="cursor:pointer;border:2px solid transparent;border-radius:6px;overflow:hidden;aspect-ratio:1" onclick="setModelPreview(${smId},${img.id})" title="${esc(img.prompt).substring(0,50)}">
+        <img src="${esc(img.url)}" style="width:100%;height:100%;object-fit:cover" loading="lazy">
+      </div>`;
+    });
+    html += '</div>';
+
+    // ページネーション
+    if (total > 30) {
+      html += '<div style="display:flex;justify-content:center;gap:8px;margin-top:10px">';
+      if (offset > 0) html += `<button class="btn btn-sm btn-ghost" onclick="admConfirmClose();openPreviewPicker(${smId},${offset - 30})">前へ</button>`;
+      html += `<span style="font-size:0.8rem;color:var(--sub);align-self:center">${offset + 1}〜${Math.min(offset + 30, total)} / ${total}</span>`;
+      if (offset + 30 < total) html += `<button class="btn btn-sm btn-ghost" onclick="admConfirmClose();openPreviewPicker(${smId},${offset + 30})">次へ</button>`;
+      html += '</div>';
+    }
+  }
+
+  // 代表画像削除ボタン
+  html += '<div style="margin-top:12px;text-align:right"><button class="btn btn-sm btn-danger" onclick="removeModelPreview(' + smId + ')">代表画像を削除</button></div>';
+  html += '</div>';
+
+  openDialog(html, () => {}, '閉じる');
+}
+
+async function setModelPreview(smId, imageId) {
+  const r = await api(`/admin/selectable-models/${smId}/preview`, {
+    method: 'POST', body: JSON.stringify({ image_id: imageId })
+  });
+  if (r.ok) {
+    toast('代表画像を設定しました');
+    admConfirmClose();
+    loadSelectableModels();
+  } else {
+    const err = await r.json().catch(() => ({}));
+    toast(err.detail || '設定に失敗しました', 'err');
+  }
+}
+
+async function removeModelPreview(smId) {
+  const r = await api(`/admin/selectable-models/${smId}/preview`, { method: 'DELETE' });
+  if (r.ok) {
+    toast('代表画像を削除しました');
+    admConfirmClose();
+    loadSelectableModels();
+  } else { toast('削除に失敗しました', 'err'); }
 }
 
 async function createSelectableModel() {
@@ -2163,8 +2383,8 @@ async function testForgeConnection() {
 
 function updateLtModeUI() {
   const mode = document.getElementById('sd-lt-mode').value;
-  document.getElementById('lt-free-settings').style.display = (mode === 'free' || mode === 'both' || mode === 'both_local_first') ? '' : 'none';
-  document.getElementById('lt-local-settings').style.display = (mode === 'local' || mode === 'both' || mode === 'both_local_first') ? '' : 'none';
+  document.getElementById('lt-free-settings').style.display = ['free','both','both_local_first','opus_mt_first'].includes(mode) ? '' : 'none';
+  document.getElementById('lt-local-settings').style.display = ['local','both','both_local_first'].includes(mode) ? '' : 'none';
   document.getElementById('lt-test-area').style.display = (mode !== 'off') ? '' : 'none';
 }
 
@@ -2207,15 +2427,17 @@ let _imgPromptCache = {};
 let imgOffset = 0;
 const IMG_LIMIT = 48;
 
+function onImgFilterChange() { loadImages(true); }
+
 async function loadImages(reset = true) {
   if (reset) imgOffset = 0;
-  const status   = document.getElementById('img-filter-status').value;
-  const rating   = document.getElementById('img-filter-rating').value;
+  const statuses = [...document.querySelectorAll('.img-flt-status:checked')].map(c => c.value).join(',');
+  const ratings  = [...document.querySelectorAll('.img-flt-rating:checked')].map(c => c.value).join(',');
   const username = document.getElementById('img-filter-username').value.trim();
   const userId   = document.getElementById('img-filter-user').value;
   const params = new URLSearchParams({ limit: IMG_LIMIT, offset: imgOffset });
-  if (status)   params.append('status', status);
-  if (rating)   params.append('rating', rating);
+  if (statuses) params.append('statuses', statuses);
+  if (ratings)  params.append('ratings', ratings);
   if (username) params.append('username', username);
   if (userId)   params.append('user_id', userId);
   const r = await api('/admin/images?' + params.toString());
@@ -2237,19 +2459,23 @@ async function loadImages(reset = true) {
   }
 
   // プロンプトキャッシュに保存
-  d.images.forEach(img => { _imgPromptCache[img.id] = { prompt: img.prompt || '', original_prompt: img.original_prompt || '', seed: img.seed, model: img.model || '' }; });
+  d.images.forEach(img => { _imgPromptCache[img.id] = { prompt: img.prompt || '', original_prompt: img.original_prompt || '', negative_prompt: img.negative_prompt || '', original_negative: img.original_negative || '', seed: img.seed, model: img.model || '' }; });
 
   grid.innerHTML = d.images.map(img => {
     const statusLabel = { saved:'保存済み', pending:'Pending', discarded:'破棄済み' }[img.status] || img.status;
     const statusClass = `badge-${img.status}`;
     const deletedBadge = img.is_deleted ? '<span class="badge" style="background:rgba(233,69,96,0.15);color:var(--accent-l)">削除済</span>' : '';
+    const usedBadge = img.is_used ? '<span class="badge" style="background:rgba(85,103,204,0.25);color:#7b8ed4" title="キャラクターのアバターに使用中">🔒 使用中</span>' : '';
     const ratingLabel = img.rating === 3 ? '⭐⭐⭐' : img.rating === 2 ? '⭐⭐' : img.rating === 1 ? '⭐' : img.rating === -1 ? '👎' : '';
     const ratingBadge = ratingLabel ? `<span style="font-size:0.78rem" title="評価">${ratingLabel}</span>` : '';
     const date = img.created_at ? img.created_at.slice(0,16) : '';
-    const prompt = esc(img.prompt || '');
     const modelName = img.model ? esc(img.model) : '';
+    const cardBorder = img.is_used ? 'border:2px solid rgba(85,103,204,0.5)' : '';
+    const delBtn = img.is_used
+      ? '<button class="btn btn-sm" style="flex:1;opacity:0.4;cursor:not-allowed" disabled title="キャラクターで使用中のため削除不可">削除不可</button>'
+      : `<button class="btn btn-sm btn-danger" style="flex:1" onclick="adminDeleteImage(${img.id})">削除</button>`;
     return `
-      <div class="img-card" id="imgcard-${img.id}">
+      <div class="img-card" id="imgcard-${img.id}" style="${cardBorder}">
         <div style="position:relative;cursor:pointer" onclick="adminPreviewImg('${esc(img.url)}')">
           <img src="${esc(img.url)}" alt="" loading="lazy" onerror="this.style.minHeight='80px'">
           <a href="${esc(img.url)}" target="_blank" onclick="event.stopPropagation()" style="position:absolute;bottom:4px;right:4px;font-size:0.65rem;background:rgba(0,0,0,0.6);color:#fff;padding:1px 5px;border-radius:4px;text-decoration:none">↗</a>
@@ -2259,12 +2485,12 @@ async function loadImages(reset = true) {
           ${modelName ? `<div class="img-card-model">🎨 ${modelName}</div>` : ''}
           ${img.seed != null ? `<div style="font-size:0.7rem;color:var(--sub)">seed: ${img.seed}</div>` : ''}
           <div class="img-card-footer">
-            <span class="badge ${statusClass}">${statusLabel}</span>${deletedBadge}${ratingBadge}
+            <span class="badge ${statusClass}">${statusLabel}</span>${deletedBadge}${usedBadge}${ratingBadge}
             <span class="img-card-date">${date}</span>
           </div>
           <div style="margin-top:6px;display:flex;gap:4px">
             <button class="btn btn-sm btn-info" style="flex:1" onclick="showImgPrompt(${img.id})">プロンプト</button>
-            <button class="btn btn-sm btn-danger" style="flex:1" onclick="adminDeleteImage(${img.id})">削除</button>
+            ${delBtn}
           </div>
         </div>
       </div>`;
@@ -2287,21 +2513,37 @@ function imgPage(dir) {
 }
 
 async function adminDeleteImage(id) {
-  showConfirm('この画像を削除しますか？\nファイルとDBレコードを両方削除します。', async () => {
+  const skipConfirm = document.getElementById('img-skip-confirm')?.checked;
+  const doDelete = async () => {
     const r = await api(`/admin/images/${id}`, { method: 'DELETE' });
     if (r.ok) {
-      const d = await r.json();
-      const msg = d.file_existed
-        ? (d.file_deleted ? '削除しました（ファイル＋DB）' : 'ファイル削除失敗')
-        : '削除しました（ファイルなし・DBのみ）';
       document.getElementById('imgcard-' + id)?.remove();
-      toast(msg);
-      loadImages(false);
+      toast('削除しました');
     } else {
       const d = await r.json().catch(() => ({}));
       toast(d.detail || '削除に失敗しました', 'err');
     }
-  }, '削除する');
+  };
+  if (skipConfirm) {
+    doDelete();
+  } else {
+    showConfirm('この画像を削除しますか？\nファイルとDBレコードを両方削除します。', doDelete, '削除する');
+  }
+}
+
+async function purgeDiscardedImages() {
+  showConfirm('破棄済みの画像をすべて削除しますか？\nファイルとDBレコードを両方削除します。', async () => {
+    const r = await api('/admin/images/purge-discarded', { method: 'DELETE' });
+    if (r.ok) {
+      const d = await r.json();
+      let msg = `${d.deleted}件を削除しました`;
+      if (d.skipped) msg += `（使用中の${d.skipped}件は除外）`;
+      toast(msg);
+      loadImages(false);
+    } else {
+      toast('削除に失敗しました', 'err');
+    }
+  }, '一括削除', 'btn-danger');
 }
 
 function showImgPrompt(id) {
@@ -2324,6 +2566,20 @@ function showImgPrompt(id) {
       <label>プロンプト</label>
       <textarea id="dlg-img-prompt" readonly style="width:100%;min-height:120px;font-size:0.82rem;resize:vertical">${esc(p)}</textarea>
     </div>`;
+  }
+  const np = info.negative_prompt || '';
+  const onp = info.original_negative || '';
+  if (onp || np) {
+    html += `<div class="form-group" style="margin:0 0 10px">
+      <label>ネガティブプロンプト</label>
+      <textarea id="dlg-img-neg" readonly style="width:100%;min-height:50px;font-size:0.82rem;resize:vertical;color:#888">${esc(onp || np)}</textarea>
+    </div>`;
+    if (onp && np && np !== onp) {
+      html += `<div class="form-group" style="margin:0 0 10px">
+        <label>翻訳後ネガティブ</label>
+        <textarea readonly style="width:100%;min-height:50px;font-size:0.78rem;resize:vertical;color:#888">${esc(np)}</textarea>
+      </div>`;
+    }
   }
   html += `${info.model ? `<div style="font-size:0.8rem;color:var(--sub);margin-bottom:4px">モデル: ${esc(info.model)}</div>` : ''}`;
   html += `${info.seed != null ? `<div style="font-size:0.8rem;color:var(--sub);margin-bottom:8px">Seed: ${info.seed}</div>` : ''}`;
@@ -2646,7 +2902,7 @@ async function previewTtsVm(vmId) {
       toast('音声再生エラー', 'err');
     };
     if (btn) { btn.textContent = '■'; btn.disabled = false; }
-    _ttsPreviewAudio.play();
+    try { await _ttsPreviewAudio.play(); } catch { /* autoplay policy */ }
   } catch(e) {
     toast('試聴エラー: ' + e.message, 'err');
   } finally {

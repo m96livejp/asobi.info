@@ -105,6 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
           'pkq.asobi.info': 'https://pkq.asobi.info/admin/',
           'tbt.asobi.info': 'https://tbt.asobi.info/admin/',
           'aic.asobi.info': 'https://aic.asobi.info/admin.html',
+          'image.asobi.info': 'https://image.asobi.info/admin/',
         };
         const siteAdmin = siteAdminUrls[h];
         if (siteAdmin) menuItems += `<a href="${siteAdmin}">🔒 コンテンツ管理</a>`;
@@ -114,10 +115,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // 4. asobi.info TOP
       menuItems += `<a href="https://asobi.info/">asobi.info TOP</a>`;
+      // 5. ウォレット
+      menuItems += `<a href="https://asobi.info/wallet/"><img src="https://asobi.info/assets/images/asobi-card.svg" style="width:16px;height:16px;vertical-align:-3px;margin-right:4px;">あそびウォレット</a>`;
     } else {
       // asobi.info メインサイト
       menuItems += `<a href="https://asobi.info/">トップ</a>`;
       menuItems += `<a href="https://asobi.info/profile.php">プロフィール</a>`;
+      menuItems += `<a href="https://asobi.info/wallet/"><img src="https://asobi.info/assets/images/asobi-card.svg" style="width:16px;height:16px;vertical-align:-3px;margin-right:4px;">あそびウォレット</a>`;
     }
 
     // ── asobi.info 共通 ──

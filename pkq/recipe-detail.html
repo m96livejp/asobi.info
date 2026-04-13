@@ -344,18 +344,20 @@
     else if (blue >= 4)                   recipeName = 'ブルーカクコロジュース';
     else if (yel  >= 4)                   recipeName = 'イエローカクコロカレー';
     else if (gray >= 4)                   recipeName = 'ホワイトカクコログラタン';
-    else if (hard  >= 4 && mineral >= 2)  recipeName = 'カクコロガンセキ煮';
-    else if (soft  >= 4 && yel     >= 3)  recipeName = 'カクコロビリビリゾット';
+    // P3: 多め系（主条件3+）— 具体的なカテゴリ条件を先に判定
+    else if (swt   >= 3 && gray    >= 2)  recipeName = 'カクコロシルクレープ';
     else if (mush  >= 3 && red     >= 2)  recipeName = 'カクコロファイヤベース';
-    else if (plant >= 4 && soft    >= 2)  recipeName = 'カクコロ健康スムージー';
-    else if (swt   >= 4 && yel     >= 3)  recipeName = 'カクコロハニーフォンデュ';
-    else if (soft  >= 4 && blue    >= 3)  recipeName = 'カクコロウォータカウダ';
-    else if (mush  >= 4 && soft    >= 3)  recipeName = 'カクコロヘドロしるこ';
     else if (soft  >= 3 && mineral >= 2)  recipeName = 'カクコロクレイチャウダー';
     else if (mineral >= 3 && plant >= 2)  recipeName = 'カクコロウィンドリア';
     else if (swt   >= 3 && mush    >= 2)  recipeName = 'カクコロマッスルオレ';
     else if (swt   >= 3 && hard    >= 2)  recipeName = 'カクコロねんジャオロース';
-    else if (swt   >= 3 && gray    >= 2)  recipeName = 'カクコロシルクレープ';
+    // P4: たっぷり系（主条件4+）— 汎用的な属性条件は後に判定
+    else if (hard  >= 4 && mineral >= 2)  recipeName = 'カクコロガンセキ煮';
+    else if (swt   >= 4 && yel     >= 3)  recipeName = 'カクコロハニーフォンデュ';
+    else if (plant >= 4 && soft    >= 2)  recipeName = 'カクコロ健康スムージー';
+    else if (soft  >= 4 && blue    >= 3)  recipeName = 'カクコロウォータカウダ';
+    else if (mush  >= 4 && soft    >= 3)  recipeName = 'カクコロヘドロしるこ';
+    else if (soft  >= 4 && yel     >= 3)  recipeName = 'カクコロビリビリゾット';
     else                                  recipeName = 'カクコロスープ';
 
     let quality;
@@ -617,8 +619,12 @@
 
         let pokemonHtml = '';
         const qualityOrder = ['normal', 'good', 'great', 'special'];
+        // qualityOrder→qGroupsキーの対応（great↔very_good）
+        const qGroupKeyMap = { normal: 'normal', good: 'good', great: 'very_good', special: 'special' };
         for (const qKey of qualityOrder) {
           const q = qualityMap[qKey];
+          // 組み合わせが存在しない品質はポケモンも表示しない
+          if ((qGroups[qGroupKeyMap[qKey]] || []).length === 0) continue;
           const filtered = recipePokemon.filter(p => (p[q.key] || 0) >= 10);
           if (filtered.length === 0) continue;
           pokemonHtml += '<div style="margin-bottom:16px;">' +

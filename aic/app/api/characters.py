@@ -1,4 +1,5 @@
 """キャラクターAPI"""
+import asyncio
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +9,7 @@ from ..deps import get_current_user, require_user
 from ..models.user import User
 from ..models.character import Character, CharacterLike, CharacterReport
 from ..models.conversation import Conversation
+from ..services.review_service import review_character
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/characters", tags=["characters"])
@@ -54,6 +56,7 @@ def char_to_dict(c: Character, hide_private: bool = False) -> dict:
         "is_public": c.is_public,
         "is_deleted": c.is_deleted,
         "review_status": c.review_status,
+        "review_note": c.review_note,
         "char_name": c.char_name,
         "char_age": c.char_age,
         "gender": c.gender,
@@ -219,6 +222,8 @@ async def create_character(req: CharacterCreate, user: User = Depends(require_us
     db.add(c)
     await db.commit()
     await db.refresh(c)
+    # バックグラウンドで自動審査を実行
+    asyncio.create_task(review_character(c.id))
     return char_to_dict(c)
 
 
@@ -244,6 +249,31 @@ async def update_character(char_id: int, req: CharacterUpdate, user: User = Depe
         c.sd_neg_prompt = req.sd_neg_prompt or None
         c.sd_seed = req.sd_seed
         c.sd_model = req.sd_model or None
+    # プロフィール変更時は再審査（管理者による編集は除く）
+    if user.role != "admin":
+        c.review_status = "pending"
+        c.review_note = None
+    await db.commit()
+    await db.refresh(c)
+    if user.role != "admin":
+        asyncio.create_task(review_character(c.id))
+    return char_to_dict(c)
+
+
+class AvatarUpdate(BaseModel):
+    avatar_url: str
+
+
+@router.put("/{char_id}/avatar")
+async def update_avatar(char_id: int, req: AvatarUpdate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+    """アバター画像のみ更新（チャットからの編集用）"""
+    result = await db.execute(select(Character).where(Character.id == char_id))
+    c = result.scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
+    if c.creator_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="編集権限がありません")
+    c.avatar_url = req.avatar_url
     await db.commit()
     await db.refresh(c)
     return char_to_dict(c)

@@ -1,4 +1,5 @@
 <?php
+require_once '/opt/asobi/shared/assets/php/version.php';
 /**
  * 管理画面 共通レイアウト部品
  * layout_head($title) / layout_foot() で囲む
@@ -283,7 +284,7 @@ function layout_foot(): void {
     return res.json();
   }
   </script>
-  <script src="https://asobi.info/assets/js/common.js?v=20260327h"></script>
+  <script src="https://asobi.info/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
 </body>
 </html>
 <?php

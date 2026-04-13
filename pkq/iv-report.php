@@ -5,6 +5,7 @@ $sessionUserId   = null;
 $sessionUsername = null;
 try {
     require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
     if (!empty($_SESSION['asobi_user_id'])) {
         $isLoggedIn      = true;
         $sessionUserId   = (int)$_SESSION['asobi_user_id'];
@@ -325,8 +326,8 @@ $stats = $db->query("
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>料理結果投稿 - ポケモンクエスト情報</title>
   <meta name="description" content="料理の結果（鍋・品質・Lv・HP・ATK）を投稿してデータ収集に協力しよう。">
-  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css?v=20260327e">
-  <link rel="stylesheet" href="/css/style.css?v=20260327c">
+  <link rel="stylesheet" href="https://asobi.info/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
+  <link rel="stylesheet" href="/css/style.css?v=<?= assetVer('/css/style.css') ?>">
   <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
   <link rel="stylesheet" href="https://asobi.info/assets/css/font.php">
   <style>
@@ -1574,7 +1575,7 @@ $stats = $db->query("
     </div>
   </footer>
 
-  <script src="https://asobi.info/assets/js/common.js?v=20260327h"></script>
+  <script src="https://asobi.info/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
   <script>
   // 選択状態の初期化
   const initPot     = <?= json_encode(fv('pot_type')) ?>;

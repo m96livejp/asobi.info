@@ -22,7 +22,7 @@ try {
     $db->exec('PRAGMA busy_timeout=10000');
 
     $db->beginTransaction();
-    $stmt = $db->prepare("INSERT INTO access_logs (host, path, user_id, ip, referer, user_agent, browser, device, os, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt = $db->prepare("INSERT INTO access_logs (host, path, user_id, ip, referer, user_agent, browser, device, os, country, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     foreach ($lines as $line) {
         $row = json_decode($line, true);
         if (!$row) continue;
@@ -36,6 +36,7 @@ try {
             $row['browser'] ?? '',
             $row['device'] ?? '',
             $row['os'] ?? '',
+            $row['country'] ?? '',
             $row['created_at'] ?? date('Y-m-d H:i:s'),
         ]);
     }

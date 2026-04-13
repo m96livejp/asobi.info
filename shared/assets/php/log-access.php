@@ -3,7 +3,7 @@
  * アクセスログ記録API（サブドメインからのCORSリクエスト用）
  */
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowed = ['https://dbd.asobi.info', 'https://pkq.asobi.info', 'https://tbt.asobi.info', 'https://aic.asobi.info', 'https://asobi.info'];
+$allowed = ['https://dbd.asobi.info', 'https://pkq.asobi.info', 'https://tbt.asobi.info', 'https://aic.asobi.info', 'https://image.asobi.info', 'https://asobi.info'];
 if (in_array($origin, $allowed)) {
     header("Access-Control-Allow-Origin: $origin");
     header('Access-Control-Allow-Credentials: true');
@@ -36,21 +36,24 @@ $path = '/' . ltrim(strtok($path, '?'), '/');
 
 try {
     require_once __DIR__ . '/auth.php';
+    require_once __DIR__ . '/ip_country.php';
     $userId = asobiIsLoggedIn() ? $_SESSION['asobi_user_id'] : null;
     session_write_close();
     $ua     = $_SERVER['HTTP_USER_AGENT'] ?? '';
     $ref    = asobiRefererDomain($_SERVER['HTTP_REFERER'] ?? '');
     $parsed = asobiParseUA($ua);
+    $ip     = $_SERVER['REMOTE_ADDR'] ?? '';
     $line   = json_encode([
         'host'       => $host,
         'path'       => $path,
         'user_id'    => $userId,
-        'ip'         => $_SERVER['REMOTE_ADDR'] ?? '',
+        'ip'         => $ip,
         'referer'    => $ref,
         'user_agent' => $ua,
         'browser'    => $parsed['browser'],
         'device'     => $parsed['device'],
         'os'         => $parsed['os'],
+        'country'    => ipCountry($ip),
         'created_at' => date('Y-m-d H:i:s'),
     ], JSON_UNESCAPED_UNICODE) . "\n";
     $logFile = dirname(ASOBI_USERS_DB_PATH) . '/access_log_buffer.jsonl';

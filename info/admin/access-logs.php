@@ -1,5 +1,6 @@
 <?php
 require_once '/opt/asobi/shared/assets/php/auth.php';
+require_once '/opt/asobi/shared/assets/php/version.php';
 asobiRequireAdmin();
 
 $db = asobiUsersDb();
@@ -51,7 +52,7 @@ function buildQuery(array $extra = []): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>アクセスログ - 管理画面</title>
-  <link rel="stylesheet" href="/assets/css/common.css?v=20260327e">
+  <link rel="stylesheet" href="/assets/css/common.css?v=<?= assetVer('/assets/css/common.css') ?>">
   <style>
     body { background: #f5f5f5; color: #222; font-family: sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; min-height: 100vh; }
     h1 { font-size: 1.4rem; margin-bottom: 20px; }
@@ -188,7 +189,7 @@ function buildQuery(array $extra = []): string {
     </div>
   </div>
 
-  <script src="/assets/js/common.js?v=20260327h"></script>
+  <script src="/assets/js/common.js?v=<?= assetVer('/assets/js/common.js') ?>"></script>
   <script>
   async function showIpLog(ip) {
     document.getElementById('ip-modal-title').textContent = 'IP: ' + ip;

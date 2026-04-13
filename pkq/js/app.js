@@ -497,29 +497,29 @@ const PQApp = {
 
     // レシピ判定（優先度順）
     // P1: しんぴのかいがら最優先
-    let recipeName;
-    if      (hasKaigara)                    recipeName = 'カクコロレジェンドスープ';
+    let recipeName, recipeCondition;
+    if      (hasKaigara)                    { recipeName = 'カクコロレジェンドスープ'; recipeCondition = 'しんぴのかいがら使用'; }
     // P2: 単色4枚以上
-    else if (red  >= 4)                     recipeName = 'レッドカクコロシチュー';
-    else if (blue >= 4)                     recipeName = 'ブルーカクコロジュース';
-    else if (yel  >= 4)                     recipeName = 'イエローカクコロカレー';
-    else if (gray >= 4)                     recipeName = 'ホワイトカクコログラタン';
-    // P3強: 複数特徴＋たっぷり系（条件が厳しい順）
-    else if (hard  >= 4 && mineral >= 2)    recipeName = 'カクコロガンセキ煮';
-    else if (soft  >= 4 && yel     >= 3)    recipeName = 'カクコロビリビリゾット';
-    else if (mush  >= 3 && red     >= 2)    recipeName = 'カクコロファイヤベース';
-    else if (plant >= 4 && soft    >= 2)    recipeName = 'カクコロ健康スムージー';
-    else if (swt   >= 4 && yel     >= 3)    recipeName = 'カクコロハニーフォンデュ';
-    // P3中: 多め＋少々系
-    else if (soft  >= 4 && blue    >= 3)    recipeName = 'カクコロウォータカウダ';
-    else if (mush  >= 4 && soft    >= 3)    recipeName = 'カクコロヘドロしるこ';
-    else if (soft  >= 3 && mineral >= 2)    recipeName = 'カクコロクレイチャウダー';
-    else if (mineral >= 3 && plant >= 2)    recipeName = 'カクコロウィンドリア';
-    else if (swt   >= 3 && mush    >= 2)    recipeName = 'カクコロマッスルオレ';
-    else if (swt   >= 3 && hard    >= 2)    recipeName = 'カクコロねんジャオロース';
-    else if (swt   >= 3 && gray    >= 2)    recipeName = 'カクコロシルクレープ';
-    // P4: デフォルト
-    else                                    recipeName = 'カクコロスープ';
+    else if (red  >= 4)                     { recipeName = 'レッドカクコロシチュー';   recipeCondition = `赤${red}個`; }
+    else if (blue >= 4)                     { recipeName = 'ブルーカクコロジュース';   recipeCondition = `青${blue}個`; }
+    else if (yel  >= 4)                     { recipeName = 'イエローカクコロカレー';   recipeCondition = `黄${yel}個`; }
+    else if (gray >= 4)                     { recipeName = 'ホワイトカクコログラタン'; recipeCondition = `灰${gray}個`; }
+    // P3: 多め系（主条件3+）— 具体的なカテゴリ条件を先に判定
+    else if (swt   >= 3 && gray    >= 2)    { recipeName = 'カクコロシルクレープ';     recipeCondition = `あまい${swt}＋灰${gray}`; }
+    else if (mush  >= 3 && red     >= 2)    { recipeName = 'カクコロファイヤベース';   recipeCondition = `キノコ${mush}＋赤${red}`; }
+    else if (soft  >= 3 && mineral >= 2)    { recipeName = 'カクコロクレイチャウダー'; recipeCondition = `やわらかい${soft}＋鉱物${mineral}`; }
+    else if (mineral >= 3 && plant >= 2)    { recipeName = 'カクコロウィンドリア';     recipeCondition = `鉱物${mineral}＋植物${plant}`; }
+    else if (swt   >= 3 && mush    >= 2)    { recipeName = 'カクコロマッスルオレ';     recipeCondition = `あまい${swt}＋キノコ${mush}`; }
+    else if (swt   >= 3 && hard    >= 2)    { recipeName = 'カクコロねんジャオロース'; recipeCondition = `あまい${swt}＋かたい${hard}`; }
+    // P4: たっぷり系（主条件4+）— 汎用的な属性条件は後に判定
+    else if (hard  >= 4 && mineral >= 2)    { recipeName = 'カクコロガンセキ煮';       recipeCondition = `かたい${hard}＋鉱物${mineral}`; }
+    else if (swt   >= 4 && yel     >= 3)    { recipeName = 'カクコロハニーフォンデュ'; recipeCondition = `あまい${swt}＋黄${yel}`; }
+    else if (plant >= 4 && soft    >= 2)    { recipeName = 'カクコロ健康スムージー';   recipeCondition = `植物${plant}＋やわらかい${soft}`; }
+    else if (soft  >= 4 && blue    >= 3)    { recipeName = 'カクコロウォータカウダ';   recipeCondition = `やわらかい${soft}＋青${blue}`; }
+    else if (mush  >= 4 && soft    >= 3)    { recipeName = 'カクコロヘドロしるこ';     recipeCondition = `キノコ${mush}＋やわらかい${soft}`; }
+    else if (soft  >= 4 && yel     >= 3)    { recipeName = 'カクコロビリビリゾット';   recipeCondition = `やわらかい${soft}＋黄${yel}`; }
+    // P5: デフォルト
+    else                                    { recipeName = 'カクコロスープ';           recipeCondition = '条件なし'; }
 
     // 調理時間: 鉄ベース＋鍋オフセット＋品質ボーナス（確認済: スープ=2, レジェンド=4）
     const baseTimes = {
@@ -577,6 +577,7 @@ const PQApp = {
             <h3 style="margin:0;">${escapeHtml(recipeName)}</h3>
             <span class="quality-badge quality-${quality}">${qualityLabel}</span>
           </div>
+          <div style="font-size:0.85rem;color:var(--text-tertiary);margin-bottom:2px;">条件: ${escapeHtml(recipeCondition)}</div>
           <div style="font-size:0.9rem;color:var(--text-secondary);">
             ${escapeHtml(this.selectedPot)}の鍋（${potLvRange[this.selectedPot]}） ／ &#x23F1; 冒険 ${cookTime} 回分
           </div>
